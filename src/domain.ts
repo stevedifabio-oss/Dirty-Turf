@@ -98,7 +98,6 @@ export type AppNotification = {
 };
 
 export type QuoteDraft = {
-  propertyName: string;
   address: string;
   mode: MeasurementMode;
   length: number;
@@ -106,17 +105,15 @@ export type QuoteDraft = {
   cameraArea: number;
   mapArea: number;
   serviceRate: number;
-  minimum: number;
-  bagCoverage: number;
-  bagPrice: number;
-  plan: CleaningPlan;
+  infillRate: number;
 };
 
 export type QuoteTotals = {
   area: number;
+  infillPounds: number;
+  bags40: number;
+  bags50: number;
   infillBags: number;
   serviceSubtotal: number;
-  materials: number;
-  planCost: number;
   total: number;
 };
