@@ -1,0 +1,12 @@
+node_modules/
+dist/
+output/deploy/
+tmp/
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+supabase/.temp/
+.DS_Store
+*.log

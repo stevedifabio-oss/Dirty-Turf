@@ -1,0 +1,39 @@
+project_id = "dirty-turf-academy"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage"]
+extra_search_path = ["public", "extensions"]
+
+[db]
+port = 54322
+major_version = 17
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173", "https://YOUR_APP_DOMAIN"]
+
+[storage]
+enabled = true
+file_size_limit = "20MiB"
+
+[functions.health]
+verify_jwt = false
+
+[functions.ghl-webhook]
+verify_jwt = false
+
+[functions.ghl-status]
+verify_jwt = true
+
+[functions.create-checkout]
+verify_jwt = true
+
+[functions.stripe-webhook]
+verify_jwt = false
