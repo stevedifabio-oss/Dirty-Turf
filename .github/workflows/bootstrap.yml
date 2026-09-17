@@ -1,0 +1,49 @@
+name: Bootstrap Dirty Turf Source
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - bootstrap-source.b64
+      - .github/workflows/bootstrap.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  expand-verify-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out bootstrap commit
+        uses: actions/checkout@v4
+
+      - name: Verify and expand source archive
+        shell: bash
+        run: |
+          base64 --decode bootstrap-source.b64 > /tmp/dirty-turf-source.tar.gz
+          echo "75cd3d97811d1c1df9c055494e195f418e9307f2521025898d2555fdb33aee03  /tmp/dirty-turf-source.tar.gz" | sha256sum --check -
+          tar -xzf /tmp/dirty-turf-source.tar.gz -C .
+          rm bootstrap-source.b64 .github/workflows/bootstrap.yml
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run application checks
+        run: npm run check
+
+      - name: Publish expanded source
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Expand Dirty Turf app source"
+          git push origin HEAD:main
