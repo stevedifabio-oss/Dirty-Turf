@@ -156,7 +156,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 
 @media (max-width: 430px) {
   body { background: var(--chalk); }.app-shell { padding: 0; }.phone-frame { width: 100%; border: 0; border-radius: 0; box-shadow: none; }.strategy-panel { display: none; }
-  .topbar { gap: 8px; padding-right: 14px; padding-left: 14px; }.brand-lockup { gap: 7px; }.brand-lockup > img { width: 70px; flex-basis: 70px; }.topbar h1 { max-width: 116px; font-size: 1rem; }.topbar-actions { gap: 4px; }.topbar-actions .icon-button, .profile-button { width: 34px; height: 34px; flex-basis: 34px; }
+  .topbar { gap: 8px; padding-right: 14px; padding-left: 14px; }.brand-lockup { gap: 7px; }.brand-lockup > img { width: 70px; flex-basis: 70px; }.topbar h1 { max-width: 116px; font-size: .94rem; }
+  .network-actions strong { overflow: visible; line-height: 1.15; text-overflow: clip; white-space: normal; }.topbar-actions { gap: 4px; }.topbar-actions .icon-button, .profile-button { width: 34px; height: 34px; flex-basis: 34px; }
   .field-hero { grid-template-columns: 1fr; }.field-scanner { min-height: 138px; }.quick-actions { grid-template-columns: repeat(2,1fr); }.action-button { grid-template-columns: auto 1fr; min-height: 54px; place-items: center start; padding: 10px 12px; }.action-button span { max-width: none; text-align: left; }
   .sheet-layer { padding: 0; }.quote-sheet, .hub-sheet { width: 100%; max-height: 100vh; border-radius: 18px 18px 0 0; }
 }
