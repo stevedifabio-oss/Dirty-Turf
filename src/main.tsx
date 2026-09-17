@@ -203,7 +203,7 @@ function App() {
         <div className="product-loop" aria-label="Product workflow">
           <LoopStep icon={<BookOpen size={19} />} title="Learn" detail="GHL course library" />
           <LoopStep icon={<Ruler size={19} />} title="Measure" detail="Camera, map, or manual" />
-          <LoopStep icon={<Calculator size={19} />} title="Quote" detail="Quick, Premium, or Annihilator" />
+          <LoopStep icon={<Calculator size={19} />} title="Calculate" detail="40-lb or 50-lb bags" />
           <LoopStep icon={<Users size={19} />} title="Share" detail="Operator feedback" />
         </div>
         <div className="release-note"><Sparkles size={20} /><div><strong>{dataMode === "cloud" ? "Cloud workspace connected" : "Backend-ready device mode"}</strong><p>Supabase sync, private photo storage, live AR bridges, and current or historical property imagery are ready for the client connections.</p></div></div>
