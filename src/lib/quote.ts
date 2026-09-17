@@ -1,29 +1,33 @@
 import type { QuoteDraft, QuoteTotals } from "../domain";
 
-const PLAN_SURCHARGE = {
-  quick: 0,
-  premium: 75,
-  annihilator: 140,
-} as const;
+function positive(value: number) {
+  return Number.isFinite(value) ? Math.max(0, value) : 0;
+}
+
+function round(value: number, places = 2) {
+  const factor = 10 ** places;
+  return Math.round((value + Number.EPSILON) * factor) / factor;
+}
 
 export function calculateQuote(draft: QuoteDraft): QuoteTotals {
   const rawArea = draft.mode === "map"
-    ? draft.mapArea
-    : draft.mode === "camera" && draft.cameraArea > 0
-      ? draft.cameraArea
-      : draft.length * draft.width;
-  const area = Math.max(0, Math.round(rawArea));
-  const infillBags = area > 0 ? Math.ceil(area / Math.max(1, draft.bagCoverage)) : 0;
-  const serviceSubtotal = Math.round(Math.max(draft.minimum, area * draft.serviceRate));
-  const materials = Math.round(infillBags * Math.max(0, draft.bagPrice));
-  const planCost = PLAN_SURCHARGE[draft.plan];
+    ? positive(draft.mapArea)
+    : draft.mode === "camera" && positive(draft.cameraArea) > 0
+      ? positive(draft.cameraArea)
+      : positive(draft.length) * positive(draft.width);
+  const area = round(rawArea);
+  const infillPounds = area > 0 ? Math.ceil(area * positive(draft.infillRate)) : 0;
+  const bags40 = infillPounds > 0 ? Math.ceil(infillPounds / 40) : 0;
+  const bags50 = infillPounds > 0 ? Math.ceil(infillPounds / 50) : 0;
+  const serviceSubtotal = round(area * positive(draft.serviceRate));
 
   return {
     area,
-    infillBags,
+    infillPounds,
+    bags40,
+    bags50,
+    infillBags: bags40,
     serviceSubtotal,
-    materials,
-    planCost,
-    total: serviceSubtotal + materials + planCost,
+    total: serviceSubtotal,
   };
 }
