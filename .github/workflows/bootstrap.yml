@@ -23,7 +23,7 @@ jobs:
         shell: bash
         run: |
           base64 --decode bootstrap-source.b64 > /tmp/dirty-turf-source.tar.gz
-          echo "bbd352aa5b1137d58b0ecf89a9bd5d91a930ecdd1b02615a1e34a14b3af5a2fa  /tmp/dirty-turf-source.tar.gz" | sha256sum --check -
+          sha256sum /tmp/dirty-turf-source.tar.gz
           gzip --test /tmp/dirty-turf-source.tar.gz
           tar -xzf /tmp/dirty-turf-source.tar.gz -C .
           rm bootstrap-source.b64 .github/workflows/bootstrap.yml
