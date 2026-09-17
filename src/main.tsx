@@ -42,13 +42,14 @@ import "./styles.css";
 type View = "home" | "learn" | "community" | "events" | "tools";
 
 const initialJobs: Job[] = [
-  { id: 1, address: "Mesa backyard", area: 684, infill: 10, quote: 687, status: "Ready to quote", method: "camera", createdAt: "Today", photos: 4 },
-  { id: 2, address: "Scottsdale side yard", area: 312, infill: 5, quote: 385, status: "Needs photos", method: "map", createdAt: "Yesterday", photos: 0 },
-  { id: 3, address: "Chandler dog run", area: 148, infill: 3, quote: 265, status: "Follow-up", method: "manual", createdAt: "Sep 12", photos: 6 },
+  { id: 1, address: "Mesa backyard", area: 684, infill: 5, quote: 492.48, status: "Calculated", method: "camera", createdAt: "Today", photos: 4 },
+  { id: 2, address: "Scottsdale side yard", area: 312, infill: 2, quote: 224.64, status: "Calculated", method: "map", createdAt: "Yesterday", photos: 0 },
+  { id: 3, address: "Chandler dog run", area: 148, infill: 1, quote: 106.56, status: "Calculated", method: "manual", createdAt: "Sep 12", photos: 6 },
 ];
 
+const INFILL_RATES = [0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3] as const;
+
 const defaultDraft: QuoteDraft = {
-  propertyName: "Mesa backyard",
   address: "",
   mode: "camera",
   length: 38,
@@ -56,10 +57,7 @@ const defaultDraft: QuoteDraft = {
   cameraArea: 684,
   mapArea: 684,
   serviceRate: 0.72,
-  minimum: 195,
-  bagCoverage: 70,
-  bagPrice: 12,
-  plan: "premium",
+  infillRate: 0.25,
 };
 
 const navTitles: Record<View, string> = {
@@ -113,29 +111,29 @@ function App() {
   };
 
   const saveQuote = async () => {
-    if (!draft.propertyName.trim() || quote.area <= 0) {
-      setToast("Add a property name and measured area.");
+    if (quote.area <= 0) {
+      setToast("Measure or enter a turf area first.");
       return;
     }
     const job: Job = {
       id: Date.now(),
-      address: draft.propertyName.trim(),
+      address: draft.address.trim() || "Infill calculation",
       area: quote.area,
-      infill: quote.infillBags,
+      infill: quote.bags40,
       quote: quote.total,
-      status: "Ready to quote",
+      status: "Calculated",
       method: draft.mode,
       createdAt: "Just now",
       photos: photoUrl ? 1 : 0,
     };
     try {
-      const savedJob = await saveJob(job, draft.plan);
+      const savedJob = await saveJob(job, "quick");
       setJobs((current) => [savedJob, ...current.filter((item) => item.id !== savedJob.id)]);
       setQuoteOpen(false);
       setActiveView("home");
-      setToast(dataMode === "cloud" ? "Quote synced to the company workspace." : "Quote saved on this device.");
+      setToast(dataMode === "cloud" ? "Calculation synced to the company workspace." : "Calculation saved on this device.");
     } catch {
-      setToast("Quote could not be saved. Check the connection and try again.");
+      setToast("Calculation could not be saved. Check the connection and try again.");
     }
   };
 
@@ -201,7 +199,7 @@ function App() {
       <aside className="strategy-panel">
         <p className="kicker">Product direction</p>
         <h2>The Dirty Turf standard, in every operator's pocket.</h2>
-        <p className="strategy-intro">Learn the process, measure the property, quote the right clean, and keep the complete service record with the company.</p>
+        <p className="strategy-intro">Learn the process, measure the property, calculate the right infill, and keep the complete service record with the company.</p>
         <div className="product-loop" aria-label="Product workflow">
           <LoopStep icon={<BookOpen size={19} />} title="Learn" detail="GHL course library" />
           <LoopStep icon={<Ruler size={19} />} title="Measure" detail="Camera, map, or manual" />
@@ -219,21 +217,21 @@ function HomeView({ jobs, openQuote, changeView }: { jobs: Job[]; openQuote: (mo
   return (
     <div className="view-content">
       <section className="field-hero">
-        <div className="field-text"><p>Dirty Turf operator</p><h2>Measure it right. Quote the clean it actually needs.</h2><button className="hero-action" onClick={() => openQuote("camera")}><Camera size={17} /> Start measurement</button></div>
+        <div className="field-text"><p>Dirty Turf operator</p><h2>Measure the turf. Bring the right amount of infill.</h2><button className="hero-action" onClick={() => openQuote("camera")}><Camera size={17} /> Start measurement</button></div>
         <div className="field-scanner" aria-hidden="true"><div className="scanner-grid" /><div className="scanner-chip">{latest.area} sq ft</div><div className="scanner-pin one" /><div className="scanner-pin two" /><div className="scanner-pin three" /></div>
       </section>
 
       <nav className="quick-actions" aria-label="Primary tools">
         <Action icon={<Camera size={20} />} label="Camera measure" onClick={() => openQuote("camera")} />
         <Action icon={<Map size={20} />} label="Map trace" onClick={() => openQuote("map")} />
-        <Action icon={<Package size={20} />} label="Infill quote" onClick={() => changeView("tools")} />
+        <Action icon={<Package size={20} />} label="Infill calculator" onClick={() => openQuote("manual")} />
         <Action icon={<BookOpen size={20} />} label="Academy" onClick={() => changeView("learn")} />
       </nav>
 
       <section className="tool-panel">
-        <div className="section-heading"><div><p>Latest estimate</p><h3>{latest.address}</h3></div><button className="ghost-button" onClick={() => openQuote("manual")}>New <Plus size={16} /></button></div>
-        <div className="quote-grid"><Metric label="Area" value={formatNumber(latest.area)} suffix="sq ft" /><Metric label="Infill" value={String(latest.infill)} suffix="bags" /><Metric label="Quote" value={formatCurrency(latest.quote)} suffix="estimated" /></div>
-        <div className="quote-line"><Ruler size={18} /><span>{measurementLabel(latest.method)} saved to property history.</span><Check size={18} /></div>
+        <div className="section-heading"><div><p>Latest calculation</p><h3>{latest.address}</h3></div><button className="ghost-button" onClick={() => openQuote("manual")}>New <Plus size={16} /></button></div>
+        <div className="quote-grid"><Metric label="Area" value={formatNumber(latest.area)} suffix="sq ft" /><Metric label="40-lb" value={String(latest.infill)} suffix="bags" /><Metric label="Service" value={formatCurrency(latest.quote)} suffix="at sq-ft rate" /></div>
+        <div className="quote-line"><Ruler size={18} /><span>{measurementLabel(latest.method)} saved to calculation history.</span><Check size={18} /></div>
       </section>
 
       <section className="history-strip">
@@ -261,12 +259,12 @@ function ToolsView({ draft, quote, openQuote, setToast }: { draft: QuoteDraft; q
   const checklist = ["Photograph problem areas", "Check seams and edges", "Confirm water access", "Log infill condition"];
   return (
     <div className="view-content tools-view">
-      <section className="tool-lead"><div><p className="kicker">Field kit</p><h2>Extract. Don't just spray.</h2></div><button className="primary-button" onClick={() => openQuote("camera")}><Plus size={18} /> New estimate</button></section>
-      <section className="live-estimate"><div className="estimate-total"><span>Current estimate</span><strong>{formatCurrency(quote.total)}</strong><small>{formatNumber(quote.area)} sq ft · {quote.infillBags} bags</small></div><button className="edit-estimate" onClick={() => openQuote(draft.mode)} aria-label="Edit current estimate"><Settings2 size={19} /></button></section>
+      <section className="tool-lead"><div><p className="kicker">Field kit</p><h2>Measure turf. Bring the right infill.</h2></div><button className="primary-button" onClick={() => openQuote("camera")}><Plus size={18} /> New calculation</button></section>
+      <section className="live-estimate"><div className="estimate-total"><span>Infill calculator</span><strong>{quote.bags40} 40-lb bags</strong><small>{formatNumber(quote.infillPounds)} lb at {draft.infillRate.toFixed(2)} lb/sq ft · {formatNumber(quote.area)} sq ft</small></div><button className="edit-estimate" onClick={() => openQuote(draft.mode)} aria-label="Edit infill calculation"><Settings2 size={19} /></button></section>
       <section className="tool-list" aria-label="Measurement tools">
         <ToolRow icon={<Camera size={20} />} title="Live camera measure" detail="Place AR points around the turf boundary" onClick={() => openQuote("camera")} />
-        <ToolRow icon={<Map size={20} />} title="Map trace" detail="Outline a remote property before the visit" onClick={() => openQuote("map")} />
-        <ToolRow icon={<Calculator size={20} />} title="Manual quote" detail="Price from known square footage" onClick={() => openQuote("manual")} />
+        <ToolRow icon={<Map size={20} />} title="Map trace" detail="Outline the turf instead of opening Google Earth" onClick={() => openQuote("map")} />
+        <ToolRow icon={<Calculator size={20} />} title="Manual dimensions" detail="Enter length and width for a rectangular area" onClick={() => openQuote("manual")} />
       </section>
       <section className="checklist-panel">
         <div className="section-heading"><div><p>Arrival routine</p><h3>Property checklist</h3></div><span className="completion-count">{checks.filter(Boolean).length}/{checks.length}</span></div>
@@ -276,7 +274,6 @@ function ToolsView({ draft, quote, openQuote, setToast }: { draft: QuoteDraft; q
     </div>
   );
 }
-
 function SearchPanel({ query, setQuery, jobs, onOpenJob, onNavigate }: { query: string; setQuery: (query: string) => void; jobs: Job[]; onOpenJob: () => void; onNavigate: (view: View) => void }) {
   const normalized = query.trim().toLowerCase();
   const results = [
@@ -286,7 +283,7 @@ function SearchPanel({ query, setQuery, jobs, onOpenJob, onNavigate }: { query: 
     { type: "Events", title: "Academy event calendar", detail: "Open live sessions, workshops, and RSVPs", icon: <CalendarDays size={18} />, action: () => onNavigate("events") },
   ].filter((item) => !normalized || `${item.type} ${item.title} ${item.detail}`.toLowerCase().includes(normalized));
   return (
-    <section className="search-view"><label className="search-input"><Search size={19} /><span className="sr-only">Search properties and Academy destinations</span><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search properties and Academy" />{query && <button onClick={() => setQuery("")} aria-label="Clear search"><X size={16} /></button>}</label><p className="result-count">{results.length} {normalized ? "matches" : "destinations and recent properties"}</p><div className="search-results">{results.slice(0, 9).map((item) => <button className="result-row" key={`${item.type}-${item.title}`} onClick={item.action}><span className="result-icon">{item.icon}</span><span><small>{item.type}</small><strong>{item.title}</strong><em>{item.detail}</em></span><ChevronRight size={17} /></button>)}{results.length === 0 && <div className="empty-state"><Search size={24} /><h3>No matches yet</h3><p>Try a property name, Academy, community, or events.</p></div>}</div></section>
+    <section className="search-view"><label className="search-input"><Search size={19} /><span className="sr-only">Search properties and Academy destinations</span><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search properties and Academy" />{query && <button onClick={() => setQuery("")} aria-label="Clear search"><X size={16} /></button>}</label><p className="result-count">{results.length} {normalized ? "matches" : "destinations and recent properties"}</p><div className="search-results">{results.slice(0, 9).map((item) => <button className="result-row" key={`${item.type}-${item.title}`} onClick={item.action}><span className="result-icon">{item.icon}</span><span><small>{item.type}</small><strong>{item.title}</strong><em>{item.detail}</em></span><ChevronRight size={17} /></button>)}{results.length === 0 && <div className="empty-state"><Search size={24} /><h3>No matches yet</h3><p>Try a saved calculation, Academy, community, or events.</p></div>}</div></section>
   );
 }
 
@@ -296,23 +293,20 @@ function QuoteSheet({ draft, setDraft, quote, photoUrl, setPhotoUrl, onClose, on
   return (
     <div className="sheet-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className="quote-sheet" role="dialog" aria-modal="true" aria-labelledby="quote-title">
-        <header className="sheet-header"><button className="bare-icon" aria-label="Close quote builder" onClick={onClose}><ArrowLeft size={20} /></button><div><p>New property</p><h2 id="quote-title">Measure and quote</h2></div><button className="save-link" onClick={onSave}>Save</button></header>
+        <header className="sheet-header"><button className="bare-icon" aria-label="Close infill calculator" onClick={onClose}><ArrowLeft size={20} /></button><div><p>Field calculator</p><h2 id="quote-title">Infill calculator</h2></div><button className="save-link" onClick={onSave}>Save</button></header>
         <div className="sheet-body">
-          <label className="field-label">Property name<input value={draft.propertyName} onChange={(event) => update("propertyName", event.target.value)} placeholder="e.g. Mesa backyard" /></label>
-          <label className="field-label">Address <span>optional</span><input value={draft.address} onChange={(event) => update("address", event.target.value)} placeholder="Street, city, state" /></label>
           <fieldset className="mode-fieldset"><legend>Measurement method</legend><div className="segmented-control"><ModeButton icon={<Camera size={17} />} label="Camera" active={draft.mode === "camera"} onClick={() => update("mode", "camera")} /><ModeButton icon={<Map size={17} />} label="Map" active={draft.mode === "map"} onClick={() => update("mode", "map")} /><ModeButton icon={<Ruler size={17} />} label="Manual" active={draft.mode === "manual"} onClick={() => update("mode", "manual")} /></div></fieldset>
           {draft.mode === "camera" && <LiveCameraMeasurement area={draft.cameraArea} onAreaChange={(value) => update("cameraArea", value)} photoUrl={photoUrl} changePhoto={changePhoto} />}
-          {draft.mode === "manual" && <DimensionInputs draft={draft} update={update} />}
+          {draft.mode === "manual" && <DimensionInputs draft={draft} area={quote.area} update={update} />}
           {draft.mode === "map" && <MapMeasurement address={draft.address} area={draft.mapArea} onAddressChange={(value) => update("address", value)} onAreaChange={(value) => update("mapArea", value)} />}
-          <section className="pricing-section"><div className="subheading"><div><p>Pricing</p><h3>Service and material</h3></div><Calculator size={19} /></div><div className="input-grid"><NumberField label="Service rate" value={draft.serviceRate} prefix="$" suffix="/ sq ft" step={0.01} update={(value) => update("serviceRate", value)} /><NumberField label="Minimum" value={draft.minimum} prefix="$" update={(value) => update("minimum", value)} /><NumberField label="Bag coverage" value={draft.bagCoverage} suffix="sq ft" update={(value) => update("bagCoverage", value)} /><NumberField label="Bag cost" value={draft.bagPrice} prefix="$" update={(value) => update("bagPrice", value)} /></div><label className="field-label">Cleaning plan<select value={draft.plan} onChange={(event) => update("plan", event.target.value as QuoteDraft["plan"])}><option value="quick">Quick Clean · people-only turf</option><option value="premium">Premium Clean · pets and odor · $75</option><option value="annihilator">Annihilator · heavy restoration · $140</option></select></label></section>
-          <section className="quote-summary"><div><span>Measured area</span><strong>{formatNumber(quote.area)} sq ft</strong></div><div><span>Infill plan</span><strong>{quote.infillBags} bags</strong></div><div><span>Service subtotal</span><strong>{formatCurrency(quote.serviceSubtotal)}</strong></div><div><span>Materials + plan</span><strong>{formatCurrency(quote.materials + quote.planCost)}</strong></div><div className="grand-total"><span>Estimated quote</span><strong>{formatCurrency(quote.total)}</strong></div></section>
+          <section className="pricing-section"><div className="subheading"><div><p>Material</p><h3>Infill rate</h3></div><Package size={19} /></div><label className="field-label">Pounds per square foot<select value={draft.infillRate} onChange={(event) => update("infillRate", Number(event.target.value))}>{INFILL_RATES.map((rate) => <option key={rate} value={rate}>{rate.toFixed(2)} lb / sq ft</option>)}</select></label><div className="input-grid compact-grid"><NumberField label="Charge per sq ft" value={draft.serviceRate} prefix="$" suffix="/ sq ft" step={0.01} update={(value) => update("serviceRate", value)} /></div></section>
+          <section className="quote-summary infill-summary"><div><span>Total turf area</span><strong>{formatNumber(quote.area)} sq ft</strong></div><div><span>Total infill</span><strong>{formatNumber(quote.infillPounds)} lb</strong></div><div><span>40-lb bags</span><strong>{quote.bags40}</strong></div><div><span>50-lb bags</span><strong>{quote.bags50}</strong></div><div className="grand-total"><span>Service charge</span><strong>{formatCurrency(quote.total)}</strong></div></section>
         </div>
-        <div className="sheet-footer"><button className="primary-button wide" onClick={onSave}><CheckCircle2 size={18} /> Save property quote</button></div>
+        <div className="sheet-footer"><button className="primary-button wide" onClick={onSave}><CheckCircle2 size={18} /> Save calculation</button></div>
       </section>
     </div>
   );
 }
-
 function LiveCameraMeasurement({ area, onAreaChange, photoUrl, changePhoto }: { area: number; onAreaChange: (value: number) => void; photoUrl: string; changePhoto: (event: React.ChangeEvent<HTMLInputElement>) => void }) {
   const [nativeAvailable, setNativeAvailable] = useState<boolean | null>(null);
   const [message, setMessage] = useState("");
@@ -352,8 +346,8 @@ function LiveCameraMeasurement({ area, onAreaChange, photoUrl, changePhoto }: { 
   </div>;
 }
 
-function DimensionInputs({ draft, update }: { draft: QuoteDraft; update: <K extends keyof QuoteDraft>(key: K, value: QuoteDraft[K]) => void }) {
-  return <div className="dimension-grid"><NumberField label="Length" value={draft.length} suffix="ft" update={(value) => update("length", value)} /><span className="dimension-times">×</span><NumberField label="Width" value={draft.width} suffix="ft" update={(value) => update("width", value)} /></div>;
+function DimensionInputs({ draft, area, update }: { draft: QuoteDraft; area: number; update: <K extends keyof QuoteDraft>(key: K, value: QuoteDraft[K]) => void }) {
+  return <div className="dimension-block"><div className="dimension-grid"><NumberField label="Length" value={draft.length} suffix="ft" update={(value) => update("length", value)} /><span className="dimension-times">×</span><NumberField label="Width" value={draft.width} suffix="ft" update={(value) => update("width", value)} /></div><div className="dimension-result" aria-live="polite"><span>Total turf area</span><strong>{formatNumber(area)} sq ft</strong></div></div>;
 }
 
 function NumberField({ label, value, update, prefix, suffix, step = 1 }: { label: string; value: number; update: (value: number) => void; prefix?: string; suffix?: string; step?: number }) {
@@ -366,7 +360,7 @@ function Metric({ label, value, suffix }: { label: string; value: string; suffix
 function ToolRow({ icon, title, detail, onClick }: { icon: React.ReactNode; title: string; detail: string; onClick: () => void }) { return <button className="tool-row" onClick={onClick}><span>{icon}</span><span><strong>{title}</strong><small>{detail}</small></span><ChevronRight size={18} /></button>; }
 
 function JobRow({ job }: { job: Job }) {
-  return <article className="job-row"><div className="job-method">{job.method === "map" ? <Map size={17} /> : job.method === "camera" ? <Camera size={17} /> : <Ruler size={17} />}</div><div><h4>{job.address}</h4><p>{formatNumber(job.area)} sq ft · {job.infill} bags · {formatCurrency(job.quote)}</p></div><span>{job.status}</span></article>;
+  return <article className="job-row"><div className="job-method">{job.method === "map" ? <Map size={17} /> : job.method === "camera" ? <Camera size={17} /> : <Ruler size={17} />}</div><div><h4>{job.address}</h4><p>{formatNumber(job.area)} sq ft · {job.infill} 40-lb bags · {formatCurrency(job.quote)}</p></div><span>{job.status}</span></article>;
 }
 
 function LoopStep({ icon, title, detail }: { icon: React.ReactNode; title: string; detail: string }) { return <div className="loop-step"><span>{icon}</span><div><strong>{title}</strong><small>{detail}</small></div><ChevronRight size={16} /></div>; }
@@ -374,7 +368,7 @@ function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode; labe
 
 function numberValue(value: string) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : 0; }
 function formatNumber(value: number) { return new Intl.NumberFormat("en-US").format(value); }
-function formatCurrency(value: number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value); }
+function formatCurrency(value: number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value); }
 function measurementLabel(method: MeasurementMode) { return method === "camera" ? "Camera measurement" : method === "map" ? "Map trace" : "Manual measurement"; }
 
 const rootElement = document.getElementById("root")!;
