@@ -178,6 +178,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .topbar h1 { max-width: 104px; font-size: .84rem; }
   .topbar-actions { gap: 3px; }
   .topbar-actions .icon-button, .profile-button { width: 32px; height: 32px; flex-basis: 32px; }
+  .metric { padding-right: 8px; padding-left: 8px; }
+  .metric span, .metric small { font-size: .64rem; }
 }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
