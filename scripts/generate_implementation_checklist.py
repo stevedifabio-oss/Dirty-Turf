@@ -219,19 +219,20 @@ def build_pdf():
         "Every current Academy member can request a Magic Link, reach the content they already own, use the community and field tools, and reopen saved work on another device. The desktop web app, mobile web/PWA, and signed iOS and Android builds all pass their production paths."
     )
     col_w = (PAGE_W - 2 * MARGIN - 12) / 2
-    y1 = pdf.card("BACKEND LIVE", "Eleven migrations, 50 RLS-protected public tables, six Edge Functions, and the health endpoint are active in Supabase.", GREEN, col_w, 82, MARGIN)
+    y1 = pdf.card("BACKEND LIVE", "Twelve migrations, 51 RLS-protected public tables, six Edge Functions, and the health endpoint are active in Supabase.", GREEN, col_w, 82, MARGIN)
     pdf.card("ARCHIVE VERIFIED", "60 login members, 49 enrollments, 109 published lessons, 19 drafts, community data, and assets reconcile to GHL.", LIME, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y1 - 14
-    y2 = pdf.card("APP VERIFIED", "Desktop, mobile, and tablet layouts pass responsive QA. Tests, PWA, Android release bundle, and iOS Release simulator checks pass.", ORANGE, col_w, 82, MARGIN)
-    pdf.card("RELEASE OPEN", "GitHub PR #2 contains the complete release tree. Netlify preview, merge, and production proof still remain.", GREEN_DARK, col_w, 82, MARGIN + col_w + 12)
+    y2 = pdf.card("APP VERIFIED", "Fifty-four tests, responsive QA, PWA checks, Android AAB, and a clean iOS Release simulator launch all pass.", ORANGE, col_w, 82, MARGIN)
+    pdf.card("RELEASE CANDIDATE", "PR #2 CI and Netlify deploy status pass. Production remains gated on identity, import, billing, and physical-device proof.", GREEN_DARK, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y2 - 18
     pdf.section("Completed and removed from this checklist")
     pdf.checklist([
-        "[x] Supabase migrations, RLS audit, security-function hardening, and Edge Function deployment are complete.",
+        "[x] Twelve Supabase migrations, 51-table RLS audit, security-function hardening, and six Edge Function deployments are complete.",
         "[x] GHL course, lesson, member, enrollment, community, event, and asset capture is complete and exact-count verified.",
         "[x] Google Play developer identity, website, and phone verification are complete.",
-        "[x] The Apple Developer renewal card is added. The simulator build is complete.",
-        "[x] Desktop web workspace, mobile/PWA layout, calculator, Magic Link UI, native wrappers, importer, billing logic, and release tests are built.",
+        "[x] The Apple renewal card is added. The branded iOS Release build installs and opens in the iPhone 17 simulator; Android debug and release builds pass.",
+        "[x] Desktop web, mobile/PWA, calculator, exact map-area math, native wrappers, importer, billing logic, legal pages, and account-deletion workflow are built.",
+        "[x] The source access audit proves 60 unique login emails, 49 linked enrollments, zero duplicate login emails, and all enrolled members login-ready.",
     ], compact=True)
     pdf.section("Six remaining gates")
     pdf.paragraph("1. Email and owner identity.  2. Academy import and member access.  3. Stripe test proof.  4. GitHub and Netlify production release.  5. Real-device AR and signed store builds.  6. Controlled GHL cutover.", width_chars=94, size=8.6, leading=11)
@@ -244,16 +245,17 @@ def build_pdf():
         "[ ] Sign in to the Cloudflare account that owns dirtyturf.com. The current Cloudflare login has no domains. Publish every Resend TXT/CNAME record as DNS-only.",
         "[ ] Wait for Resend to show the domain as verified. Send one authenticated test email from a Dirty Turf address to a separate inbox and confirm it reaches the inbox, not spam.",
         "[ ] Configure Supabase Auth custom SMTP with Resend. Use the verified Dirty Turf sender, not onboarding@resend.dev.",
-        "[ ] Send a Supabase Magic Link to the owner and test member. Confirm both cold-start web redirect and com.dirtyturf.academy://auth/callback on a phone.",
+        "[ ] Send a Supabase Magic Link to the owner and test member. Confirm both cold-start web redirect and com.dirtyturf.academy://auth/callback on a physical phone.",
         "[ ] Rotate the Resend API key pasted in chat after SMTP works. Save the replacement only in Resend/Supabase account settings, never in Git, Netlify public variables, or app code.",
     ], compact=True)
     pdf.timeline("STEP 2", "Lock production identity", "Release owner")
     pdf.checklist([
         "[ ] Confirm the exact production HTTPS domain. Set it as the Supabase Site URL, Netlify custom domain, APP_URL, allowed origin, and auth redirect.",
-        "[ ] Keep the native callback in Supabase redirect allowlists and Edge Function AUTH_REDIRECT_URLS.",
+        "[x] Keep the native callback in Supabase redirect allowlists and Edge Function AUTH_REDIRECT_URLS.",
         "[ ] Create one permanent Dirty Turf owner in Supabase Auth and one normal test member. Confirm the auth trigger creates the owner profile, organization, and owner membership.",
         "[ ] Record the owner organization UUID; this is the only missing value required by the private Academy import manifest.",
-        "[ ] Confirm privacy, support, and account-deletion pages use the final production domain and are publicly reachable.",
+        "[x] Build public privacy, support, and deletion-instructions pages plus the signed-in two-step deletion-request flow.",
+        "[ ] Point those pages at the final production domain and confirm they are publicly reachable after deployment.",
         "[ ] Record a client owner and recovery owner with MFA for Supabase, Resend, GitHub, Netlify, Stripe, Apple, Google Play, GHL, and DNS.",
     ], compact=True)
     pdf.section("Secret boundary")
@@ -264,7 +266,7 @@ def build_pdf():
     pdf.timeline("STEP 3", "Dry run and import", "Migration owner")
     pdf.checklist([
         "[ ] Add the production owner organization UUID to output/private/dirty-turf-academy-import.json. Keep the file ignored and client-owned.",
-        "[ ] Run npm run academy:access-audit. Require 60 unique login emails, 49 enrolled members, zero duplicates, and allEnrolledCanLogin:true.",
+        "[x] Run npm run academy:access-audit: 60 unique login emails, 49 enrolled members, zero duplicates, and allEnrolledCanLogin:true.",
         "[ ] Call academy-import with commit:false. Match every count to the verified archive before allowing writes.",
         "[ ] Call academy-import with commit:true once, then repeat it and prove provider IDs make the import idempotent.",
         "[ ] Open representative lessons, drafts, quizzes, posts, comments, events, member profiles, assets, and enrollment states in both GHL and the app.",
@@ -298,9 +300,12 @@ def build_pdf():
     ], compact=True)
     pdf.timeline("STEP 6", "Merge and prove production", "Release owner")
     pdf.checklist([
-        "[ ] Wait for GitHub PR #2 checks and the Netlify preview. Review the complete diff and run a secret scan before merge.",
+        "[x] Publish the exact tested tree to GitHub PR #2, review the complete diff, and pass the repository credential-pattern scan.",
+        "[x] GitHub CI run 15 and the Netlify deploy-preview status pass for remote commit 5d8c1e30.",
+        "[!] Netlify team SSO intentionally returns 401 to anonymous preview smoke tests; complete the authenticated preview path with a team login and real test member.",
         "[ ] Set the exact production domain, Supabase public variables, and public Stripe Payment Link in Netlify. Keep every secret server-side.",
-        "[ ] Verify preview auth, deep links, calculator, Academy, lessons, community, events, assets, progress, PWA, headers, desktop/mobile widths, and console/network logs.",
+        "[x] Verify the local release candidate at 320, 390, and 1440 pixels with no horizontal overflow or console errors; smoke all six public routes.",
+        "[ ] Verify preview auth, deep links, Academy, community, events, private assets, progress, headers, and network logs with the real test member.",
         "[ ] Merge PR #2 to main, wait for Netlify production, and repeat the authenticated golden path on the deployed URL.",
         "[ ] Record commit SHA, deploy ID, migration/function versions, smoke-test account, rollback owner, and rollback steps.",
     ], compact=True)
@@ -317,9 +322,11 @@ def build_pdf():
     ], compact=True)
     pdf.timeline("STEP 8", "Create signed test releases", "Store owner")
     pdf.checklist([
-        "[ ] Apple: the Free Apps Agreement is active. Complete EU trader compliance, confirm seller/team signing, create the App Store Connect record, archive Release, and upload to TestFlight. Paid Apps terms are not a blocker unless in-app purchases are added.",
+        "[x] Build Android debug/release artifacts and an iOS Release simulator app from the same verified web bundle; confirm exact embedded index hashes.",
+        "[ ] Apple: complete EU trader compliance, confirm seller/team signing, create the App Store Connect record, archive Release, and upload to TestFlight. Paid Apps terms are not a blocker unless in-app purchases are added.",
         "[ ] Google Play: create the app record, confirm package/version/signing ownership, build a signed AAB, and publish to Internal testing.",
-        "[ ] Add store name, description, category, screenshots, privacy policy, support URL, deletion URL, reviewer login, data-safety/privacy answers, and content rating.",
+        "[x] Prepare store name, description, category, privacy/data-safety answers, URLs, reviewer notes, screenshot plan, and consumption-only billing guidance.",
+        "[ ] Enter the prepared metadata, screenshots, reviewer login, content rating, privacy answers, and deletion URL in both store records.",
         "[ ] Test install, update, deep link, Magic Link, logout, expired/reused links, camera, location, photos, map, lessons, community, and notifications on store builds.",
         "[ ] Confirm both store builds are consumption-only and give reviewers a pre-existing Academy test account.",
     ], compact=True)

@@ -58,12 +58,14 @@ member emails, private tokens, or reviewer credentials in this repository.
 
 | Evidence | Value |
 | --- | --- |
-| Git commit SHA | Pending |
-| GitHub PR and successful run | `stevedifabio-oss/Dirty-Turf#2` / pending final tree |
-| Netlify deploy ID and URL | Pending final tree |
-| Supabase migrations | 12 expected |
-| Supabase Edge Function versions | Record at release |
-| Source archive SHA-256 | Record from `npm run academy:access-audit` |
+| Git commit SHA | `5d8c1e30cd5f89c111ab4266dcef04f792cd03f8` |
+| GitHub PR and successful run | `stevedifabio-oss/Dirty-Turf#2` / CI run 15 passed |
+| Netlify deploy ID and URL | Preview status passed at `https://deploy-preview-2--bright-brigadeiros-df8b48.netlify.app`; deploy ID pending Netlify UI |
+| Supabase migrations | 12 applied / 51 public RLS-protected tables |
+| Supabase Edge Function versions | Six deployed; record immutable versions at production release |
+| Source archive SHA-256 | `0e1f53311b4635a7ed2969ff5bf6e2b038781eeb3126a958e3aaea82633f1aee` |
+| Local automated gate | 14 test files / 54 tests, typecheck, build, PWA, schema, and secret scan passed |
+| Native candidate proof | Android debug/release AAB and iOS Release simulator launch passed; embedded app-shell hashes match |
 | Smoke-test account owner | Client vault only |
 | iPhone model / OS / AR error | Pending physical test |
 | Android model / OS / AR error | Pending physical test |
@@ -94,4 +96,3 @@ Monitor Supabase Auth delivery, Edge Function failures, Postgres errors,
 Stripe webhook retries, Netlify errors, native crashes, and support messages.
 Pause the next notification batch on any unexplained login, entitlement, or
 content mismatch.
-
