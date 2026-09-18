@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { composeAcademyImport, isCommunityPostMediaUrl, parseCommunityEvent, parseRelativeTimestamp } from "./academy-import.mjs";
+import { cleanCommunityPostBody, composeAcademyImport, isCommunityPostMediaUrl, parseCommunityEvent, parseRelativeTimestamp } from "./academy-import.mjs";
 
 const capturedAt = "2026-09-17T17:00:00.000Z";
 
@@ -78,6 +78,14 @@ describe("Academy import composition", () => {
     expect(isCommunityPostMediaUrl("https://assetsdrm.clientclub.net/images/communities/location/profile-avatars/3.webp")).toBe(false);
     expect(isCommunityPostMediaUrl("https://academy.dirtyturf.com/communities/users/member-name")).toBe(false);
     expect(isCommunityPostMediaUrl("javascript:alert(1)")).toBe(false);
+  });
+
+  it("removes captured community chrome from post bodies", () => {
+    expect(cleanCommunityPostBody("Welcome\n\nUseful post copy.\n\n7\n\n5 Comments\n\nLike\nComment\nShare", "Welcome"))
+      .toBe("Useful post copy.");
+    expect(cleanCommunityPostBody("Video\n\nhttps://example.test/video\nPlay\nRewind 10s\nForward 10s\n00:34\nMute\nSettings\nPIP\nEnter fullscreen\nPlay\nLike\nComment\nShare", "Video"))
+      .toBe("https://example.test/video");
+    expect(cleanCommunityPostBody("", "Empty post")).toBe("");
   });
 
   it("fails closed when reconciled contacts reuse an email", () => {

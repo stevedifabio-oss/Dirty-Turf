@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { AcademyEvent, AppNotification, CommunityComment, CommunityPost, Course, Job, LessonQuiz, Member, NotificationPreferences } from "../domain";
 import { NATIVE_AUTH_REDIRECT, parseNativeAuthRedirect } from "./authRedirect";
 import { communityMediaStoragePaths, normalizeCommunityMediaItems } from "./communityMedia";
+import { cleanCommunityPostBody } from "./communityPost";
 import { clampProgress, combinedCourseProgress } from "./courseProgress";
 import { memberMagicLinkOptions, normalizeLoginEmail } from "./memberAuth";
 
@@ -423,7 +424,7 @@ export async function loadPosts(seed: CommunityPost[]): Promise<CommunityPost[]>
       cloudId: row.id,
       name: row.title,
       author: row.author_name,
-      body: row.body,
+      body: cleanCommunityPostBody(row.body, row.title) || row.title,
       replies: Number(row.reply_count),
       age: relativeDate(row.created_at),
       category: row.category_name,
