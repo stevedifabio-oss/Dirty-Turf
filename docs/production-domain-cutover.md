@@ -17,6 +17,9 @@ custom callback rather than the web origin.
 - Supabase allows `https://app.dirtyturf.com/**` as an Auth redirect.
 - Supabase Site URL remains the working Netlify pilot origin until DNS and TLS
   are healthy.
+- Supabase Edge Functions already allow both the production and pilot web
+  origins. Invitation redirects allow the pilot origin and the native callback;
+  `APP_URL` intentionally remains the pilot origin until TLS is healthy.
 - Netlify has the custom subdomain staged but requires external DNS ownership
   verification.
 - Public DNS has no `app.dirtyturf.com` record yet.
