@@ -240,7 +240,8 @@ def build_pdf():
     pdf.new_page("Gate 1", "Email and production identity", "Verify the sender, set exact URLs, and create the two accounts needed for migration proof")
     pdf.timeline("STEP 1", "Verify the Resend sender", "Dirty Turf owner")
     pdf.checklist([
-        "[ ] In Resend, add a dedicated sending subdomain such as updates.dirtyturf.com and publish every DNS record it provides.",
+        "[x] Resend sending domain updates.dirtyturf.com is created and its DKIM/SPF records are ready.",
+        "[ ] Sign in to the Cloudflare account that owns dirtyturf.com. The current Cloudflare login has no domains. Publish every Resend TXT/CNAME record as DNS-only.",
         "[ ] Wait for Resend to show the domain as verified. Send one authenticated test email from a Dirty Turf address to a separate inbox and confirm it reaches the inbox, not spam.",
         "[ ] Configure Supabase Auth custom SMTP with Resend. Use the verified Dirty Turf sender, not onboarding@resend.dev.",
         "[ ] Send a Supabase Magic Link to the owner and test member. Confirm both cold-start web redirect and com.dirtyturf.academy://auth/callback on a phone.",
