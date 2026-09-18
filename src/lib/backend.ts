@@ -2,6 +2,7 @@ import { Capacitor } from "@capacitor/core";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { AcademyEvent, AppNotification, CommunityComment, CommunityPost, Course, Job, LessonQuiz, Member, NotificationPreferences } from "../domain";
 import { NATIVE_AUTH_REDIRECT, parseNativeAuthRedirect } from "./authRedirect";
+import { communityMediaStoragePaths, normalizeCommunityMediaItems } from "./communityMedia";
 import { clampProgress, combinedCourseProgress } from "./courseProgress";
 import { memberMagicLinkOptions, normalizeLoginEmail } from "./memberAuth";
 
@@ -403,22 +404,37 @@ export async function loadPosts(seed: CommunityPost[]): Promise<CommunityPost[]>
     : [{ data: [] }, { data: [] }];
   const liked = new Set((reactionResult.data ?? []).map((row) => row.post_id));
   const saved = new Set((bookmarkResult.data ?? []).map((row) => row.post_id));
+  const mediaPaths = [...new Set((data ?? []).flatMap((row) => communityMediaStoragePaths(row.media)))];
+  const signedByPath = new Map<string, string>();
+  if (mediaPaths.length) {
+    const { data: signedRows, error: signedError } = await supabase!.storage
+      .from("academy-assets")
+      .createSignedUrls(mediaPaths, 60 * 60);
+    if (signedError) throw signedError;
+    for (const asset of signedRows ?? []) {
+      if (asset.path && asset.signedUrl) signedByPath.set(asset.path, asset.signedUrl);
+    }
+  }
 
-  return (data ?? []).map((row) => ({
-    id: stableNumericId(row.id),
-    cloudId: row.id,
-    name: row.title,
-    author: row.author_name,
-    body: row.body,
-    replies: Number(row.reply_count),
-    age: relativeDate(row.created_at),
-    category: row.category_name,
-    likes: Number(row.like_count),
-    liked: liked.has(row.id),
-    saved: saved.has(row.id),
-    pinned: Boolean(row.is_pinned),
-    media: Array.isArray(row.media) && row.media.length ? "photo" : undefined,
-  }));
+  return (data ?? []).map((row) => {
+    const mediaItems = normalizeCommunityMediaItems(row.media, signedByPath);
+    return {
+      id: stableNumericId(row.id),
+      cloudId: row.id,
+      name: row.title,
+      author: row.author_name,
+      body: row.body,
+      replies: Number(row.reply_count),
+      age: relativeDate(row.created_at),
+      category: row.category_name,
+      likes: Number(row.like_count),
+      liked: liked.has(row.id),
+      saved: saved.has(row.id),
+      pinned: Boolean(row.is_pinned),
+      media: mediaItems.some((item) => item.kind === "image" || item.kind === "video") ? "photo" : undefined,
+      mediaItems,
+    } satisfies CommunityPost;
+  });
 }
 
 export async function savePost(post: CommunityPost): Promise<CommunityPost> {
@@ -530,6 +546,7 @@ export async function loadCourses(seed: Course[]): Promise<Course[]> {
   if (lessonError) throw lessonError;
 
   const lessonIds = (lessonRows ?? []).map((row) => row.id);
+  const signedLessonAssets = await loadSignedLessonAssets(lessonIds).catch(() => new Map<string, Map<string, string>>());
   const { data: progressRows, error: progressError } = lessonIds.length
     ? await supabase!
         .from("academy_member_lesson_progress")
@@ -563,10 +580,10 @@ export async function loadCourses(seed: Course[]): Promise<Course[]> {
         type: lesson.lesson_type as "video" | "guide" | "quiz",
         completed: Boolean(progress.get(lesson.id)?.completed_at),
         body: normalizeLessonBody(lesson.body),
-        bodyHtml: normalizeLessonHtml(lesson.body),
+        bodyHtml: normalizeLessonHtml(lesson.body, signedLessonAssets.get(lesson.id)),
         videoUrl: lesson.video_url ?? undefined,
         transcript: lesson.transcript ?? undefined,
-        resources: normalizeResources(lesson.resources),
+        resources: normalizeResources(lesson.resources, signedLessonAssets.get(lesson.id)),
         quiz: normalizeQuiz(lesson.body),
       })),
     }));
@@ -590,6 +607,36 @@ export async function loadCourses(seed: Course[]): Promise<Course[]> {
       requiredLevel: course.required_level ?? undefined,
     };
   });
+}
+
+async function loadSignedLessonAssets(lessonIds: string[]) {
+  const urlsByLesson = new Map<string, Map<string, string>>();
+  if (!supabase || !lessonIds.length) return urlsByLesson;
+
+  const { data: assetRows, error: assetError } = await supabase
+    .from("academy_assets")
+    .select("lesson_id,original_url,storage_path")
+    .in("lesson_id", lessonIds)
+    .not("storage_path", "is", null);
+  if (assetError) throw assetError;
+
+  const paths = [...new Set((assetRows ?? []).flatMap((asset) => asset.storage_path ? [asset.storage_path] : []))];
+  if (!paths.length) return urlsByLesson;
+  const { data: signedRows, error: signedError } = await supabase.storage
+    .from("academy-assets")
+    .createSignedUrls(paths, 60 * 60);
+  if (signedError) throw signedError;
+  const signedByPath = new Map((signedRows ?? []).flatMap((asset) => asset.signedUrl ? [[asset.path, asset.signedUrl] as const] : []));
+
+  for (const asset of assetRows ?? []) {
+    if (!asset.lesson_id || !asset.original_url || !asset.storage_path) continue;
+    const signedUrl = signedByPath.get(asset.storage_path);
+    if (!signedUrl) continue;
+    const lessonUrls = urlsByLesson.get(asset.lesson_id) ?? new Map<string, string>();
+    lessonUrls.set(asset.original_url, signedUrl);
+    urlsByLesson.set(asset.lesson_id, lessonUrls);
+  }
+  return urlsByLesson;
 }
 
 export async function saveLessonCompletion(lessonCloudId: string, completed: boolean) {
@@ -882,13 +929,21 @@ function normalizeLessonBody(value: unknown) {
   return "";
 }
 
-function normalizeLessonHtml(value: unknown) {
+function normalizeLessonHtml(value: unknown, assetUrls?: Map<string, string>) {
   if (!value || typeof value !== "object") return undefined;
   const html = (value as Record<string, unknown>).html;
-  return typeof html === "string" && html.trim() ? html : undefined;
+  if (typeof html !== "string" || !html.trim()) return undefined;
+  if (!assetUrls?.size) return html;
+  const documentNode = new DOMParser().parseFromString(html, "text/html");
+  for (const node of documentNode.querySelectorAll<HTMLElement>("[src]")) {
+    const source = node.getAttribute("src");
+    const signedUrl = source ? assetUrls.get(source) : undefined;
+    if (signedUrl) node.setAttribute("src", signedUrl);
+  }
+  return documentNode.body.innerHTML;
 }
 
-function normalizeResources(value: unknown): { title: string; url: string; type?: string }[] {
+function normalizeResources(value: unknown, assetUrls?: Map<string, string>): { title: string; url: string; type?: string }[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
     if (!item || typeof item !== "object") return [];
@@ -896,7 +951,7 @@ function normalizeResources(value: unknown): { title: string; url: string; type?
     if (typeof resource.url !== "string") return [];
     return [{
       title: typeof resource.title === "string" ? resource.title : "Lesson resource",
-      url: resource.url,
+      url: assetUrls?.get(resource.url) ?? resource.url,
       type: typeof resource.type === "string" ? resource.type : undefined,
     }];
   });

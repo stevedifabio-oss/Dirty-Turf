@@ -17,6 +17,21 @@ export function normalizeEmail(value) {
   return String(value ?? "").trim().toLowerCase();
 }
 
+export function isCommunityPostMediaUrl(value) {
+  try {
+    const url = new URL(String(value ?? "").trim());
+    if (!new Set(["http:", "https:"]).has(url.protocol)) return false;
+    if (url.hostname === "assetsdrm.clientclub.net" && (
+      (url.pathname.includes("/images/client-portal/") && url.pathname.includes("/users/"))
+      || url.pathname.includes("/profile-avatars/")
+    )) return false;
+    if (url.hostname === "academy.dirtyturf.com" && url.pathname.startsWith("/communities/users/")) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function parseSourceDateTime(value, offsetMinutes = -300) {
   const match = String(value ?? "").trim().match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})\s+(AM|PM)$/i);
   if (!match) return undefined;
@@ -277,7 +292,7 @@ export function composeAcademyImport({ courseArchive, communityArchive, contactR
     if (!membersById.has(authorExternalId)) errors.push(`Post ${externalId} references unknown member ${authorExternalId || "<missing>"}`);
     const categoryExternalId = categoryByName.get(normalizeChannelName(rawPost.channel));
     if (!categoryExternalId) errors.push(`Post ${externalId} references an unknown channel`);
-    const media = (rawPost.assets ?? []).filter((url) => /^https?:\/\//i.test(String(url))).map((url) => ({ type: "source-asset", url }));
+    const media = (rawPost.assets ?? []).filter(isCommunityPostMediaUrl).map((url) => ({ type: "source-asset", url }));
     posts.push({
       externalId,
       authorExternalId,

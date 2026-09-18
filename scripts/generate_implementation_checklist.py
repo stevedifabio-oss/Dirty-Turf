@@ -219,28 +219,27 @@ def build_pdf():
         "Every current Academy member can request a Magic Link, reach the content they already own, use the community and field tools, and reopen saved work on another device. The desktop web app, mobile web/PWA, and signed iOS and Android builds all pass their production paths."
     )
     col_w = (PAGE_W - 2 * MARGIN - 12) / 2
-    y1 = pdf.card("BACKEND LIVE", "Fifteen migrations and nine Edge Functions are active. Notification delivery is safely paused until Mailgun secrets are added.", GREEN, col_w, 82, MARGIN)
-    pdf.card("ARCHIVE VERIFIED", "60 login members, 49 enrollments, 109 published lessons, 19 drafts, community data, and assets reconcile to GHL.", LIME, col_w, 82, MARGIN + col_w + 12)
+    y1 = pdf.card("BACKEND LIVE", "Eighteen migrations, 53 RLS tables, and nine Edge Functions are active. Email delivery remains safely paused for Mailgun.", GREEN, col_w, 82, MARGIN)
+    pdf.card("ACADEMY IMPORTED", "60 login accounts, 49 linked enrollments, 128 lessons, community history, events, and private media are in Supabase.", LIME, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y1 - 14
-    y2 = pdf.card("APP VERIFIED", "Sixty-five tests, responsive app QA at 320/390/768/1440, PWA checks, Android APK/AAB, and an iOS Release simulator build all pass.", ORANGE, col_w, 82, MARGIN)
-    pdf.card("RELEASE CANDIDATE", "PR #2 CI and Netlify deploy status pass. Production remains gated on identity, import, billing, and physical-device proof.", GREEN_DARK, col_w, 82, MARGIN + col_w + 12)
+    y2 = pdf.card("APP VERIFIED", "Seventy tests, responsive web QA, private media, PWA checks, Android APK/AAB, and an iOS simulator build all pass.", ORANGE, col_w, 82, MARGIN)
+    pdf.card("RELEASE CANDIDATE", "Web, iOS, and Android contain the same verified bundle. GHL stays live until the remaining client gates pass.", GREEN_DARK, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y2 - 18
     pdf.section("Completed and removed from this checklist")
     pdf.checklist([
-        "[x] Fifteen Supabase migrations, 53-table RLS audit, access/notification indexes, security hardening, and nine Edge Function deployments are complete.",
-        "[x] GHL course, lesson, member, enrollment, community, event, and asset capture is complete and exact-count verified.",
-        "[x] Google Play developer identity, website, and phone verification are complete.",
-        "[x] Apple App ID/App Store Connect and Google Play app records exist for com.dirtyturf.academy; the Play package is reserved and Play App Signing is accepted.",
-        "[x] The Apple renewal card is added. The branded iOS Release build installs and opens in the iPhone 17 simulator; Android debug APK and release AAB builds pass.",
-        "[x] Desktop web, mobile/PWA, calculator, map-area math, native wrappers, importer, billing logic, legal pages, and deletion workflow are built. Store metadata, permissions, and the opaque 1024px icon are machine-checked.",
-        "[x] The source access audit proves 60 unique login emails, 49 linked enrollments, zero duplicate login emails, and all enrolled members login-ready.",
+        "[x] Eighteen Supabase migrations, 53-table RLS audit, access/notification indexes, security hardening, and nine Edge Function deployments are complete.",
+        "[x] The GHL archive was composed into 28 bounded batches; dry run, commit, and idempotent repeat all passed in production.",
+        "[x] Sixty unique member accounts were silently provisioned and all 49 enrollments are linked. No customer email was sent.",
+        "[x] One course, 21 modules, 128 lessons, 137 course asset rows, 62 posts, 59 comments, 5 events, 7 real post images, and 4 external resources are live.",
+        "[x] Google Play identity/phone/website verification, Apple and Play app records, Apple renewal billing, package reservation, and Play App Signing enrollment are complete.",
+        "[x] Desktop, PWA, calculator, map math, native wrappers, importer, billing, legal/deletion flows, private signed media, store metadata, permissions, icons, Android builds, and iOS simulator build pass.",
         "[x] In-app notifications, unread state, replies, mentions, post/comment likes, granular email preferences, branded Mailgun templates, retries, deep links, and signed unsubscribe are built.",
     ], compact=True)
-    pdf.section("Six remaining gates")
-    pdf.paragraph("1. Email and owner identity.  2. Academy import and member access.  3. Stripe test proof.  4. GitHub and Netlify production release.  5. Real-device AR and signed store builds.  6. Controlled GHL cutover.", width_chars=94, size=8.6, leading=11)
+    pdf.section("Five remaining client gates")
+    pdf.paragraph("1. DNS, TLS, and Mailgun delivery.  2. Real-member Magic Link pilot.  3. Stripe test proof.  4. Physical-device and store release proof.  5. Controlled GHL delta and cutover.", width_chars=94, size=8.6, leading=11)
     pdf.gate("Keep HighLevel live until member login, content access, production smoke tests, real-device measurement, and rollback evidence all pass.")
 
-    pdf.new_page("Gate 1", "Mailgun and production identity", "Activate app.dirtyturf.com, verify Auth mail, and create the two accounts needed for migration proof")
+    pdf.new_page("Gate 1", "Mailgun and production identity", "Activate app.dirtyturf.com and verify Auth and community email with the existing Mailgun account")
     pdf.timeline("STEP 1", "Configure the existing Mailgun sender", "Dirty Turf owner")
     pdf.checklist([
         "[!] Dirty Turf already uses Mailgun. Add its existing verified domain, SMTP host, username, and password to Supabase; do not create another mail provider account.",
@@ -248,7 +247,7 @@ def build_pdf():
         "[ ] Configure Supabase Auth custom SMTP with Mailgun. Use smtp.mailgun.org and port 587 unless the account shows an EU-region host.",
         "[ ] Add MAILGUN_API_KEY, MAILGUN_DOMAIN, MAILGUN_FROM_EMAIL, MAILGUN_FROM_NAME, MAILGUN_REGION, APP_URL, and two different generated notification secrets to Supabase Edge Function secrets.",
         "[ ] Disable Mailgun click tracking for authentication mail so Magic Link URLs are not rewritten.",
-        "[ ] Send a Supabase Magic Link to the owner and test member. Confirm both cold-start web redirect and com.dirtyturf.academy://auth/callback on a physical phone.",
+        "[ ] Send a Supabase Magic Link to the owner and one existing pilot member. Confirm both cold-start web redirect and com.dirtyturf.academy://auth/callback on a physical phone.",
         "[ ] Send every community template to one internal recipient. Verify sender, layout, direct link, no duplicate on retry, category opt-out, and signed unsubscribe before enabling Cron.",
         "[ ] Store the project URL and dispatch secret in Supabase Vault, then enable the documented five-minute academy-notification-dispatch Cron job.",
         "[ ] Revoke the unused Resend API key shared in chat after Mailgun delivery passes. Keep Mailgun SMTP credentials only in Supabase's encrypted settings.",
@@ -258,8 +257,8 @@ def build_pdf():
         "[x] Lock the permanent web origin as https://app.dirtyturf.com and add it to the Supabase Auth redirect allowlist.",
         "[!] Netlify is waiting for TXT subdomain-owner-verification = a274de0c635882497aea3cc2e0df6f49 in the Cloudflare account that owns dirtyturf.com. Then point app to bright-brigadeiros-df8b48.netlify.app and wait for TLS.",
         "[ ] Once HTTPS passes, set app.dirtyturf.com as the Supabase Site URL, APP_URL, allowed origin, and web Magic Link target; preserve the native callback.",
-        "[ ] Create one permanent Dirty Turf owner in Supabase Auth and one normal test member. Confirm the auth trigger creates the owner profile, organization, and owner membership.",
-        "[ ] Record the owner organization UUID; this is the only missing value required by the private Academy import manifest.",
+        "[x] The permanent Dirty Turf owner, owner profile, organization, membership, and Academy administrator access exist in Supabase.",
+        "[x] The owner organization UUID is recorded in the ignored private import package and the production import is complete.",
         "[!] Privacy, support, deletion instructions, and the signed-in deletion workflow are built; confirm all three public routes on app.dirtyturf.com after TLS.",
         "[ ] Record a client owner and recovery owner with MFA for Supabase, Mailgun, GitHub, Netlify, Stripe, Apple, Google Play, GHL, and DNS.",
     ], compact=True)
@@ -267,29 +266,29 @@ def build_pdf():
     pdf.command("BROWSER-SAFE: VITE_SUPABASE_URL, publishable key, public Payment Link\nSERVER-ONLY: service-role key, GHL token, Mailgun SMTP/API values, notification signing/dispatch secrets, Stripe secrets")
     pdf.gate("Do not invite members until a real Supabase Magic Link delivers from the verified Dirty Turf sender and both web and native redirects work.")
 
-    pdf.new_page("Gate 2", "Import and guarantee member access", "Load the verified archive, provision every account silently, then pilot Magic Links")
-    pdf.timeline("STEP 3", "Dry run and import", "Migration owner")
+    pdf.new_page("Gate 2", "Guarantee member access", "The archive and accounts are live; finish delivery and real-member acceptance before notification")
+    pdf.timeline("STEP 3", "Production import proof", "Migration owner")
     pdf.checklist([
-        "[!] Production Auth and Academy tables are currently empty. After owner sign-in, add the new owner organization UUID to the ignored private import manifest.",
+        "[x] Production contains 60 Auth users, 61 Academy member rows, 49 enrollments, 1 course, 21 modules, 128 lessons, 62 posts, 59 comments, and 5 events.",
         "[x] Run npm run academy:access-audit: 60 unique login emails, 49 enrolled members, zero duplicates, and allEnrolledCanLogin:true.",
-        "[ ] Call academy-import with commit:false. Match every count to the verified archive before allowing writes.",
-        "[ ] Call academy-import with commit:true once, then repeat it and prove provider IDs make the import idempotent.",
-        "[ ] Open representative lessons, drafts, quizzes, posts, comments, events, member profiles, assets, and enrollment states in both GHL and the app.",
-        "[ ] Confirm the normal test member cannot run an import, read another company, or fetch a private Academy asset without authorization.",
+        "[x] All 28 academy-import batches passed commit:false, commit:true, and an idempotent repeat with provider IDs and source ledgers intact.",
+        "[x] Representative lessons, progress, posts, comments, events, private course media, and private post images render in the authenticated app.",
+        "[x] Import and private-media policies require authenticated Academy administration or active Academy membership.",
+        "[!] The extra 61st source row is a historical author with no email and no enrollment. It is preserved for authorship and intentionally cannot be invited.",
     ], compact=True)
     pdf.timeline("STEP 4", "Provision all member accounts", "Access owner")
     pdf.checklist([
-        "[ ] Run the invite/provision preview. Require all 60 current login-eligible members ready and all 49 enrollments linked.",
-        "[ ] Provision all 60 accounts without sending mail. Preserve imported access grants; passwords do not migrate.",
-        "[ ] Prove an imported member can request a Magic Link and an unknown email cannot create Academy access.",
+        "[x] Invite/provision preview and post-import audit report all 60 login-eligible members ready and all 49 enrollments linked.",
+        "[x] All 60 accounts were provisioned without sending mail. Imported access grants are durable; passwords were not migrated.",
+        "[ ] After Mailgun is active, prove an imported member can request a Magic Link and an unknown email cannot create Academy access.",
         "[ ] Pilot Magic Links with 3-5 members across iPhone, Android, and web. Check delivery, cold start, expiration, reuse, logout, and second-device login.",
         "[ ] After the pilot passes, notify the remaining members in batches of no more than 25 and monitor delivery failures.",
-        "[ ] Queue the welcome/community email only after all 60 accounts pass the access audit. Imported historical posts and lessons must not generate old-content email.",
+        "[x] Imported historical posts and lessons did not generate old-content email; delivery remains paused until the pilot.",
         "[ ] Confirm owner, admin, moderator, active, cancelled, suspended, and unassigned access behavior before broad notification.",
     ], compact=True)
     pdf.section("Exact sequence")
     pdf.command(
-        "owner org UUID -> access audit -> import dry run -> commit -> repeat\npreview accounts -> provision silently -> 3-5 pilot links -> batches <= 25"
+        "COMPLETE: owner -> audit -> dry run -> commit -> repeat -> provision silently\nREMAINING: Mailgun -> 3-5 pilot links -> notify in batches <= 25"
     )
     pdf.gate("Do not send all 60 links at once. A silent account import plus a small delivery pilot protects members from lockouts and duplicate invitations.")
 
@@ -306,12 +305,12 @@ def build_pdf():
     ], compact=True)
     pdf.timeline("STEP 6", "Merge and prove production", "Release owner")
     pdf.checklist([
-        "[x] Publish the exact tested tree to GitHub PR #2, review the complete diff, and pass the repository credential-pattern scan.",
-        "[x] GitHub CI and the Netlify deploy-preview status pass on PR #2's current head; recheck both immediately before merge.",
+        "[x] GitHub PR #2 and its Netlify preview exist; the final tree passes the repository credential-pattern scan and complete local gate.",
+        "[!] Recheck GitHub CI and the Netlify deploy-preview status on the final pushed head immediately before merge.",
         "[x] Team-authenticated preview smoke confirms the login shell, production canonical metadata, Mailgun disclosure, and public legal routes with no console errors.",
         "[ ] Finish app.dirtyturf.com ownership, CNAME, and TLS. Run npm run release:domain, then the production release:smoke gate; keep secrets server-side.",
-        "[x] Verify the local release candidate at 320, 390, and 1440 pixels with no horizontal overflow or console errors; smoke all six public routes.",
-        "[ ] Verify preview auth, deep links, Academy, community, events, private assets, progress, headers, and network logs with the real test member.",
+        "[x] Verify the local release candidate at desktop, 390px iPhone, and 412px Android widths with no horizontal overflow; private one- and five-image community posts load correctly.",
+        "[ ] Verify preview auth, deep links, Academy, community, events, private assets, progress, headers, and network logs with an existing pilot member.",
         "[x] Notification-center QA passes at 390 and 1440 pixels with zero overflow, no console errors, working mark-all, mentions, nested replies, and settings toggles.",
         "[ ] Merge PR #2 to main, wait for Netlify production, and repeat the authenticated golden path on the deployed URL.",
         "[ ] Run npm run release:preflight -- --check-domain. Record commit SHA, deploy ID, function versions, test account, rollback owner, and result.",
@@ -329,9 +328,9 @@ def build_pdf():
     ], compact=True)
     pdf.timeline("STEP 8", "Create signed test releases", "Store owner")
     pdf.checklist([
-        "[x] Build Android debug APK/release AAB and an iOS Release simulator app from the same verified web bundle; all six packaged entry documents have the same SHA-256 hash.",
+        "[x] Build Android debug APK, unsigned release AAB, and an iOS simulator app from the same verified web bundle; all six entry documents match SHA-256 a66bf220f19bdf5b....",
         "[!] Apple App ID and App Store Connect record 6813588770 exist. Archive reaches signing, but Apple reports no registered physical device/profile. Connect the client iPhone once, complete EU trader compliance, then archive and upload to TestFlight.",
-        "[!] Google Play app record 4973615558687213779 exists, the package is reserved, and Play App Signing is accepted. Confirm client upload-key ownership, sign the AAB, and publish to Internal testing.",
+        "[!] Google Play app record 4973615558687213779 exists, the package is reserved, and Play App Signing is accepted. Create or recover the client upload key, configure the four local signing variables, sign the AAB, and publish to Internal testing.",
         "[x] Prepare and machine-check store name, platform-specific short copy, description, category, privacy/data-safety answers, URLs, reviewer notes, screenshot plan, and consumption-only billing guidance.",
         "[ ] Enter the prepared metadata, screenshots, reviewer login, content rating, privacy answers, and deletion URL in both store records.",
         "[ ] Test install, update, deep link, Magic Link, logout, expired/reused links, camera, location, photos, map, lessons, community, and notifications on store builds.",
@@ -362,7 +361,7 @@ def build_pdf():
     pdf.signoff_row("TestFlight / Play Internal acceptance")
     pdf.signoff_row("GHL delta, backup, and rollback")
     pdf.section("Simple next actions")
-    pdf.paragraph("1. Publish Netlify DNS.  2. Add Mailgun SMTP/API values and test one recipient.  3. Create owner and test member.  4. Import and provision.  5. Prove Stripe.  6. Merge and smoke production.  7. Test real phones.  8. Upload signed builds.  9. Pilot, notify, and cut over.", width_chars=94, size=8.4, leading=11)
+    pdf.paragraph("1. Publish Netlify DNS.  2. Add Mailgun SMTP/API values and test one recipient.  3. Pilot 3-5 existing members.  4. Prove Stripe.  5. Merge and smoke production.  6. Test real phones.  7. Upload signed builds.  8. Run the final GHL delta, notify, and cut over.", width_chars=94, size=8.4, leading=11)
     pdf.gate("Launch only after every sign-off passes. Until then, keep HighLevel available and label the new app as a controlled pilot.")
 
     pdf.finish()

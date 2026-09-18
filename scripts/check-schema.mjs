@@ -24,6 +24,9 @@ const deletionSql = migration("20260918150000_account_deletion_requests.sql");
 const notificationSql = migration("20260918154500_academy_notification_delivery.sql");
 const accessPathSql = migration("20260918155500_optimize_member_access_paths.sql");
 const notificationPathSql = migration("20260918161500_optimize_notification_paths.sql");
+const foreignKeyPathSql = migration("20260918172137_cover_remaining_foreign_keys.sql");
+const academyStorageManagerSql = migration("20260918173500_allow_academy_managers_to_read_storage.sql");
+const academyStoragePathSql = migration("20260918174000_fix_academy_storage_admin_paths.sql");
 
 requireFragments(academySql, "schema", [
   "create table public.academy_communities",
@@ -156,6 +159,28 @@ requireFragments(notificationPathSql, "notification path optimization", [
   "academy_content_mentions_recipient_idx",
 ]);
 
+requireFragments(foreignKeyPathSql, "foreign key path optimization", [
+  "constraint_row.contype = 'f'",
+  "namespace.nspname = 'public'",
+  "existing_index.indisvalid",
+  "create index if not exists",
+]);
+
+requireFragments(academyStorageManagerSql, "Academy storage manager access", [
+  "create policy \"academy_storage_admin_read\" on storage.objects",
+  "bucket_id = 'academy-assets'",
+  "private.can_manage_academy(c.id)",
+]);
+
+requireFragments(academyStoragePathSql, "Academy storage policy paths", [
+  "drop policy if exists \"academy_storage_admin_insert\" on storage.objects",
+  "storage.foldername(storage.objects.name)",
+  "create policy \"academy_storage_admin_read\" on storage.objects",
+  "create policy \"academy_storage_admin_insert\" on storage.objects",
+  "create policy \"academy_storage_admin_update\" on storage.objects",
+  "create policy \"academy_storage_admin_delete\" on storage.objects",
+]);
+
 requireFragments(allSql, "security hardening", [
   "revoke all on all tables in schema public from anon;",
   "revoke execute on all functions in schema public from public, anon;",
@@ -163,6 +188,7 @@ requireFragments(allSql, "security hardening", [
 ]);
 
 for (const [file, fragments] of [
+  ["supabase/functions/academy-import/index.ts", ["existingAsset?.storage_bucket", "existingAsset?.storage_path", "existingAsset?.content_hash", "preserveImportedPostMedia", ".select(\"id,media\")", "storage_bucket", "storage_path"]],
   ["supabase/functions/ghl-webhook/index.ts", ["x-ghl-signature", "MAX_WEBHOOK_BYTES"]],
   ["supabase/functions/ghl-status/index.ts", ["handlePreflight(request, \"GET, OPTIONS\")", "Administrator access required"]],
   ["supabase/functions/academy-notifications/index.ts", ["x-notification-secret", "claim_academy_email_deliveries", "NOTIFICATION_SIGNING_SECRET", "List-Unsubscribe=One-Click", "MAILGUN_API_KEY"]],

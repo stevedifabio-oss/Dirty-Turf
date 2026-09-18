@@ -27,6 +27,7 @@
     "release:preflight": "node scripts/release-preflight.mjs",
     "academy:reconcile": "node scripts/reconcile-ghl-community.mjs",
     "academy:compose": "node scripts/compose-academy-import.mjs",
+    "academy:batches": "node scripts/prepare-academy-import-batches.mjs",
     "academy:validate": "node scripts/validate-academy-import.mjs",
     "academy:access-audit": "node scripts/audit-academy-access.mjs --expect-members 60 --expect-enrolled 49",
     "check": "npm run security:secrets && npm run schema:check && npm run store:check && npm run typecheck && npm run test && npm run build && npm run pwa:check",

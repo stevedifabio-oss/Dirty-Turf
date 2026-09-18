@@ -15,9 +15,12 @@ preview is evidence for compilation and layout, not production acceptance.
 3. Verify custom SMTP and both web and native Magic Link redirects. Deploy the
    notification function, send to one internal recipient, verify direct links
    and unsubscribe, then enable its five-minute Cron schedule.
-4. Create the permanent owner and normal test member.
-5. Run the source access audit, import dry run, one commit, and an idempotent
-   repeat. Provision all current members without sending email.
+4. The permanent owner, organization, Academy community, and all 60 login
+   accounts are created. The owner and an existing pilot member still need a
+   real Mailgun-delivered Magic Link before release.
+5. The source access audit and all 28 generated batches passed dry run,
+   commit, and an idempotent repeat. All current members were provisioned
+   without sending email, and all 49 enrollments are login-ready.
 6. Prove Stripe in test mode, including webhook replay and cancellation grant
    precedence.
 7. Publish the PR preview and run the complete smoke, responsive, and
@@ -99,11 +102,11 @@ member emails, private tokens, or reviewer credentials in this repository.
 | Git commit SHA | Record the immutable merge SHA at release |
 | GitHub PR and successful run | `stevedifabio-oss/Dirty-Turf#2`; require the latest head to pass immediately before merge |
 | Netlify deploy ID and URL | Preview is ready at `https://deploy-preview-2--bright-brigadeiros-df8b48.netlify.app`; record the production deploy after merge |
-| Supabase migrations | 15 applied / 53 public RLS-protected tables; recheck at production release |
-| Supabase Edge Function versions | Nine active: health/academy import/invite/checkout/portal/webhook at v3; GHL status/webhook and Academy notifications at v1; recheck at production release |
-| Source archive SHA-256 | `0e1f53311b4635a7ed2969ff5bf6e2b038781eeb3126a958e3aaea82633f1aee` |
-| Local automated gate | Record current test count, typecheck, build, PWA, schema, and secret scan result |
-| Native candidate proof | Android debug APK/release AAB and iOS Release simulator launch passed; all six embedded entry documents match SHA-256 `8b6ac3e46dc62337beb2bf5c38a06193a5e989b59e9d755960d3bbfcddf84d59` |
+| Supabase migrations | 18 applied / 53 public RLS-protected tables; recheck at production release |
+| Supabase Edge Function versions | Nine active: `academy-import` v5; health/invite/checkout/portal/Stripe webhook v3; GHL status/webhook and Academy notifications v1 |
+| Source archive SHA-256 | `e919ba8701b532ca3c8e4b63fa6612a87f621bd27c7ce33e9c6e8397c9d4a4f7` |
+| Local automated gate | 70 tests, typecheck, production build, PWA, schema, store metadata, and secret scan pass |
+| Native candidate proof | Android debug APK/release AAB and iOS simulator build pass; all six embedded entry documents match SHA-256 `a66bf220f19bdf5bf3f00be90a6f1695d14c24e2ec8da6419f5695102c10fcc5` |
 | Smoke-test account owner | Client vault only |
 | iPhone model / OS / AR error | Pending physical test |
 | Android model / OS / AR error | Pending physical test |

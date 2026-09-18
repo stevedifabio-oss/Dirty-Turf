@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { composeAcademyImport, parseCommunityEvent, parseRelativeTimestamp } from "./academy-import.mjs";
+import { composeAcademyImport, isCommunityPostMediaUrl, parseCommunityEvent, parseRelativeTimestamp } from "./academy-import.mjs";
 
 const capturedAt = "2026-09-17T17:00:00.000Z";
 
@@ -69,6 +69,15 @@ describe("Academy import composition", () => {
     const first = composeAcademyImport(fixture());
     const second = composeAcademyImport(fixture());
     expect(JSON.stringify(first)).toBe(JSON.stringify(second));
+  });
+
+  it("keeps shared post media while excluding HighLevel avatars and profile links", () => {
+    expect(isCommunityPostMediaUrl("https://assetsdrm.clientclub.net/images/communities/location/group/posts/photo.jpeg")).toBe(true);
+    expect(isCommunityPostMediaUrl("https://www.instagram.com/reel/example")).toBe(true);
+    expect(isCommunityPostMediaUrl("https://assetsdrm.clientclub.net/images/client-portal/location/users/member-id")).toBe(false);
+    expect(isCommunityPostMediaUrl("https://assetsdrm.clientclub.net/images/communities/location/profile-avatars/3.webp")).toBe(false);
+    expect(isCommunityPostMediaUrl("https://academy.dirtyturf.com/communities/users/member-name")).toBe(false);
+    expect(isCommunityPostMediaUrl("javascript:alert(1)")).toBe(false);
   });
 
   it("fails closed when reconciled contacts reuse an email", () => {

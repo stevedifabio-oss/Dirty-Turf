@@ -485,7 +485,7 @@ async function importContent(admin: SupabaseClient, manifest: ImportManifest, co
   for (const item of manifest.posts ?? []) {
     const authorId = members.get(item.authorExternalId);
     if (!authorId) throw new Error(`Post ${item.externalId} references unknown author ${item.authorExternalId}`);
-    let post = await maybeSingle(admin.from("community_posts").select("id")
+    let post = await maybeSingle(admin.from("community_posts").select("id,media")
       .eq("academy_community_id", communityId).eq("source_provider", "highlevel").eq("external_id", item.externalId));
     const postValues = {
       organization_id: organizationId,
@@ -496,7 +496,7 @@ async function importContent(admin: SupabaseClient, manifest: ImportManifest, co
       title: item.title,
       body: item.body,
       is_pinned: item.pinned ?? false,
-      media: item.media ?? [],
+      media: preserveImportedPostMedia(item.media ?? [], post?.media),
       status: "published",
       external_id: item.externalId,
       source_provider: "highlevel",
@@ -611,7 +611,7 @@ async function importContent(admin: SupabaseClient, manifest: ImportManifest, co
   for (const item of manifest.assets ?? []) {
     const courseId = item.courseExternalId ? courses.get(item.courseExternalId) : undefined;
     const lessonId = item.lessonExternalId ? lessons.get(item.lessonExternalId) : undefined;
-    const existingAsset = await maybeSingle(admin.from("academy_assets").select("id")
+    const existingAsset = await maybeSingle(admin.from("academy_assets").select("id,storage_bucket,storage_path,mime_type,byte_size,content_hash")
       .eq("academy_community_id", communityId).eq("source_provider", "highlevel").eq("external_id", item.externalId));
     const values = {
       academy_community_id: communityId,
@@ -619,12 +619,12 @@ async function importContent(admin: SupabaseClient, manifest: ImportManifest, co
       lesson_id: lessonId ?? null,
       title: item.title,
       asset_type: item.type,
-      storage_bucket: item.storagePath ? "academy-assets" : null,
-      storage_path: item.storagePath ?? null,
+      storage_bucket: item.storagePath ? "academy-assets" : existingAsset?.storage_bucket ?? null,
+      storage_path: item.storagePath ?? existingAsset?.storage_path ?? null,
       original_url: item.originalUrl ?? null,
-      mime_type: item.mimeType ?? null,
-      byte_size: item.byteSize ?? null,
-      content_hash: item.contentHash ?? null,
+      mime_type: item.mimeType ?? existingAsset?.mime_type ?? null,
+      byte_size: item.byteSize ?? existingAsset?.byte_size ?? null,
+      content_hash: item.contentHash ?? existingAsset?.content_hash ?? null,
       source_provider: "highlevel",
       external_id: item.externalId,
       metadata: item.metadata ?? {},
@@ -637,6 +637,27 @@ async function importContent(admin: SupabaseClient, manifest: ImportManifest, co
   }
 
   return { members, categories, courses, lessons, posts, comments, events };
+}
+
+function preserveImportedPostMedia(sourceMedia: Json[], existingMedia: unknown): Json[] {
+  if (!Array.isArray(existingMedia)) return sourceMedia;
+  const existingByUrl = new Map<string, Record<string, Json>>();
+  for (const item of existingMedia) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const record = item as Record<string, Json>;
+    if (typeof record.url === "string") existingByUrl.set(record.url, record);
+  }
+
+  return sourceMedia.map((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return item;
+    const next = { ...(item as Record<string, Json>) };
+    const existing = typeof next.url === "string" ? existingByUrl.get(next.url) : undefined;
+    if (!existing) return next;
+    for (const key of ["storage_bucket", "storage_path", "mime_type", "byte_size", "content_hash"] as const) {
+      if (existing[key] !== undefined) next[key] = existing[key];
+    }
+    return next;
+  });
 }
 
 async function resolveCommunity(admin: SupabaseClient, community: ImportManifest["community"]) {

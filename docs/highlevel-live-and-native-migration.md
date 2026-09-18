@@ -6,6 +6,19 @@ Dirty Turf will own Academy authentication, courses, lesson progress, community 
 
 This is a controlled migration, not a screen scrape directly into production. Every source record is written to an import ledger with its HighLevel ID, parent ID, timestamps, source URL, payload hash, and resulting native ID.
 
+## Production Migration Status
+
+The initial native Academy migration completed on September 18, 2026. The ignored source archive validates at SHA-256 `e919ba8701b532ca3c8e4b63fa6612a87f621bd27c7ce33e9c6e8397c9d4a4f7`. All 28 dependency-ordered batches passed dry run, commit, and an idempotent repeat.
+
+- 60 unique member emails were silently provisioned in Supabase Auth; no customer email was sent.
+- All 49 imported enrollments are linked to login-ready accounts.
+- One additional GHL member row is retained as a historical post author. It has no email or enrollment and is intentionally not provisioned.
+- The production Academy contains 1 course, 21 modules, 128 lessons, 137 asset records, 62 posts, 59 comments, and 5 events.
+- The private `academy-assets` bucket contains 117 deduplicated course objects plus 31 imported post objects. The live post records reference only the 7 real post images and preserve 4 external resources; 162 captured profile/avatar artifacts were removed from post media.
+- The owner account, owner organization, Academy community, source ledgers, storage policies, and server-side import/provisioning functions are live.
+
+HighLevel must remain available through the member pilot and final delta capture. Mailgun activation, `app.dirtyturf.com`, a real-member Magic Link pilot, and client approval are still cutover gates.
+
 ## What HighLevel Officially Exposes
 
 - The public Memberships API documents a course **import** endpoint but no supported course catalog export/read endpoint: <https://marketplace.gohighlevel.com/docs/2023-02-21/ghl/courses/import-courses/>
@@ -56,18 +69,20 @@ Move owned assets to the private `academy-assets` bucket. Keep third-party hoste
 1. Keep the authenticated course and community captures under ignored, client-controlled `output/private/` storage.
 2. Run `npm run academy:reconcile`. It resolves only the 60 captured member contact IDs and prints aggregate counts, never credentials or member PII.
 3. Run `npm run academy:compose`. It joins the course archive, community archive, contact reconciliation, enrollment roster, posts, comments, and events into `output/private/dirty-turf-academy-import.json`.
-4. Run `npm run academy:validate -- output/private/dirty-turf-academy-import.json`.
+4. Run `npm run academy:validate -- output/private/dirty-turf-academy-import.json` and `npm run academy:batches`. The batch composer writes dependency-aware requests under ignored `output/private/academy-import-batches/`; this keeps each request below the hosted Edge Function execution window without dropping parent records.
 5. Run `npm run academy:access-audit`. It must report 60 unique login emails, 49 enrollment records, and `allEnrolledCanLogin: true` without printing member PII.
-6. Create the client owner in Supabase, obtain the organization UUID, and add it as `ownerOrganizationId` in the private manifest.
-7. Sign into the app as that Academy owner/admin and call `academy-import` with `commit: false`. The function validates and returns counts without writing content.
-8. Compare the returned counts with the private report and source archive. The current capture expects 60 login-eligible members plus one historical author, 49 enrollments, 128 lessons, 62 posts, 59 comments, and 5 events.
-9. Set `commit: true` and call `academy-import` again. Provider IDs make the import idempotent.
+6. Create the client owner in Supabase, obtain the organization UUID, and add it to the private source archive as `ownerOrganizationId`, then compose and validate again.
+7. Sign into the app as that Academy owner/admin and call `academy-import` with every generated batch in filename order and `commit: false`.
+8. Compare the combined batch counts with the private report and source archive. The current capture expects 60 login-eligible members plus one historical author, 49 enrollments, 128 lessons, 62 posts, 59 comments, and 5 events.
+9. Call the same batches in order with `commit: true`, then repeat the complete ordered batch set. Provider IDs make application records idempotent; source-ledger batches remain separate audit records.
 10. Call `academy-invite-members` with `action: "preview"`. The historical author must not receive an invite.
 11. Call `academy-invite-members` with `action: "provision"` in batches of no more than 50 until `summary.allEnrolledReady` is true. This creates and links accounts without sending email.
 12. Configure Supabase custom SMTP with the client-owned, verified Mailgun domain. Disable Mailgun click tracking for authentication mail. Allow `https://app.dirtyturf.com/**`, the Netlify pilot origin, localhost, and `com.dirtyturf.academy://auth/callback` under Authentication URL Configuration. After the custom domain resolves over HTTPS, set the Site URL and `APP_URL` to `https://app.dirtyturf.com`; keep the pilot origin temporarily in `APP_ALLOWED_ORIGINS` and `AUTH_REDIRECT_URLS` until production smoke tests pass.
 13. Test a representative provisioned member by requesting a magic link from the app. Unknown email must not create an account, and the verified member must claim the correct Academy identity and course enrollment.
 14. Call `academy-invite-members` with `action: "notify"` for a small pilot, verify delivery and deep links, then notify the remaining members in batches of no more than 25.
 15. Test owner, admin, active member, course-only entitlement, cancelled member, and unrecognized email before cutover.
+
+Never send the full archive as one production request. The archive is the canonical audit artifact, while the generated batches are the bounded transport format.
 
 The source roster exposes course-level percentages but not trustworthy lesson IDs. These percentages are stored on `course_enrollments` and displayed as a floor until native lesson completion advances beyond them. The migration never marks an arbitrary set of lessons complete. Likewise, aggregate reaction and RSVP counts remain in the import ledger when member identities are unavailable.
 

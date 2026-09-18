@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, AtSign, Bookmark, Check, Heart, Image, MapPin, MessageSquare, MoreHorizontal, Paperclip, Pin, Plus, Search, Send, Share2, SlidersHorizontal, Users, X } from "lucide-react";
-import type { CommunityComment, CommunityPost, Member } from "../domain";
+import { ArrowLeft, AtSign, Bookmark, Check, ExternalLink, Heart, Image, MapPin, MessageSquare, MoreHorizontal, Paperclip, Pin, Plus, Search, Send, Share2, SlidersHorizontal, Users, X } from "lucide-react";
+import type { CommunityComment, CommunityMedia, CommunityPost, Member } from "../domain";
 
 type Props = {
   posts: CommunityPost[];
@@ -198,7 +198,7 @@ export function CommunityView({ posts, comments, members, requestedPostCloudId, 
       <article className="thread-post">
         <div className="post-top"><Avatar name={selected.author} /><div><strong>{selected.author}</strong><span>{selected.age} · {selected.category}</span></div>{selected.pinned && <span className="pinned-label"><Pin size={12} /> Pinned</span>}</div>
         <h2>{selected.name}</h2><p>{selected.body}</p>
-        {selected.media === "photo" && <div className="post-media"><Image size={26} /><span>Job photos</span><small>Available after private storage is connected</small></div>}
+        <CommunityMediaGallery items={selected.mediaItems ?? []} />
         <div className="post-actions"><button className={selected.liked ? "active" : ""} onClick={() => void toggleLike(selected)}><Heart size={17} fill={selected.liked ? "currentColor" : "none"} /> {selected.likes ?? 0}</button><button><MessageSquare size={17} /> {thread.length}</button><button onClick={() => void sharePost(selected)}><Share2 size={17} /> Share</button><button className={selected.saved ? "active" : ""} onClick={() => void toggleBookmark(selected)}><Bookmark size={17} fill={selected.saved ? "currentColor" : "none"} /> {selected.saved ? "Saved" : "Save"}</button></div>
       </article>
       <section className="thread-comments">
@@ -225,11 +225,22 @@ export function CommunityView({ posts, comments, members, requestedPostCloudId, 
       <div className="feed-controls"><div className="feed-tabs">{(["Recent", "Popular", "Following", "Saved"] as const).map((item) => <button className={sort === item ? "active" : ""} onClick={() => setSort(item)} key={item}>{item}</button>)}</div><button className="icon-plain" aria-label="Feed filters" onClick={() => onToast("Showing posts from your company community.")}><SlidersHorizontal size={17} /></button></div>
       <section className="community-feed">{visible.map((post) => <article className="post-card" key={post.id}>
         <div className="post-top"><Avatar name={post.author} /><div><strong>{post.author}</strong><span>{post.age} · {post.category}</span></div>{post.pinned && <span className="pinned-label"><Pin size={12} /> Pinned</span>}</div>
-        <button className="post-open" onClick={() => openThread(post.id)}><h3>{post.name}</h3><p>{post.body}</p>{post.media === "photo" && <span className="media-strip"><Image size={16} /> Job photos attached</span>}</button>
+        <button className="post-open" onClick={() => openThread(post.id)}><h3>{post.name}</h3><p>{post.body}</p>{Boolean(post.mediaItems?.length) && <span className="media-strip"><Image size={16} /> {post.mediaItems!.length} {post.mediaItems!.length === 1 ? "attachment" : "attachments"}</span>}</button>
         <div className="post-actions"><button className={post.liked ? "active" : ""} onClick={() => void toggleLike(post)}><Heart size={16} fill={post.liked ? "currentColor" : "none"} /> {post.likes ?? 0}</button><button onClick={() => openThread(post.id)}><MessageSquare size={16} /> {post.replies}</button><button aria-label="Share post" onClick={() => void sharePost(post)}><Share2 size={16} /></button><button className={post.saved ? "active" : ""} aria-label={post.saved ? "Remove bookmark" : "Bookmark post"} onClick={() => void toggleBookmark(post)}><Bookmark size={16} fill={post.saved ? "currentColor" : "none"} /></button></div>
       </article>)}{visible.length === 0 && <div className="empty-state"><Search size={24} /><h3>No discussions here yet</h3><p>Choose another feed or start the first conversation.</p></div>}</section>
     </div>
   );
+}
+
+function CommunityMediaGallery({ items }: { items: CommunityMedia[] }) {
+  if (!items.length) return null;
+  return <div className={`community-media-grid${items.length === 1 ? " single" : ""}`} aria-label="Post attachments">
+    {items.map((item, index) => item.kind === "image"
+      ? <a className="community-media-image" href={item.url} target="_blank" rel="noreferrer" key={`${item.url}-${index}`} aria-label={`Open attachment ${index + 1}`}><img src={item.url} alt={`Post attachment ${index + 1}`} loading="lazy" /></a>
+      : item.kind === "video"
+        ? <video className="community-media-video" src={item.url} controls preload="metadata" key={`${item.url}-${index}`} aria-label={`Post video ${index + 1}`} />
+        : <a className="community-media-link" href={item.url} target="_blank" rel="noreferrer" key={`${item.url}-${index}`}><ExternalLink size={17} /><span><strong>{item.label}</strong><small>Open shared resource</small></span></a>)}
+  </div>;
 }
 
 function Avatar({ name }: { name: string }) {

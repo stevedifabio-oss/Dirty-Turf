@@ -32,7 +32,15 @@ export type CommunityPost = {
   pinned?: boolean;
   following?: boolean;
   media?: "photo" | "poll";
+  mediaItems?: CommunityMedia[];
   mentionedMemberIds?: string[];
+};
+
+export type CommunityMedia = {
+  kind: "image" | "video" | "link";
+  url: string;
+  originalUrl?: string;
+  label: string;
 };
 
 export type CommunityComment = {
