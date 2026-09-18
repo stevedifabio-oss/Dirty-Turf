@@ -222,7 +222,7 @@ def build_pdf():
     y1 = pdf.card("BACKEND LIVE", "Eleven migrations, 50 RLS-protected public tables, six Edge Functions, and the health endpoint are active in Supabase.", GREEN, col_w, 82, MARGIN)
     pdf.card("ARCHIVE VERIFIED", "60 login members, 49 enrollments, 109 published lessons, 19 drafts, community data, and assets reconcile to GHL.", LIME, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y1 - 14
-    y2 = pdf.card("APP VERIFIED", "TypeScript, 53 tests, production build, PWA validation, Android debug, and iOS simulator checks pass.", ORANGE, col_w, 82, MARGIN)
+    y2 = pdf.card("APP VERIFIED", "TypeScript, 53 tests, production build, PWA validation, Android release bundle, and iOS Release simulator checks pass.", ORANGE, col_w, 82, MARGIN)
     pdf.card("RELEASE OPEN", "GitHub PR #2 contains the complete release tree. Netlify preview, merge, and production proof still remain.", GREEN_DARK, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y2 - 18
     pdf.section("Completed and removed from this checklist")
