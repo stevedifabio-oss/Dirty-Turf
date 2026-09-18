@@ -45,4 +45,35 @@ describe("Academy access audit", () => {
     expect(audit.counts.duplicateEmailCount).toBe(1);
     expect(audit.valid).toBe(false);
   });
+
+  it("fails duplicate member source identifiers", () => {
+    const manifest = structuredClone(validManifest);
+    manifest.members.push({ externalId: "member-1", email: "other@example.test", status: "active" });
+    const audit = auditAcademyAccess(manifest);
+    expect(audit.valid).toBe(false);
+    expect(audit.failures).toContain("Duplicate member externalId: member-1");
+  });
+
+  it("fails duplicate active enrollment grants", () => {
+    const manifest = structuredClone(validManifest);
+    manifest.enrollments.push({
+      externalId: "enrollment-3",
+      memberExternalId: "member-1",
+      courseExternalId: "course-1",
+      status: "active",
+    });
+    manifest.enrollments[0].courseExternalId = "course-1";
+    const audit = auditAcademyAccess(manifest);
+    expect(audit.valid).toBe(false);
+    expect(audit.failures).toContain("Duplicate active enrollment grant for member member-1");
+  });
+
+  it("fails an active enrollment without a member source identifier", () => {
+    const manifest = structuredClone(validManifest);
+    delete manifest.enrollments[0].memberExternalId;
+    const audit = auditAcademyAccess(manifest);
+    expect(audit.valid).toBe(false);
+    expect(audit.allEnrolledCanLogin).toBe(false);
+    expect(audit.failures).toContain("Active enrollment is missing memberExternalId");
+  });
 });

@@ -1653,6 +1653,8 @@
         "npm:@capacitor/cli@^8.5.2",
         "npm:@capacitor/core@^8.5.2",
         "npm:@capacitor/ios@^8.5.2",
+        "npm:@fontsource/outfit@^5.2.8",
+        "npm:@fontsource/poppins@^5.2.7",
         "npm:@supabase/supabase-js@^2.116.0",
         "npm:@types/leaflet@^1.9.22",
         "npm:@types/react-dom@^19.3.0",

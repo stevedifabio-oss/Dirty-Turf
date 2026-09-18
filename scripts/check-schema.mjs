@@ -21,6 +21,7 @@ const progressSql = migration("20260918010000_preserve_imported_course_progress.
 const memberAccessSql = migration("20260918073008_academy_member_access_provisioning.sql");
 const billingSql = migration("20260918080238_academy_billing_entitlements.sql");
 const deletionSql = migration("20260918150000_account_deletion_requests.sql");
+const accessPathSql = migration("20260918155500_optimize_member_access_paths.sql");
 
 requireFragments(academySql, "schema", [
   "create table public.academy_communities",
@@ -114,11 +115,26 @@ requireFragments(deletionSql, "account deletion schema", [
   "grant insert (user_id, reason) on table public.account_deletion_requests to authenticated",
 ]);
 
+requireFragments(accessPathSql, "member access optimization", [
+  "using (user_id = (select auth.uid()))",
+  "academy_members_user_lookup_idx",
+  "academy_billing_customers_member_idx",
+  "academy_billing_customers_user_idx",
+]);
+
 requireFragments(allSql, "security hardening", [
   "revoke all on all tables in schema public from anon;",
   "revoke execute on all functions in schema public from public, anon;",
   "revoke create on schema public from public, anon, authenticated;",
 ]);
+
+for (const [file, fragments] of [
+  ["supabase/functions/ghl-webhook/index.ts", ["x-ghl-signature", "MAX_WEBHOOK_BYTES"]],
+  ["supabase/functions/ghl-status/index.ts", ["handlePreflight(request, \"GET, OPTIONS\")", "Administrator access required"]],
+]) {
+  const source = await readFile(path.join(root, file), "utf8");
+  requireFragments(source, file, fragments);
+}
 
 const publicTables = new Set(matches(allSql, /create\s+table\s+(?:if\s+not\s+exists\s+)?public\.([a-z0-9_]+)/gi));
 for (const table of publicTables) {

@@ -45,8 +45,12 @@ under Domain management rather than the value recorded here.
 1. Publish the ownership TXT record and confirm it resolves publicly.
 2. Finish adding `app.dirtyturf.com` in Netlify Domain management.
 3. Publish the `app` CNAME and wait for Netlify to issue TLS.
+   Run `npm run release:domain` until all four DNS/TLS checks pass.
 4. Require `https://app.dirtyturf.com/`, `/privacy.html`, `/support.html`, and
    `/delete-account.html` to return the expected app or legal page over HTTPS.
+   Run `npm run release:smoke -- https://app.dirtyturf.com --expected-origin
+   https://app.dirtyturf.com --expect-security-headers` and retain the JSON
+   result with the release evidence.
 5. Change the Supabase Auth Site URL from the Netlify pilot origin to
    `https://app.dirtyturf.com`.
 6. Keep these Supabase redirect URLs during the pilot:

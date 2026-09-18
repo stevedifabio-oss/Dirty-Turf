@@ -32,8 +32,20 @@ npm ci
 npm run academy:access-audit
 npm run check
 npm run native:sync
-npm run release:smoke -- https://DEPLOY_URL --expect-security-headers
+npm run release:smoke -- https://DEPLOY_URL --expected-origin https://app.dirtyturf.com --expect-security-headers
 ```
+
+The same checks can be run as one gate. Before DNS cutover, use the deploy
+preview form; after DNS and TLS are ready, include `--check-domain`:
+
+```bash
+npm run release:preflight -- --deploy https://DEPLOY_URL
+npm run release:preflight -- --check-domain
+```
+
+`npm run release:domain` reports the Netlify ownership TXT, CNAME, HTTPS/TLS,
+and HTTP-to-HTTPS status separately, so an incomplete DNS handoff is visible
+without being confused with an application failure.
 
 `npm run check` includes a credential-pattern scan, migration/RLS contract
 checks, TypeScript, unit tests, the production build, public legal-page checks,
@@ -63,10 +75,10 @@ member emails, private tokens, or reviewer credentials in this repository.
 | Git commit SHA | Record the immutable merge SHA at release |
 | GitHub PR and successful run | `stevedifabio-oss/Dirty-Turf#2`; require the latest head to pass immediately before merge |
 | Netlify deploy ID and URL | Preview is ready at `https://deploy-preview-2--bright-brigadeiros-df8b48.netlify.app`; record the production deploy after merge |
-| Supabase migrations | 12 applied / 51 public RLS-protected tables |
-| Supabase Edge Function versions | Six deployed; record immutable versions at production release |
+| Supabase migrations | 13 applied / 51 public RLS-protected tables |
+| Supabase Edge Function versions | Eight deployed; record immutable versions at production release |
 | Source archive SHA-256 | `0e1f53311b4635a7ed2969ff5bf6e2b038781eeb3126a958e3aaea82633f1aee` |
-| Local automated gate | 14 test files / 54 tests, typecheck, build, PWA, schema, and secret scan passed |
+| Local automated gate | 15 test files / 62 tests, typecheck, build, PWA, schema, and secret scan passed |
 | Native candidate proof | Android debug/release AAB and iOS Release simulator launch passed; embedded app-shell hashes match |
 | Smoke-test account owner | Client vault only |
 | iPhone model / OS / AR error | Pending physical test |

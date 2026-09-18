@@ -4,6 +4,7 @@ output/deploy/
 output/private/
 output/ios-simulator/
 output/qa/
+output/release/
 android/.idea/
 tmp/
 __pycache__/

@@ -219,15 +219,15 @@ def build_pdf():
         "Every current Academy member can request a Magic Link, reach the content they already own, use the community and field tools, and reopen saved work on another device. The desktop web app, mobile web/PWA, and signed iOS and Android builds all pass their production paths."
     )
     col_w = (PAGE_W - 2 * MARGIN - 12) / 2
-    y1 = pdf.card("BACKEND LIVE", "Twelve migrations, 51 RLS-protected public tables, six Edge Functions, and the health endpoint are active in Supabase.", GREEN, col_w, 82, MARGIN)
+    y1 = pdf.card("BACKEND LIVE", "Thirteen migrations and eight Edge Functions are active. Live Auth and Academy tables remain empty until owner bootstrap and import.", GREEN, col_w, 82, MARGIN)
     pdf.card("ARCHIVE VERIFIED", "60 login members, 49 enrollments, 109 published lessons, 19 drafts, community data, and assets reconcile to GHL.", LIME, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y1 - 14
-    y2 = pdf.card("APP VERIFIED", "Fifty-four tests, responsive QA, PWA checks, Android AAB, and a clean iOS Release simulator launch all pass.", ORANGE, col_w, 82, MARGIN)
+    y2 = pdf.card("APP VERIFIED", "Sixty-two tests, responsive QA, PWA checks, Android AAB, and a clean iOS Release simulator launch all pass.", ORANGE, col_w, 82, MARGIN)
     pdf.card("RELEASE CANDIDATE", "PR #2 CI and Netlify deploy status pass. Production remains gated on identity, import, billing, and physical-device proof.", GREEN_DARK, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y2 - 18
     pdf.section("Completed and removed from this checklist")
     pdf.checklist([
-        "[x] Twelve Supabase migrations, 51-table RLS audit, security-function hardening, and six Edge Function deployments are complete.",
+        "[x] Thirteen Supabase migrations, 51-table RLS audit, access indexes, security hardening, and eight Edge Function deployments are complete.",
         "[x] GHL course, lesson, member, enrollment, community, event, and asset capture is complete and exact-count verified.",
         "[x] Google Play developer identity, website, and phone verification are complete.",
         "[x] The Apple renewal card is added. The branded iOS Release build installs and opens in the iPhone 17 simulator; Android debug and release builds pass.",
@@ -265,7 +265,7 @@ def build_pdf():
     pdf.new_page("Gate 2", "Import and guarantee member access", "Load the verified archive, provision every account silently, then pilot Magic Links")
     pdf.timeline("STEP 3", "Dry run and import", "Migration owner")
     pdf.checklist([
-        "[ ] Add the production owner organization UUID to output/private/dirty-turf-academy-import.json. Keep the file ignored and client-owned.",
+        "[!] Production Auth and Academy tables are currently empty. After owner sign-in, add the new owner organization UUID to the ignored private import manifest.",
         "[x] Run npm run academy:access-audit: 60 unique login emails, 49 enrolled members, zero duplicates, and allEnrolledCanLogin:true.",
         "[ ] Call academy-import with commit:false. Match every count to the verified archive before allowing writes.",
         "[ ] Call academy-import with commit:true once, then repeat it and prove provider IDs make the import idempotent.",
@@ -303,11 +303,11 @@ def build_pdf():
         "[x] Publish the exact tested tree to GitHub PR #2, review the complete diff, and pass the repository credential-pattern scan.",
         "[x] GitHub CI and the Netlify deploy-preview status pass on PR #2's current head; recheck both immediately before merge.",
         "[x] Team-authenticated preview smoke confirms the login shell, production canonical metadata, Mailgun disclosure, and public legal routes with no console errors.",
-        "[ ] Finish app.dirtyturf.com ownership, CNAME, and TLS. Confirm Supabase public variables and the public Stripe Payment Link in Netlify; keep secrets server-side.",
+        "[ ] Finish app.dirtyturf.com ownership, CNAME, and TLS. Run npm run release:domain, then the production release:smoke gate; keep secrets server-side.",
         "[x] Verify the local release candidate at 320, 390, and 1440 pixels with no horizontal overflow or console errors; smoke all six public routes.",
         "[ ] Verify preview auth, deep links, Academy, community, events, private assets, progress, headers, and network logs with the real test member.",
         "[ ] Merge PR #2 to main, wait for Netlify production, and repeat the authenticated golden path on the deployed URL.",
-        "[ ] Record commit SHA, deploy ID, migration/function versions, smoke-test account, rollback owner, and rollback steps.",
+        "[ ] Run npm run release:preflight -- --check-domain. Record commit SHA, deploy ID, function versions, test account, rollback owner, and result.",
     ], compact=True)
     pdf.gate("Stripe stays in test mode and the old production site stays untouched until PR checks, preview QA, billing proof, and authenticated production smoke all pass.")
 
