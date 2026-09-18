@@ -2,6 +2,7 @@ export type MeasurementMode = "camera" | "map" | "manual";
 
 export type Job = {
   id: number;
+  cloudId?: string;
   address: string;
   area: number;
   preciseArea?: number;
@@ -15,6 +16,13 @@ export type Job = {
   method: MeasurementMode;
   createdAt: string;
   photos: number;
+  photoItems?: JobPhoto[];
+};
+
+export type JobPhoto = {
+  url: string;
+  capturedAt: string;
+  kind: "before" | "after" | "site" | "issue";
 };
 
 export type CommunityPost = {

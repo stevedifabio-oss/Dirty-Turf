@@ -3,6 +3,7 @@ dist/
 output/deploy/
 output/private/
 output/ios-simulator/
+output/DerivedData/
 output/qa/
 output/release/
 android/.idea/
