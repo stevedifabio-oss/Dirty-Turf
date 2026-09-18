@@ -7,13 +7,14 @@ import { SafeRichText } from "./SafeRichText";
 
 type Props = {
   courses: Course[];
+  dataMode: "device" | "cloud";
   onCoursesChange: (courses: Course[]) => void;
   onLessonCompletion: (lessonId: string, completed: boolean) => Promise<void>;
   onToast: (message: string) => void;
   onDiscuss: () => void;
 };
 
-export function AcademyView({ courses, onCoursesChange, onLessonCompletion, onToast, onDiscuss }: Props) {
+export function AcademyView({ courses, dataMode, onCoursesChange, onLessonCompletion, onToast, onDiscuss }: Props) {
   const [filter, setFilter] = useState("All");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null);
@@ -61,6 +62,10 @@ export function AcademyView({ courses, onCoursesChange, onLessonCompletion, onTo
 
   const selectedLesson = selected?.modules.flatMap((module) => module.lessons).find((lesson) => lesson.id === selectedLessonId);
 
+  if (dataMode === "device") {
+    return <div className="view-content academy-view"><div className="empty-state"><Lock size={24} /><h3>Sign in to view Academy lessons</h3><p>The training library only displays published content from the connected Academy. Demo lessons are disabled.</p></div></div>;
+  }
+
   if (selected && selectedLesson) {
     const videoUrl = safeExternalUrl(selectedLesson.videoUrl);
     const resources = (selectedLesson.resources ?? []).flatMap((resource) => {
@@ -68,6 +73,7 @@ export function AcademyView({ courses, onCoursesChange, onLessonCompletion, onTo
       return url ? [{ ...resource, url }] : [];
     });
     const directVideo = /\.(mp4|webm|mov)(\?|$)/i.test(videoUrl ?? "");
+    const hasContent = Boolean(selectedLesson.body?.trim() || selectedLesson.bodyHtml?.trim() || videoUrl || resources.length || selectedLesson.transcript?.trim() || selectedLesson.quiz?.questions.length);
     return (
       <div className="view-content lesson-view">
         <button className="back-link" onClick={() => setSelectedLessonId(null)}><ArrowLeft size={17} /> {selected.title}</button>
@@ -80,9 +86,9 @@ export function AcademyView({ courses, onCoursesChange, onLessonCompletion, onTo
           <SafeRichText html={selectedLesson.bodyHtml} fallback={selectedLesson.body} />
           {selectedLesson.transcript && <details className="lesson-transcript"><summary>Transcript</summary><p>{selectedLesson.transcript}</p></details>}
           {!!resources.length && <section className="lesson-resources"><h3>Resources</h3>{resources.map((resource) => <a href={resource.url} target="_blank" rel="noopener noreferrer" key={`${resource.title}-${resource.url}`}><Download size={17} /><span><strong>{resource.title}</strong><small>{resource.type ?? "Download"}</small></span><ExternalLink size={15} /></a>)}</section>}
-          {!selectedLesson.body && !selectedLesson.bodyHtml && !videoUrl && !resources.length && <div className="empty-state"><BookOpen size={24} /><h3>Lesson ready for import</h3><p>The lesson structure is in place. Its media will appear here after the GHL archive is imported.</p></div>}
+          {!hasContent && <div className="empty-state"><XCircle size={24} /><h3>Lesson content unavailable</h3><p>This published lesson does not currently contain readable lesson text or media.</p></div>}
         </article>
-        <button className={selectedLesson.completed ? "secondary-button wide" : "primary-button wide"} onClick={() => void completeLesson(selectedLesson.id)}>{selectedLesson.completed ? <Check size={18} /> : <CheckCircle2 size={18} />}{selectedLesson.completed ? "Completed" : "Mark lesson complete"}</button>
+        {hasContent && <button className={selectedLesson.completed ? "secondary-button wide" : "primary-button wide"} onClick={() => void completeLesson(selectedLesson.id)}>{selectedLesson.completed ? <Check size={18} /> : <CheckCircle2 size={18} />}{selectedLesson.completed ? "Completed" : "Mark lesson complete"}</button>}
       </div>
     );
   }
@@ -120,6 +126,10 @@ export function AcademyView({ courses, onCoursesChange, onLessonCompletion, onTo
         <div className="course-actions"><button className="secondary-button" onClick={onDiscuss}><MessageSquare size={17} /> Discuss this course</button></div>
       </div>
     );
+  }
+
+  if (!courses.length) {
+    return <div className="view-content academy-view"><div className="empty-state"><BookOpen size={24} /><h3>No published courses available</h3><p>The Academy library is connected, but no published course content is available for this account.</p></div></div>;
   }
 
   return (
