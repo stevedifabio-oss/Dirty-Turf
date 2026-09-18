@@ -7,16 +7,42 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
+    "native:sync": "npm run build && cap sync",
+    "native:copy": "npm run build && cap copy",
+    "native:verify": "npm run native:copy && node scripts/check-native-bundles.mjs",
+    "native:verify:artifacts": "node scripts/check-native-bundles.mjs --require-android-artifacts",
+    "native:android:signing-status": "cd android && ./gradlew :app:releaseSigningStatus",
+    "native:android:release": "npm run native:copy && cd android && ./gradlew :app:bundleRelease",
+    "native:ios": "cap open ios",
+    "native:android": "cap open android",
+    "native:doctor": "cap doctor",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "schema:check": "node scripts/check-schema.mjs",
-    "check": "npm run schema:check && npm run typecheck && npm run test && npm run build",
+    "pwa:check": "node scripts/check-pwa.mjs",
+    "store:check": "node scripts/check-store-metadata.mjs",
+    "security:secrets": "node scripts/scan-secrets.mjs",
+    "release:smoke": "node scripts/release-smoke.mjs",
+    "release:domain": "node scripts/check-domain-readiness.mjs",
+    "release:preflight": "node scripts/release-preflight.mjs",
+    "academy:reconcile": "node scripts/reconcile-ghl-community.mjs",
+    "academy:compose": "node scripts/compose-academy-import.mjs",
+    "academy:batches": "node scripts/prepare-academy-import-batches.mjs",
+    "academy:validate": "node scripts/validate-academy-import.mjs",
+    "academy:access-audit": "node scripts/audit-academy-access.mjs --expect-members 60 --expect-enrolled 49",
+    "check": "npm run security:secrets && npm run schema:check && npm run store:check && npm run typecheck && npm run test && npm run build && npm run pwa:check",
     "ghl:verify": "node scripts/verify-ghl.mjs",
     "supabase:start": "supabase start",
     "supabase:reset": "supabase db reset",
     "supabase:functions": "supabase functions serve --env-file .env.local"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/app": "8.1.1",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2",
+    "@fontsource/outfit": "^5.2.8",
+    "@fontsource/poppins": "^5.2.7",
     "@supabase/supabase-js": "^2.116.0",
     "@vitejs/plugin-react": "^5.0.4",
     "leaflet": "^1.9.4",
@@ -27,9 +53,13 @@
     "vite": "^7.1.7"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
     "@types/leaflet": "^1.9.22",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "vitest": "^5.0.1"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
   }
 }

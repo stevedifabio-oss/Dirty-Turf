@@ -26,7 +26,9 @@ The TurfClean v11 source has no backend and no recoverable production credential
 
 - Jobs and drafts are stored in browser `localStorage` under `turfclean.jobs` and `turfclean.draft`.
 - Photos use temporary browser object URLs and are not uploaded or preserved after the browser session.
-- Address search uses the public OpenStreetMap Nominatim endpoint.
+- The recovered bundle searched the public OpenStreetMap Nominatim endpoint
+  directly. The React app now routes member searches through a rate-limited,
+  identified, per-member-cached Supabase Edge Function.
 - Current and historical imagery use public Esri endpoints.
 - NAIP imagery uses the public USGS National Map ArcGIS ImageServer.
 - The current source contains no Supabase, Firebase, Netlify Function, or custom API calls.
@@ -63,7 +65,7 @@ The React implementation uses typed helpers and tests instead of carrying those 
 ## Cloud activation path
 
 1. Connect this repository to the client-owned GitHub repository.
-2. Apply both committed Supabase migrations to the client project.
+2. Apply all committed Supabase migrations to the client project.
 3. Deploy the committed Supabase Edge Functions.
 4. Add the Supabase project URL and public browser key to the frontend environment.
 5. Add server-only HighLevel and optional Stripe values to Supabase secrets.

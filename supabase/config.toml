@@ -16,8 +16,10 @@ port = 54323
 
 [auth]
 enabled = true
+# Local Supabase keeps localhost as its default. The hosted project's Site URL
+# is switched to app.dirtyturf.com only after Netlify DNS and TLS are healthy.
 site_url = "http://localhost:5173"
-additional_redirect_urls = ["http://localhost:5173", "https://YOUR_APP_DOMAIN"]
+additional_redirect_urls = ["http://localhost:5173", "http://127.0.0.1:5173", "https://app.dirtyturf.com", "https://bright-brigadeiros-df8b48.netlify.app", "com.dirtyturf.academy://auth/callback"]
 
 [storage]
 enabled = true
@@ -33,6 +35,21 @@ verify_jwt = false
 verify_jwt = true
 
 [functions.create-checkout]
+verify_jwt = true
+
+[functions.create-billing-portal]
+verify_jwt = true
+
+[functions.academy-import]
+verify_jwt = true
+
+[functions.academy-invite-members]
+verify_jwt = true
+
+[functions.academy-notifications]
+verify_jwt = false
+
+[functions.map-geocode]
 verify_jwt = true
 
 [functions.stripe-webhook]

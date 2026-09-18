@@ -7,30 +7,24 @@ import {
   getGhlWorkflows,
   GhlApiError,
 } from "../_shared/ghl.ts";
+import { handlePreflight, jsonResponse } from "../_shared/http.ts";
 
 Deno.serve(async (request) => {
-  const cors = corsHeaders(request);
-  if (!cors) {
-    return Response.json({ error: "Origin is not allowed" }, { status: 403 });
-  }
-  if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: cors });
-  }
+  const preflight = handlePreflight(request, "GET, OPTIONS");
+  if (preflight) return preflight;
   if (request.method !== "GET") {
-    return Response.json({ error: "Method not allowed" }, {
+    return jsonResponse(request, { error: "Method not allowed" }, {
       status: 405,
-      headers: cors,
-    });
+    }, "GET, OPTIONS");
   }
 
   const authorization = request.headers.get("authorization");
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
   if (!authorization || !supabaseUrl || !anonKey) {
-    return Response.json({ error: "Authentication is not configured" }, {
+    return jsonResponse(request, { error: "Authentication is not configured" }, {
       status: 503,
-      headers: cors,
-    });
+    }, "GET, OPTIONS");
   }
 
   const supabase = createClient(supabaseUrl, anonKey, {
@@ -42,10 +36,9 @@ Deno.serve(async (request) => {
     token,
   );
   if (userError || !userData.user) {
-    return Response.json({ error: "Authentication required" }, {
+    return jsonResponse(request, { error: "Authentication required" }, {
       status: 401,
-      headers: cors,
-    });
+    }, "GET, OPTIONS");
   }
 
   const { data: membership, error: membershipError } = await supabase
@@ -60,16 +53,14 @@ Deno.serve(async (request) => {
       "HighLevel status membership lookup failed",
       membershipError.code,
     );
-    return Response.json({ error: "Workspace access could not be verified" }, {
+    return jsonResponse(request, { error: "Workspace access could not be verified" }, {
       status: 500,
-      headers: cors,
-    });
+    }, "GET, OPTIONS");
   }
   if (!membership) {
-    return Response.json({ error: "Administrator access required" }, {
+    return jsonResponse(request, { error: "Administrator access required" }, {
       status: 403,
-      headers: cors,
-    });
+    }, "GET, OPTIONS");
   }
 
   const [location, pipelines, workflows, products] = await Promise.allSettled([
@@ -101,13 +92,13 @@ Deno.serve(async (request) => {
   }));
   const productResult = settled(products, () => ({ accessible: true }));
 
-  return Response.json({
+  return jsonResponse(request, {
     connected: locationResult.available,
     location: locationResult,
     pipelines: pipelineResult,
     workflows: workflowResult,
     products: productResult,
-  }, { headers: cors });
+  }, {}, "GET, OPTIONS");
 });
 
 function settled<T, R>(result: PromiseSettledResult<T>, map: (value: T) => R) {
@@ -117,27 +108,4 @@ function settled<T, R>(result: PromiseSettledResult<T>, map: (value: T) => R) {
   const error = result.reason;
   const status = error instanceof GhlApiError ? error.status : 502;
   return { available: false as const, status };
-}
-
-function corsHeaders(request: Request) {
-  const origin = request.headers.get("origin")?.replace(/\/$/, "") ?? "";
-  const appUrl = Deno.env.get("APP_URL")?.replace(/\/$/, "") ?? "";
-  const localOrigins = new Set([
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-  ]);
-  const allowedOrigin =
-    origin && (origin === appUrl || localOrigins.has(origin))
-      ? origin
-      : !origin
-      ? appUrl || "http://localhost:5173"
-      : "";
-  if (!allowedOrigin) return null;
-  return {
-    "Access-Control-Allow-Origin": allowedOrigin,
-    "Access-Control-Allow-Headers":
-      "authorization, apikey, content-type, x-client-info",
-    "Access-Control-Allow-Methods": "GET, OPTIONS",
-    "Vary": "Origin",
-  };
 }

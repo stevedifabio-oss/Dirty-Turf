@@ -2,21 +2,97 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#047631" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Dirty Turf" />
+    <meta name="apple-mobile-web-app-title" content="Dirty Turf Academy" />
+    <meta name="application-name" content="Dirty Turf Academy" />
     <meta
       name="description"
       content="Dirty Turf Academy combines turf cleaning courses, community, quoting tools, site history, and mobile-first field workflows for turf cleaning operators."
     />
-    <link rel="icon" href="/dirty-turf-logo.png" />
-    <link rel="apple-touch-icon" href="/dirty-turf-logo.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Dirty Turf Academy" />
+    <meta property="og:title" content="Dirty Turf Academy" />
+    <meta
+      property="og:description"
+      content="Courses, community, turf measurement, and field tools for professional turf cleaning operators."
+    />
+    <meta property="og:url" content="https://app.dirtyturf.com/" />
+    <link rel="canonical" href="https://app.dirtyturf.com/" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
     <title>Dirty Turf Academy</title>
+    <style>
+      .boot-splash {
+        display: grid;
+        min-height: 100vh;
+        min-height: 100dvh;
+        place-items: center;
+        padding: max(24px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+        background: #003113;
+        color: #111f14;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+      }
+      .boot-splash > div {
+        display: grid;
+        width: min(100%, 360px);
+        justify-items: center;
+        gap: 14px;
+        padding: 34px 24px;
+        border-top: 4px solid #78c12e;
+        border-radius: 8px;
+        background: #f4faee;
+        box-shadow: 0 24px 70px rgba(0, 0, 0, .28);
+        text-align: center;
+      }
+      .boot-splash img { width: 132px; height: auto; }
+      .boot-splash i { width: 30px; height: 30px; border: 3px solid #d8e3d6; border-top-color: #047631; border-radius: 50%; animation: boot-spin 700ms linear infinite; }
+      .boot-splash p { margin: 0; color: #3d5c44; font-size: 13px; font-weight: 750; }
+      @keyframes boot-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { .boot-splash i { animation-duration: 1.5s; } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><main class="boot-splash" role="status" aria-live="polite"><div><img src="/dirty-turf-logo.png" alt="Dirty Turf" /><i aria-hidden="true"></i><p>Opening your Academy workspace...</p></div></main></div>
+    <script>
+      (() => {
+        const showBootFailure = (detail) => {
+          if (document.querySelector(".app-shell") || document.querySelector(".launch-gate") || document.querySelector(".app-crash")) return;
+          const root = document.getElementById("root");
+          if (!root) return;
+          const main = document.createElement("main");
+          main.style.cssText = "display:grid;min-height:100vh;place-items:center;align-content:center;gap:12px;padding:32px;background:#f4faee;color:#111f14;text-align:center;font-family:system-ui,sans-serif";
+          const heading = document.createElement("h1");
+          heading.textContent = "The app could not start.";
+          heading.style.cssText = "max-width:320px;margin:0;font-size:24px";
+          const copy = document.createElement("p");
+          copy.textContent = "Reload the app to try again. Saved measurements remain on this device.";
+          copy.style.cssText = "max-width:340px;margin:0;color:#3d5c44;line-height:1.5";
+          const diagnostic = document.createElement("code");
+          diagnostic.textContent = String(detail || "Startup timed out").slice(0, 240);
+          diagnostic.style.cssText = "max-width:340px;padding:8px;color:#7b2e00;font-size:11px;overflow-wrap:anywhere";
+          const button = document.createElement("button");
+          button.textContent = "Reload app";
+          button.style.cssText = "min-height:44px;padding:0 16px;border:0;border-radius:8px;background:#047631;color:white;font-weight:800";
+          button.addEventListener("click", () => window.location.reload());
+          main.append(heading, copy, diagnostic, button);
+          root.replaceChildren(main);
+        };
+        window.addEventListener("error", (event) => {
+          const target = event.target;
+          const resource = target && (target.src || target.href);
+          window.setTimeout(() => showBootFailure(event.message || (resource ? `Resource failed: ${resource}` : "Startup error")), 0);
+        }, true);
+        window.addEventListener("unhandledrejection", (event) => {
+          window.setTimeout(() => showBootFailure(event.reason && (event.reason.message || event.reason)), 0);
+        });
+        window.setTimeout(() => showBootFailure("Application mount timed out"), 12000);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -2,11 +2,20 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const GHL_PUBLIC_KEY_DER = "MCowBQYDK2VwAyEAi2HR1srL4o18O8BRa7gVJY7G7bupbN3H9AwJrHCDiOg=";
+const MAX_WEBHOOK_BYTES = 1_000_000;
 
 Deno.serve(async (request) => {
   if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
 
+  const contentLength = Number(request.headers.get("content-length") ?? "0");
+  if (Number.isFinite(contentLength) && contentLength > MAX_WEBHOOK_BYTES) {
+    return Response.json({ error: "Webhook payload is too large" }, { status: 413 });
+  }
+
   const rawBody = await request.text();
+  if (new TextEncoder().encode(rawBody).byteLength > MAX_WEBHOOK_BYTES) {
+    return Response.json({ error: "Webhook payload is too large" }, { status: 413 });
+  }
   const signature = request.headers.get("x-ghl-signature");
   if (!signature || !(await verifyGhlSignature(rawBody, signature))) {
     return Response.json({ error: "Invalid webhook signature" }, { status: 401 });
