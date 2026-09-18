@@ -16,6 +16,7 @@ import {
   NAIP_SERVICE,
   OPEN_STREET_MAP_TILES,
   WAYBACK_CAPABILITIES,
+  combinedSphericalAreaSquareFeet,
   parseWaybackCapabilities,
   sphericalAreaSquareFeet,
   toLeafletWaybackTemplate,
@@ -162,9 +163,9 @@ export function MapMeasurement({ address, area, onAddressChange, onAreaChange }:
 
   useEffect(() => {
     if (!touchedRef.current) return;
-    const finishedTotal = finishedAreas.reduce((total, item) => total + item.squareFeet, 0);
+    const finishedTotal = combinedSphericalAreaSquareFeet(finishedAreas.map((item) => item.points));
     const liveArea = sphericalAreaSquareFeet(currentPoints);
-    onAreaChangeRef.current(Math.round(finishedTotal + liveArea));
+    onAreaChangeRef.current(finishedTotal + liveArea);
   }, [currentPoints, finishedAreas]);
 
   const searchAddress = async () => {
@@ -316,7 +317,7 @@ export function MapMeasurement({ address, area, onAddressChange, onAreaChange }:
       setStatus("Add at least 3 boundary points");
       return;
     }
-    const squareFeet = Math.round(sphericalAreaSquareFeet(currentPoints));
+    const squareFeet = sphericalAreaSquareFeet(currentPoints);
     setFinishedAreas((items) => [...items, { id: Date.now(), points: currentPoints, squareFeet }]);
     setCurrentPoints([]);
     setStatus(`Area saved: ${formatNumber(squareFeet)} sq ft`);

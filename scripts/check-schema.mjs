@@ -20,6 +20,7 @@ const nativeAcademySql = migration("20260917223000_native_academy_cutover.sql");
 const progressSql = migration("20260918010000_preserve_imported_course_progress.sql");
 const memberAccessSql = migration("20260918073008_academy_member_access_provisioning.sql");
 const billingSql = migration("20260918080238_academy_billing_entitlements.sql");
+const deletionSql = migration("20260918150000_account_deletion_requests.sql");
 
 requireFragments(academySql, "schema", [
   "create table public.academy_communities",
@@ -102,6 +103,15 @@ requireFragments(billingSql, "Academy billing schema", [
   "revoke all on function public.upsert_academy_import_access_grant",
   "revoke all on function public.apply_academy_billing_event",
   "to service_role",
+]);
+
+requireFragments(deletionSql, "account deletion schema", [
+  "create table public.account_deletion_requests",
+  "user_id uuid not null unique references auth.users(id) on delete cascade",
+  "create policy account_deletion_requests_select_own",
+  "create policy account_deletion_requests_insert_own",
+  "revoke all on table public.account_deletion_requests from public, anon, authenticated",
+  "grant insert (user_id, reason) on table public.account_deletion_requests to authenticated",
 ]);
 
 requireFragments(allSql, "security hardening", [

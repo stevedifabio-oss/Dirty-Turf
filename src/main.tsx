@@ -1,5 +1,13 @@
 import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import "@fontsource/outfit/latin-600.css";
+import "@fontsource/outfit/latin-700.css";
+import "@fontsource/outfit/latin-800.css";
+import "@fontsource/poppins/latin-400.css";
+import "@fontsource/poppins/latin-500.css";
+import "@fontsource/poppins/latin-600.css";
+import "@fontsource/poppins/latin-700.css";
+import "@fontsource/poppins/latin-800.css";
 import {
   ArrowLeft,
   Bell,
@@ -408,6 +416,7 @@ function LaunchAccessGate({
       </>}
       {message && <p className="launch-message" role="status">{message}</p>}
       <p className="launch-support">Need help? <a href="mailto:hello@dirtyturf.com">hello@dirtyturf.com</a></p>
+      <nav className="launch-legal" aria-label="Privacy and support"><a href="/privacy.html">Privacy</a><a href="/support.html">Support</a><a href="/delete-account.html">Delete account</a></nav>
     </section>
   </main>;
 }

@@ -23,6 +23,8 @@ The same React workspace adapts to wide desktop screens, touch-first mobile brow
 - Migration ledger and shared Academy tenancy kept separate from each operator company's field data
 - Netlify build, SPA routing, cache, and browser-permission headers
 - Installable PWA manifest and production-only offline app shell
+- Public privacy, support, and account-deletion pages plus an authenticated,
+  RLS-isolated deletion-request workflow
 
 ## Local development
 
@@ -250,6 +252,7 @@ HighLevel remains available during reconciliation and rollback. Native cutover h
 - `supabase/migrations/20260918010000_preserve_imported_course_progress.sql`: non-fabricated aggregate course-progress preservation
 - `supabase/migrations/20260918023000_lock_public_schema_creation.sql`: prevents API users from shadowing trusted database objects
 - `supabase/migrations/20260918080238_academy_billing_entitlements.sql`: imported and Stripe access grants, billing records, RLS, and transactional webhook application
+- `supabase/migrations/20260918150000_account_deletion_requests.sql`: RLS-isolated member deletion requests
 - `supabase/functions/ghl-webhook/index.ts`: signed HighLevel webhook receiver
 - `supabase/functions/ghl-status/index.ts`: private integration and resource status check
 - `supabase/functions/_shared/ghl.ts`: server-only HighLevel API client
@@ -269,7 +272,10 @@ HighLevel remains available during reconciliation and rollback. Native cutover h
 - `src/lib/quote.ts`: deterministic infill and service-price calculator
 - `ios/App/CapApp-SPM/Sources/CapApp-SPM/DirtyTurfMeasurePlugin.swift`: iOS ARKit measurement view
 - `android/app/src/main/java/com/dirtyturf/academy/LiveMeasureActivity.kt`: Android ARCore measurement view
+- `index.html`: branded offline-safe startup shell used by web, iOS, and Android
 - `output/pdf/dirty-turf-functional-app-checklist.pdf`: account, backend, device, QA, and store-release checklist
+- `docs/store-submission.md`: prepared store copy, privacy answers, reviewer notes, and record values
+- `docs/release-runbook.md`: release order, golden path, evidence record, monitoring, and rollback
 - `.env.example`: public and private configuration contract
 
 ## Member experience

@@ -9,6 +9,15 @@ const serviceWorker = await readFile(path.join(dist, "sw.js"), "utf8");
 const builtHtml = await readFile(path.join(dist, "index.html"), "utf8");
 const failures = [];
 
+for (const [file, marker] of [
+  ["privacy.html", "Privacy policy"],
+  ["support.html", "Academy support"],
+  ["delete-account.html", "Delete your account"],
+]) {
+  const html = await readFile(path.join(dist, file), "utf8");
+  if (!html.includes(marker)) failures.push(`${file} is missing its expected public-page marker`);
+}
+
 const requiredEntries = [
   "index.html",
   "src/components/MapMeasurement.tsx",

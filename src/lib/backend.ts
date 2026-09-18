@@ -83,6 +83,12 @@ export type MemberAccessSummary = {
   statusCounts: Record<string, number>;
 };
 
+export type AccountDeletionRequest = {
+  id: string;
+  status: "requested" | "in_review" | "completed" | "declined";
+  requestedAt: string;
+};
+
 type MemberAccessResponse = {
   processed?: number;
   failed?: number;
@@ -228,6 +234,44 @@ export async function signOut() {
   if (!supabase) return;
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
+}
+
+export async function loadAccountDeletionRequest(): Promise<AccountDeletionRequest | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from("account_deletion_requests")
+    .select("id,status,requested_at")
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return {
+    id: data.id,
+    status: data.status as AccountDeletionRequest["status"],
+    requestedAt: data.requested_at,
+  };
+}
+
+export async function requestAccountDeletion(reason?: string): Promise<AccountDeletionRequest> {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { data: sessionData } = await supabase.auth.getSession();
+  const userId = sessionData.session?.user.id;
+  if (!userId) throw new Error("Sign in before requesting account deletion.");
+
+  const { data, error } = await supabase
+    .from("account_deletion_requests")
+    .insert({ user_id: userId, reason: reason?.trim() || null })
+    .select("id,status,requested_at")
+    .single();
+  if (error?.code === "23505") {
+    const existing = await loadAccountDeletionRequest();
+    if (existing) return existing;
+  }
+  if (error || !data) throw error || new Error("The deletion request was not saved.");
+  return {
+    id: data.id,
+    status: data.status as AccountDeletionRequest["status"],
+    requestedAt: data.requested_at,
+  };
 }
 
 export async function getHighLevelStatus(): Promise<HighLevelStatus> {

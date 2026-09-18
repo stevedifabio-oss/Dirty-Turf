@@ -1,5 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Outfit:wght@600;700;800&family=Poppins:wght@400;500;600;700;800&display=swap");
-
 :root {
   color-scheme: light;
   font-family: "Poppins", ui-sans-serif, system-ui, sans-serif;
@@ -295,5 +293,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .launch-card { padding: 24px 20px; }
   .post-actions { gap: 9px; }
 }
+
+.setting-link { text-decoration: none; }.setting-link > svg { color: var(--ink-soft); }.account-controls .danger-button { color: #8b271d; }.account-controls .danger-button.confirm { background: #8b271d; color: white; }.deletion-warning { margin: 10px 0 0; padding: 11px 12px; border-left: 3px solid #b53b2d; background: #fff2ef; color: #6f251d; font-size: .62rem; line-height: 1.48; }.text-button { display: block; margin: 9px auto 0; background: transparent; color: var(--turf); font-size: .66rem; font-weight: 800; }.deletion-status { display: grid; grid-template-columns: auto 1fr; gap: 9px; align-items: center; margin-top: 10px; padding: 12px; border: 1px solid #b9d7bd; border-radius: 8px; background: #eff8ed; color: var(--turf-dark); }.deletion-status > span { display: grid; }.deletion-status strong { font-size: .7rem; }.deletion-status small { color: var(--ink-soft); font-size: .58rem; }.deletion-details { display: flex; gap: 5px; align-items: center; justify-content: center; margin-top: 10px; color: var(--turf); font-size: .61rem; font-weight: 750; text-decoration: none; }.launch-legal { display: flex; flex-wrap: wrap; gap: 6px 14px; justify-content: center; margin-top: 10px; }.launch-legal a { color: var(--ink-soft); font-size: .6rem; font-weight: 750; }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }

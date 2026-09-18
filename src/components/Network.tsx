@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, BookOpen, CheckCircle2, CreditCard, Database, ExternalLink, LockKeyhole, ShieldCheck, Signpost, UserRoundCheck, X } from "lucide-react";
+import { ArrowLeft, BookOpen, CheckCircle2, CreditCard, Database, ExternalLink, FileLock2, LifeBuoy, LockKeyhole, ShieldCheck, Signpost, Trash2, UserRoundCheck, X } from "lucide-react";
 import {
+  loadAccountDeletionRequest,
   loadAcademyBillingOverview,
   loadMemberAccessSummary,
   openAcademyBillingPortal,
   provisionAcademyMemberAccounts,
+  requestAccountDeletion,
   startAcademyCheckout,
   webBillingAvailable,
   type AcademyBillingOverview,
+  type AccountDeletionRequest,
   type MemberAccessSummary,
 } from "../lib/backend";
 import { useModalDialog } from "../lib/useModalDialog";
@@ -53,6 +56,9 @@ function SettingsPanel({ onToast, dataMode, onSignOut }: { onToast: (message: st
   const [provisioning, setProvisioning] = useState(false);
   const [billing, setBilling] = useState<AcademyBillingOverview | null>(null);
   const [billingBusy, setBillingBusy] = useState(false);
+  const [deletionRequest, setDeletionRequest] = useState<AccountDeletionRequest | null>(null);
+  const [deletionBusy, setDeletionBusy] = useState(false);
+  const [confirmDeletion, setConfirmDeletion] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -63,6 +69,18 @@ function SettingsPanel({ onToast, dataMode, onSignOut }: { onToast: (message: st
       .then((response) => { if (mounted) setMemberAccess(response.summary); })
       .catch(() => undefined)
       .finally(() => { if (mounted) setCheckingAccess(false); });
+    return () => { mounted = false; };
+  }, [dataMode]);
+
+  useEffect(() => {
+    let mounted = true;
+    if (dataMode !== "cloud") {
+      setDeletionRequest(null);
+      return () => { mounted = false; };
+    }
+    void loadAccountDeletionRequest()
+      .then((request) => { if (mounted) setDeletionRequest(request); })
+      .catch(() => undefined);
     return () => { mounted = false; };
   }, [dataMode]);
 
@@ -112,6 +130,23 @@ function SettingsPanel({ onToast, dataMode, onSignOut }: { onToast: (message: st
       setBillingBusy(false);
     }
   };
+  const submitDeletionRequest = async () => {
+    if (!confirmDeletion) {
+      setConfirmDeletion(true);
+      return;
+    }
+    setDeletionBusy(true);
+    try {
+      const request = await requestAccountDeletion();
+      setDeletionRequest(request);
+      setConfirmDeletion(false);
+      onToast("Account deletion request received. Support will review it before data is removed.");
+    } catch {
+      onToast("The deletion request could not be saved. Contact hello@dirtyturf.com.");
+    } finally {
+      setDeletionBusy(false);
+    }
+  };
   const canChoosePlan = !billing?.subscription || ["cancelled", "expired"].includes(billing.subscription.status);
 
   return <>
@@ -148,8 +183,35 @@ function SettingsPanel({ onToast, dataMode, onSignOut }: { onToast: (message: st
         <button className="secondary-button" disabled={billingBusy} onClick={() => void beginCheckout(plan.id)}>{billingBusy ? "Opening..." : "Choose plan"}</button>
       </article>)}
     </div>}
+    <div className="setting-group account-controls">
+      <h3>Privacy and account</h3>
+      <a className="setting-row setting-link" href="/privacy.html" target="_blank" rel="noreferrer">
+        <span><FileLock2 size={18} /></span><span><strong>Privacy policy</strong><small>How account, field, course, and payment data are handled</small></span><ExternalLink size={16} />
+      </a>
+      <a className="setting-row setting-link" href="/support.html" target="_blank" rel="noreferrer">
+        <span><LifeBuoy size={18} /></span><span><strong>Support</strong><small>Get help with sign-in, courses, billing, or measurement</small></span><ExternalLink size={16} />
+      </a>
+      {deletionRequest
+        ? <div className="deletion-status"><CheckCircle2 size={18} /><span><strong>Deletion requested</strong><small>{deletionStatusLabel(deletionRequest)}</small></span></div>
+        : <>
+          {confirmDeletion && <p className="deletion-warning">This starts a review to remove your login and personal account data. Business records that another company member must retain will be reassigned or separated before deletion.</p>}
+          <button className={`secondary-button danger-button${confirmDeletion ? " confirm" : ""}`} disabled={dataMode !== "cloud" || deletionBusy} onClick={() => void submitDeletionRequest()}>
+            <Trash2 size={17} />{deletionBusy ? "Submitting request..." : confirmDeletion ? "Confirm deletion request" : "Request account deletion"}
+          </button>
+          {confirmDeletion && <button className="text-button" onClick={() => setConfirmDeletion(false)}>Keep my account</button>}
+        </>}
+      <a className="deletion-details" href="/delete-account.html" target="_blank" rel="noreferrer">What account deletion includes <ExternalLink size={13} /></a>
+    </div>
     <button className="secondary-button" disabled={dataMode !== "cloud"} onClick={() => void onSignOut()}>{dataMode === "cloud" ? "Sign out" : "Device demo is not signed in"}</button>
   </>;
+}
+
+function deletionStatusLabel(request: AccountDeletionRequest) {
+  const date = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(request.requestedAt));
+  if (request.status === "completed") return `Completed · requested ${date}`;
+  if (request.status === "declined") return `Needs follow-up · requested ${date}`;
+  if (request.status === "in_review") return `Under review · requested ${date}`;
+  return `Received ${date}`;
 }
 
 function formatPlanPrice(amountCents: number, currency: string, interval: string) {

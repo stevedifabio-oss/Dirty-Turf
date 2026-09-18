@@ -44,6 +44,10 @@ export function sphericalAreaSquareFeet(points: GeoPoint[]) {
   return squareMeters * SQUARE_FEET_PER_SQUARE_METER;
 }
 
+export function combinedSphericalAreaSquareFeet(boundaries: GeoPoint[][]) {
+  return boundaries.reduce((total, points) => total + sphericalAreaSquareFeet(points), 0);
+}
+
 export function parseWaybackCapabilities(xmlText: string) {
   const documentNode = new DOMParser().parseFromString(xmlText, "application/xml");
   if (documentNode.querySelector("parsererror")) throw new Error("The imagery archive response was invalid.");
