@@ -26,14 +26,14 @@ GRAY = HexColor("#D6DCD0")
 INK = HexColor("#111F14")
 MUTED = HexColor("#3D5C44")
 SOFT_LINE = HexColor("#D3DFD5")
-TOTAL_PAGES = 8
+TOTAL_PAGES = 6
 
 
 class ChecklistPDF:
     def __init__(self, output: Path):
         output.parent.mkdir(parents=True, exist_ok=True)
         self.c = canvas.Canvas(str(output), pagesize=letter)
-        self.c.setTitle("Dirty Turf Academy - Tomorrow Launch Checklist")
+        self.c.setTitle("Dirty Turf Academy - Remaining Launch Checklist")
         self.c.setAuthor("Dirty Turf")
         self.page = 0
         self.y = PAGE_H - MARGIN
@@ -213,184 +213,142 @@ class ChecklistPDF:
 def build_pdf():
     pdf = ChecklistPDF(OUTPUT)
 
-    pdf.new_page("September 18 activation", "Functional app checklist", "Native Academy, community, field tools, member access, web release, and mobile delivery")
-    pdf.section("Tomorrow's finish line", "Definition of done")
+    pdf.new_page("September 18 release plan", "Remaining launch checklist", "Only the work still required to make the Academy app production-ready")
+    pdf.section("The finish line", "Definition of done")
     pdf.paragraph(
-        "An active Dirty Turf member can sign into the native app, open imported Academy lessons, use the community and events, measure a turf job, calculate exact infill bags and customer price, save the result, and reopen it on a second device. Production web and test-store builds are verified with client-owned accounts."
+        "Every current Academy member can request a Magic Link, reach the content they already own, use the community and field tools, and reopen saved work on another device. Web payments grant access correctly, production is verified, and signed iOS and Android test builds pass on real phones."
     )
     col_w = (PAGE_W - 2 * MARGIN - 12) / 2
-    y1 = pdf.card("APP EXPERIENCE", "Native Academy, lessons, quizzes, community, events, member directory, field tools, and mobile navigation are built.", GREEN, col_w, 82, MARGIN)
-    pdf.card("CONTENT ARCHIVE", "One course, 21 module groups, 128 lessons, 137 assets, and 3 quizzes are captured outside Git.", LIME, col_w, 82, MARGIN + col_w + 12)
+    y1 = pdf.card("BACKEND LIVE", "Eleven migrations, 50 RLS-protected public tables, six Edge Functions, and the health endpoint are active in Supabase.", GREEN, col_w, 82, MARGIN)
+    pdf.card("ARCHIVE VERIFIED", "60 login members, 49 enrollments, 109 published lessons, 19 drafts, community data, and assets reconcile to GHL.", LIME, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y1 - 14
-    y2 = pdf.card("BACKEND READY", "Supabase schema, RLS, private storage, importer, magic-link accounts, Stripe billing, and source-aware entitlements are coded.", ORANGE, col_w, 82, MARGIN)
-    pdf.card("NATIVE DELIVERY", "Capacitor iOS simulator and Android debug builds pass. Real-device AR and signed store builds remain release gates.", GREEN_DARK, col_w, 82, MARGIN + col_w + 12)
+    y2 = pdf.card("APP VERIFIED", "TypeScript, 53 tests, production build, PWA validation, Android debug, and iOS simulator checks pass.", ORANGE, col_w, 82, MARGIN)
+    pdf.card("RELEASE OPEN", "GitHub PR #2 contains the complete release tree. Netlify preview, merge, and production proof still remain.", GREEN_DARK, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y2 - 18
-    pdf.section("Verified build state")
+    pdf.section("Completed and removed from this checklist")
     pdf.checklist([
-        "[x] Schema contracts cover all 50 public tables and 10 migrations; TypeScript, 53 tests, the PWA asset manifest, and the production build pass.",
-        "[x] The infill calculator passes a live 20 x 18 ft test: 360 sq ft, 180 lb at 0.50 lb/sq ft, 5 forty-pound bags, 4 fifty-pound bags, and $259.20 at $0.72/sq ft.",
-        "[x] Mobile QA passes from 320 x 568 through tablet with no horizontal overflow; the signed-out Magic Link gate remains mounted after the startup watchdog.",
-        "[x] Unsigned iOS simulator compilation, Android debug assembly, Android unit tests, and Android lint succeed.",
-        "[x] The private HighLevel course archive validates and remains ignored by Git.",
-        "[!] Production Supabase migration, Stripe test-mode proof, member import/provisioning, SMTP delivery, deep-link proof, real-device AR, signed store builds, and production smoke tests still require client accounts or devices.",
+        "[x] Supabase migrations, RLS audit, security-function hardening, and Edge Function deployment are complete.",
+        "[x] GHL course, lesson, member, enrollment, community, event, and asset capture is complete and exact-count verified.",
+        "[x] Google Play developer identity, website, and phone verification are complete.",
+        "[x] The Apple Developer renewal card is added. The simulator build is complete.",
+        "[x] The calculator, mobile layout, Magic Link UI, native wrappers, importer, billing logic, and release tests are built.",
     ], compact=True)
-    pdf.gate("Do not retire HighLevel or invite members until archive counts reconcile, the import dry run passes, client SMTP delivers, and active/cancelled access rules are proven.")
+    pdf.section("Six remaining gates")
+    pdf.paragraph("1. Email and owner identity.  2. Academy import and member access.  3. Stripe test proof.  4. GitHub and Netlify production release.  5. Real-device AR and signed store builds.  6. Controlled GHL cutover.", width_chars=94, size=8.6, leading=11)
+    pdf.gate("Keep HighLevel live until member login, content access, production smoke tests, real-device measurement, and rollback evidence all pass.")
 
-    pdf.new_page("08:00-09:00", "Client-owned accounts first", "The only steps that require the client to sign in, verify identity, or supply billing")
-    pdf.timeline("8:00 AM", "Finish account-owner actions", "Dirty Turf owner")
+    pdf.new_page("Gate 1", "Email and production identity", "Verify the sender, set exact URLs, and create the two accounts needed for migration proof")
+    pdf.timeline("STEP 1", "Verify the Resend sender", "Dirty Turf owner")
     pdf.checklist([
-        "[ ] Confirm GitHub repository stevedifabio-oss/Dirty-Turf, the active Netlify site, and Supabase project ipbtldajgsoxixqmajec are owned by Dirty Turf LLC admins.",
-        "[ ] Supabase: configure a client-owned SMTP sender, verify its DNS records, set the Site URL to the exact production HTTPS origin, and allow that origin plus com.dirtyturf.academy://auth/callback.",
-        "[ ] Apple: add the renewal card, accept pending agreements, confirm App Store Connect access, and keep Dirty Turf LLC as the legal seller.",
-        "[ ] Google Play: finish organization identity, website, and phone verification. App publication stays blocked until Google approves the developer account.",
-        "[ ] Confirm access to dirtyturf.com DNS plus the privacy, support, and account-deletion URLs needed by both stores.",
-        "[ ] After the final HighLevel archive capture, rotate the private integration token shared in chat and store the replacement only as a server secret.",
-        "[ ] Use only client-owned email, recovery, MFA, billing, and password-manager records. Do not connect a consultant's personal account or terminal credentials.",
+        "[ ] In Resend, add a dedicated sending subdomain such as updates.dirtyturf.com and publish every DNS record it provides.",
+        "[ ] Wait for Resend to show the domain as verified. Send one authenticated test email from a Dirty Turf address to a separate inbox and confirm it reaches the inbox, not spam.",
+        "[ ] Configure Supabase Auth custom SMTP with Resend. Use the verified Dirty Turf sender, not onboarding@resend.dev.",
+        "[ ] Send a Supabase Magic Link to the owner and test member. Confirm both cold-start web redirect and com.dirtyturf.academy://auth/callback on a phone.",
+        "[ ] Rotate the Resend API key pasted in chat after SMTP works. Save the replacement only in Resend/Supabase account settings, never in Git, Netlify public variables, or app code.",
     ], compact=True)
-    pdf.section("Accounts required")
-    pdf.paragraph("HighLevel, Supabase, GitHub, Netlify, domain/DNS, transactional SMTP, Apple Developer/App Store Connect, Google Play Console/Google Cloud, and a client-owned Stripe account before payments are enabled.", width_chars=96, size=8.5, leading=11)
+    pdf.timeline("STEP 2", "Lock production identity", "Release owner")
+    pdf.checklist([
+        "[ ] Confirm the exact production HTTPS domain. Set it as the Supabase Site URL, Netlify custom domain, APP_URL, allowed origin, and auth redirect.",
+        "[ ] Keep the native callback in Supabase redirect allowlists and Edge Function AUTH_REDIRECT_URLS.",
+        "[ ] Create one permanent Dirty Turf owner in Supabase Auth and one normal test member. Confirm the auth trigger creates the owner profile, organization, and owner membership.",
+        "[ ] Record the owner organization UUID; this is the only missing value required by the private Academy import manifest.",
+        "[ ] Confirm privacy, support, and account-deletion pages use the final production domain and are publicly reachable.",
+        "[ ] Record a client owner and recovery owner with MFA for Supabase, Resend, GitHub, Netlify, Stripe, Apple, Google Play, GHL, and DNS.",
+    ], compact=True)
     pdf.section("Secret boundary")
+    pdf.command("BROWSER-SAFE: VITE_SUPABASE_URL, publishable key, public Payment Link\nSERVER-ONLY: service-role key, GHL token, Resend key, Stripe secret + webhook secret")
+    pdf.gate("Do not invite members until a real Supabase Magic Link delivers from the verified Dirty Turf sender and both web and native redirects work.")
+
+    pdf.new_page("Gate 2", "Import and guarantee member access", "Load the verified archive, provision every account silently, then pilot Magic Links")
+    pdf.timeline("STEP 3", "Dry run and import", "Migration owner")
+    pdf.checklist([
+        "[ ] Add the production owner organization UUID to output/private/dirty-turf-academy-import.json. Keep the file ignored and client-owned.",
+        "[ ] Run npm run academy:access-audit. Require 60 unique login emails, 49 enrolled members, zero duplicates, and allEnrolledCanLogin:true.",
+        "[ ] Call academy-import with commit:false. Match every count to the verified archive before allowing writes.",
+        "[ ] Call academy-import with commit:true once, then repeat it and prove provider IDs make the import idempotent.",
+        "[ ] Open representative lessons, drafts, quizzes, posts, comments, events, member profiles, assets, and enrollment states in both GHL and the app.",
+        "[ ] Confirm the normal test member cannot run an import, read another company, or fetch a private Academy asset without authorization.",
+    ], compact=True)
+    pdf.timeline("STEP 4", "Provision all member accounts", "Access owner")
+    pdf.checklist([
+        "[ ] Run the invite/provision preview. Require all 60 current login-eligible members ready and all 49 enrollments linked.",
+        "[ ] Provision all 60 accounts without sending mail. Preserve imported access grants; passwords do not migrate.",
+        "[ ] Prove an imported member can request a Magic Link and an unknown email cannot create Academy access.",
+        "[ ] Pilot Magic Links with 3-5 members across iPhone, Android, and web. Check delivery, cold start, expiration, reuse, logout, and second-device login.",
+        "[ ] After the pilot passes, notify the remaining members in batches of no more than 25 and monitor delivery failures.",
+        "[ ] Confirm owner, admin, moderator, active, cancelled, suspended, and unassigned access behavior before broad notification.",
+    ], compact=True)
+    pdf.section("Exact sequence")
     pdf.command(
-        "# Browser-safe (Netlify)\nVITE_SUPABASE_URL=...\nVITE_SUPABASE_PUBLISHABLE_KEY=...\nVITE_STRIPE_ACADEMY_PAYMENT_LINK=https://buy.stripe.com/...\n\n# Server-only (Supabase secrets)\nSUPABASE_SERVICE_ROLE_KEY=...\nGHL_PRIVATE_INTEGRATION_TOKEN=...\nGHL_LOCATION_ID=...\nAPP_URL=...  APP_ALLOWED_ORIGINS=...  AUTH_REDIRECT_URLS=...\nSTRIPE_SECRET_KEY=...  STRIPE_WEBHOOK_SECRET=..."
+        "owner org UUID -> access audit -> import dry run -> commit -> repeat\npreview accounts -> provision silently -> 3-5 pilot links -> batches <= 25"
     )
-    pdf.checklist([
-        "[ ] Never put the HighLevel token or Supabase service-role key in a VITE_ variable, browser storage, app bundle, screenshot, PDF, or Git commit.",
-        "[ ] Record one client owner and one recovery owner for every account before launch.",
-    ], compact=True)
-    pdf.gate("Every account is client-owned, every secret has a rotation path, and no personal credential or billing profile is attached to the product.")
+    pdf.gate("Do not send all 60 links at once. A silent account import plus a small delivery pilot protects members from lockouts and duplicate invitations.")
 
-    pdf.new_page("09:00-11:00", "Activate the Supabase backend", "Apply the reviewed schema, deploy the importer, and prove authorization before content import")
-    pdf.timeline("9:00 AM", "Migrate and deploy", "Backend owner")
-    pdf.command(
-        "npm run check\nnpx supabase link --project-ref ipbtldajgsoxixqmajec\nnpx supabase db push\nnpx supabase functions deploy academy-import\nnpx supabase functions deploy academy-invite-members\nnpx supabase functions deploy create-checkout\nnpx supabase functions deploy create-billing-portal\nnpx supabase functions deploy stripe-webhook --no-verify-jwt\nnpx supabase functions deploy health"
-    )
+    pdf.new_page("Gates 3 and 4", "Payments and production web", "Prove billing in Stripe test mode, then merge and verify the deployed release")
+    pdf.timeline("STEP 5", "Activate Stripe test mode", "Billing owner")
     pdf.checklist([
-        "[ ] Apply all ten ordered migrations through 20260918080238_academy_billing_entitlements.sql and confirm Academy, community, billing, entitlement, invite, asset, progress, and import-ledger tables exist.",
-        "[ ] In Supabase API settings, expose only the intended schema. Re-check RLS, grants, revoked anon/public access, and security-invoker views after any exposure change.",
-        "[ ] Create one Academy owner/admin and one normal active member. Verify the importer rejects the member and accepts only the owner/admin session.",
-        "[ ] Create two company organizations. Prove company B cannot read company A properties, calculations, visits, photos, or storage objects.",
-        "[ ] Confirm academy-assets is private. Test an authorized signed asset URL and an unauthorized read of the same object.",
-        "[ ] Confirm claim_academy_memberships is authenticated-only and ensure_academy_user_workspace is service-role-only. A normal member must not call the provisioning Edge Function.",
-        "[ ] Configure client SMTP and exact auth redirects before notifications. Test web and native PKCE links from cold start and while the app is open, plus logout, expiry, and second-device login.",
-        "[ ] Enable backups, document the restore owner, and record the migration version plus Edge Function versions.",
+        "[ ] Create or confirm the client-owned Stripe account, business verification, Dirty Turf administrators, MFA, billing, and recovery ownership.",
+        "[ ] Create the Academy product and Price in test mode. Map the Price to an inactive Academy plan and its included courses, then activate it.",
+        "[ ] Register the Supabase stripe-webhook endpoint for Checkout and subscription lifecycle events. Store secret and webhook signing keys only in Supabase secrets.",
+        "[ ] Configure Customer Portal and a web Payment Link. Add only the public Payment Link to Netlify.",
+        "[ ] Complete one existing-member Checkout and one new-email Payment Link purchase. Verify account, grant, enrollment, billing rows, and Magic Link access.",
+        "[ ] Replay a webhook, force a retriable failure, and prove idempotent recovery. Then cancel both a Stripe-only member and an imported GHL member to prove grant precedence.",
+        "[ ] Confirm Billing Portal works on web and native iOS/Android show no purchase button or external checkout link.",
     ], compact=True)
-    pdf.section("Backend acceptance record")
-    pdf.signoff_row("Migration applied")
-    pdf.signoff_row("Cross-tenant RLS denied")
-    pdf.signoff_row("Private Academy and photo storage proven")
-    pdf.signoff_row("SMTP and auth redirects proven")
-    pdf.gate("Stop if a service-role key appears in the browser bundle, if any cross-company record is readable, or if a normal member can run an admin import.")
+    pdf.timeline("STEP 6", "Merge and prove production", "Release owner")
+    pdf.checklist([
+        "[ ] Wait for GitHub PR #2 checks and the Netlify preview. Review the complete diff and run a secret scan before merge.",
+        "[ ] Set the exact production domain, Supabase public variables, and public Stripe Payment Link in Netlify. Keep every secret server-side.",
+        "[ ] Verify preview auth, deep links, calculator, Academy, lessons, community, events, assets, progress, PWA, headers, mobile widths, and console/network logs.",
+        "[ ] Merge PR #2 to main, wait for Netlify production, and repeat the authenticated golden path on the deployed URL.",
+        "[ ] Record commit SHA, deploy ID, migration/function versions, smoke-test account, rollback owner, and rollback steps.",
+    ], compact=True)
+    pdf.gate("Stripe stays in test mode and the old production site stays untouched until PR checks, preview QA, billing proof, and authenticated production smoke all pass.")
 
-    pdf.new_page("11:00-13:00", "Import the HighLevel archive", "The private source package is composed and validated; reconcile it in production before any invite is sent")
-    pdf.timeline("11:00 AM", "Dry run, reconcile, then import", "Migration owner")
-    pdf.section("Private archive ready")
+    pdf.new_page("Gate 5", "Real phones and store builds", "A simulator proves compilation; launch approval requires physical-device accuracy and signed releases")
+    pdf.timeline("STEP 7", "Run the measured-yard test", "Field QA owner")
     pdf.checklist([
-        "[x] 1 course, 21 normalized module groups, 128 unique lessons, 137 assets, and 3 quizzes are stored in output/private/ghl-course-import.json outside Git.",
-        "[x] 60 login-eligible members plus one historical non-login author, 49 enrollments, 15 categories, 62 posts, 59 comments, and 5 events are reconciled.",
-        "[x] Lesson status is preserved: 109 published and 19 drafts. Quiz questions, answer options, explanations, and only verifiable answer keys are supported.",
-        "[x] The composed import manifest validates with SHA-256 0e1f53311b4635a7ed2969ff5bf6e2b038781eeb3126a958e3aaea82633f1aee.",
-        "[x] Source course percentages are preserved as an aggregate floor; the import does not fabricate lesson completions, reaction identities, or RSVP identities.",
+        "[ ] On a supported iPhone, place at least four live AR points around a tape-measured yard, undo one point, finish, and record area, perimeter, device, OS, and error percentage.",
+        "[ ] Repeat on a supported Samsung/Android phone with ARCore. Compare both results to the same tape-measured reference.",
+        "[ ] Trace the same yard on the map, test multiple turf polygons, and compare combined area to the known reference.",
+        "[ ] Test camera/location denial, unsupported hardware, tracking loss, rotation, background/resume, poor network, offline behavior, and duplicate-save protection.",
+        "[ ] Save a calculation with photos and reopen it on a second device. Verify area, rate, pounds, 40-lb and 50-lb bags, price, method, date, and history.",
     ], compact=True)
-    pdf.section("Production import steps")
+    pdf.timeline("STEP 8", "Create signed test releases", "Store owner")
     pdf.checklist([
-        "[ ] Create the client owner in Supabase, copy the owner organization UUID into the ignored manifest, and validate it again.",
-        "[ ] Run academy:access-audit. Require 60 unique login emails, 49 enrolled members, zero duplicates, and allEnrolledCanLogin:true.",
-        "[ ] Invoke academy-import with commit:false. Match every returned count to the private report before allowing a write.",
-        "[ ] Invoke academy-import with commit:true once. Re-run it to prove provider IDs make the operation idempotent.",
-        "[ ] Open at least three lessons, posts, comments, events, member profiles, assets, and enrollment states in both HighLevel and the native app.",
-        "[ ] Confirm ownership and long-term availability for every Filesafe, image, video, PDF, certificate, and download URL. Copy owned assets to private storage when permitted.",
+        "[ ] Apple: accept pending agreements, confirm Dirty Turf LLC seller details and team signing, create the App Store Connect record, archive Release, and upload to TestFlight.",
+        "[ ] Google Play: create the app record, confirm package/version/signing ownership, build a signed AAB, and publish to Internal testing.",
+        "[ ] Add store name, description, category, screenshots, privacy policy, support URL, deletion URL, reviewer login, data-safety/privacy answers, and content rating.",
+        "[ ] Test install, update, deep link, Magic Link, logout, expired/reused links, camera, location, photos, map, lessons, community, and notifications on store builds.",
+        "[ ] Confirm both store builds are consumption-only and give reviewers a pre-existing Academy test account.",
     ], compact=True)
-    pdf.section("Import sequence")
-    pdf.command(
-        "npm run academy:access-audit\nacademy-import { commit:false }     -> reconcile counts\nacademy-import { commit:true }      -> idempotent import\nmember access preview/provision     -> readiness, no email"
-    )
-    pdf.checklist([
-        "[ ] Provision until all 60 current members report allEligibleReady:true and all 49 enrollments are linked. Accounts use Magic Links; passwords do not migrate.",
-        "[ ] Prove a source member can sign in and an unknown email cannot create an account. Test owner, admin, moderator, active, cancelled, suspended, and unassigned access.",
-    ], compact=True)
-    pdf.gate("Do not commit private manifests, member email addresses, course bodies, or community exports to Git. Keep the archive encrypted and client-owned.")
+    pdf.gate("Do not submit for review until AR accuracy is recorded on both platforms and TestFlight plus Play Internal builds complete the full signed-in golden path.")
 
-    pdf.new_page("13:00-14:00", "Activate web payments", "Stripe-hosted checkout grants Supabase access; native apps remain consumption-only")
-    pdf.timeline("1:00 PM", "Configure Stripe and prove access", "Billing owner")
+    pdf.new_page("Gate 6", "Cutover, monitor, and sign off", "Keep the launch reversible until Dirty Turf approves member access and production behavior")
+    pdf.timeline("STEP 9", "Run the final GHL delta", "Migration owner")
     pdf.checklist([
-        "[ ] Create a client-owned Stripe account, complete business verification, add Dirty Turf administrators, require MFA, and configure client billing plus recovery ownership.",
-        "[ ] In Stripe test mode, create the Academy product and recurring or one-time Price. Do not accept a price or amount from the app browser.",
-        "[ ] Insert the Price ID into an inactive academy_billing_plans row, map included courses in academy_billing_plan_courses, verify the community-access choice, then activate the plan.",
-        "[ ] Register the stripe-webhook Edge Function for checkout.session.completed, checkout.session.async_payment_succeeded, and subscription created, updated, and deleted events.",
-        "[ ] Configure the Stripe Customer Portal and a web Payment Link. Redirect successful payment to https://YOUR_APP_DOMAIN/?checkout=success and set VITE_STRIPE_ACADEMY_PAYMENT_LINK in Netlify.",
-        "[ ] Complete an authenticated web Checkout. Verify customer, subscription/payment, access grant, course enrollment, and processed integration event rows.",
-        "[ ] Complete a Payment Link purchase with a new email. Verify Supabase silently creates the confirmed account, member, provisioned invite, and grants; then sign in through Magic Link.",
-        "[ ] Replay the same webhook and prove it is idempotent. Force one processing failure and prove the unprocessed event retries instead of being discarded.",
-        "[ ] Cancel a Stripe-only test member and confirm access is removed at the intended time. Cancel a Stripe record for an imported member and confirm the separate HighLevel import grant preserves access.",
-        "[ ] Open Billing Portal on the web. Confirm the iOS and Android bundles show no purchase button or external checkout link and only consume access bought elsewhere.",
+        "[ ] Freeze GHL course/community changes, take a final delta capture, validate it, and reconcile member, enrollment, lesson, post, comment, and event counts.",
+        "[ ] Run a final import dry run, commit the approved delta once, and repeat it to prove idempotency.",
+        "[ ] Back up the private archive and production database. Record the restore owner and test the documented rollback path.",
+        "[ ] Rotate the GHL private token shared in chat and keep the replacement server-side only.",
+        "[ ] Keep GHL read-only as the rollback source until member access, content, billing, web production, and store pilot acceptance are signed off.",
     ], compact=True)
-    pdf.section("Billing acceptance")
-    pdf.signoff_row("Test Checkout and Payment Link")
-    pdf.signoff_row("Webhook replay and recovery")
-    pdf.signoff_row("Grant and cancellation rules")
-    pdf.signoff_row("Native consumption-only review")
-    pdf.gate("Do not switch Stripe to live mode until test checkout, Magic Link access, cancellation, webhook retry, and imported-member preservation all pass.")
-
-    pdf.new_page("14:00-15:30", "Field tools and real devices", "The calculator is verified; ARKit, ARCore, map accuracy, persistence, and failure states need field proof")
-    pdf.timeline("1:00 PM", "Run the measured-yard test", "Field QA owner")
+    pdf.timeline("STEP 10", "Pilot, launch, and monitor", "Product owner")
     pdf.checklist([
-        "[x] Manual mode accepts length and width, calculates area correctly, and preserves decimal precision before display rounding.",
-        "[x] Application rate is a dropdown from 0.25 through 3.00 lb/sq ft. Bag price, bag coverage, cleaning plan, and property name are removed from the calculator.",
-        "[x] Total pounds equals exact area times selected rate; 40-lb and 50-lb bag counts round upward independently; customer price uses charge per sq ft.",
-        "[x] Native iOS ARKit and Android ARCore point-placement bridges are implemented, and map tracing remains a separate measurement path.",
-        "[ ] On a supported iPhone, place at least four live AR points around a tape-measured yard, undo one point, finish, and compare area plus perimeter.",
-        "[ ] Repeat on a supported Samsung/Android phone using ARCore. Record model, OS, tracking quality, measured area, and error percentage.",
-        "[ ] Trace the same yard on the map, test multiple turf polygons, and verify the combined area against the known reference.",
-        "[ ] Deny camera and location permissions; test unsupported AR hardware, tracking loss, rotation, background/resume, offline mode, and duplicate save protection.",
-        "[ ] Save a calculation with photos, refresh, sign in on a second device, and confirm exact area, rate, pounds, both bag counts, price, method, date, and history.",
+        "[ ] Complete the 3-5 member pilot before the broad member notification. Resolve every login, entitlement, or content mismatch first.",
+        "[ ] Monitor auth delivery, invite failures, Edge Function errors, webhook failures, database errors, app crashes, and support during the first 24 hours.",
+        "[ ] Record an owner, timestamp, and evidence link for each final sign-off below.",
     ], compact=True)
-    pdf.section("Reference calculation")
-    pdf.command(
-        "20 ft x 18 ft                         = 360 sq ft\n360 sq ft x 0.50 lb/sq ft             = 180 lb\nceil(180 / 40) / ceil(180 / 50)        = 5 / 4 bags\n360 sq ft x $0.72/sq ft                = $259.20"
-    )
-    pdf.gate("Live camera measurement is not approved by a simulator build. It must place real points and match a tape-measured job on both mobile platforms.")
-
-    pdf.new_page("15:30-17:00", "Web release and production QA", "Commit the reviewed code, deploy through GitHub and Netlify, then verify production independently")
-    pdf.timeline("3:30 PM", "Ship the web release", "Release owner")
-    pdf.command("npm run check\nnpm run academy:access-audit\nnpm run academy:validate -- output/private/dirty-turf-academy-import.json\nnpm run native:sync\ngit diff --check\ngit status --short")
-    pdf.checklist([
-        "[ ] Run a secret scan and confirm .env.local plus output/private remain ignored. Review the complete diff before commit.",
-        "[ ] Push the release branch, open or update the pull request, require checks, merge to main, and record the commit SHA.",
-        "[ ] Set VITE_SUPABASE_URL, the Supabase publishable key, and the public buy.stripe.com Payment Link in Netlify. Keep service-role, HighLevel, and Stripe secret keys in server-side Supabase settings.",
-        "[ ] Deploy a Netlify preview first. Verify SPA routes, auth callbacks, manifest/service worker, icons, security headers, and no stale duplicate site is receiving production traffic.",
-        "[ ] Verify 320, 360, 390, and 430 px widths plus landscape, tablet, and desktop. Check calculator keyboard behavior, safe areas, bottom navigation, long lesson content, quizzes, community, and events.",
-        "[ ] Deploy production and re-run sign-in, Academy, lesson progress, quiz, post, comment, reaction, bookmark, event RSVP, calculator save, photo, history, Checkout, webhook, and Billing Portal flows.",
-        "[ ] Inspect production console and network errors. Confirm no private token, member archive, service-role key, or source export is downloadable.",
-        "[ ] Record Netlify deploy ID, Supabase migration and function versions, production URL, smoke-test account, rollback owner, and rollback steps.",
-    ], compact=True)
-    pdf.section("Production acceptance")
-    pdf.signoff_row("GitHub checks and merge")
-    pdf.signoff_row("Netlify preview and production smoke")
-    pdf.signoff_row("Supabase logs clean")
-    pdf.gate("A successful build or deploy status is not production proof. Repeat the golden path on the deployed URL with an authenticated client test account.")
-
-    pdf.new_page("17:00-18:30", "Mobile stores and cutover", "Create signed test builds, invite a small cohort, and keep a reversible HighLevel handoff")
-    pdf.timeline("5:00 PM", "Build, invite, and cut over", "Product owner")
-    pdf.checklist([
-        "[ ] In Xcode, confirm bundle ID, Dirty Turf team, automatic signing, iOS 15 minimum, icons, splash, camera/location descriptions, and archive a Release build to TestFlight.",
-        "[ ] In Android Studio, confirm application ID, version code/name, signing key ownership, icons, permissions, privacy declarations, and create a signed AAB for Internal testing.",
-        "[ ] Add store name, description, category, screenshots, privacy policy, support URL, account-deletion URL, reviewer login, data-safety/privacy answers, and content-rating responses.",
-        "[ ] Test install, update, deep link, magic link, logout, expired/reused links, camera, location, photo upload, map, lesson, community, and notification behavior on physical devices.",
-        "[ ] Verify store-review builds are consumption-only: no native purchase CTA or web checkout link. Supply a reviewer account with pre-existing Academy access.",
-        "[ ] Require the access preview to show all 60 current members ready and all 49 enrollments linked. Notify a 3-5 person pilot, verify delivery and entitlements, then notify remaining members in batches of at most 25.",
-        "[ ] Freeze HighLevel content changes, take one final delta capture, re-run the import dry run, reconcile counts, and commit the approved delta import.",
-        "[ ] Keep HighLevel read-only as the rollback source until Dirty Turf approves the native archive, member access, and production behavior. Retain the encrypted export independently.",
-        "[ ] Monitor authentication, invite failures, Edge Function errors, database errors, app crashes, and member support during the first 24 hours.",
-    ], compact=True)
-    pdf.section("Final cutover order")
-    pdf.paragraph("1. Freeze GHL.  2. Capture delta.  3. Validate.  4. Dry run.  5. Commit import.  6. Provision all accounts.  7. Pilot links.  8. Notify remaining members.  9. Production smoke.  10. Client approval.", width_chars=94, size=8.4, leading=11)
     pdf.section("Final sign-off")
-    pdf.signoff_row("Content and member reconciliation")
-    pdf.signoff_row("Security, privacy, and ownership")
-    pdf.signoff_row("iPhone and Android field workflow")
-    pdf.signoff_row("Web production and store test builds")
-    pdf.signoff_row("Cutover and rollback approval")
-    pdf.gate("Launch only when every sign-off has an owner, timestamp, evidence link, and explicit pass. Otherwise keep HighLevel live and the native app in labeled pilot mode.")
+    pdf.signoff_row("60 accounts ready / 49 enrollments linked")
+    pdf.signoff_row("Stripe test purchase, replay, cancellation")
+    pdf.signoff_row("Netlify production golden path")
+    pdf.signoff_row("iPhone AR / Samsung AR / map accuracy")
+    pdf.signoff_row("TestFlight / Play Internal acceptance")
+    pdf.signoff_row("GHL delta, backup, and rollback")
+    pdf.section("Simple next actions")
+    pdf.paragraph("1. Verify Resend DNS.  2. Create owner and test member.  3. Import and provision.  4. Prove Stripe.  5. Merge and smoke production.  6. Test real phones.  7. Upload signed builds.  8. Pilot members.  9. Cut over.", width_chars=94, size=8.4, leading=11)
+    pdf.gate("Launch only after every sign-off passes. Until then, keep HighLevel available and label the new app as a controlled pilot.")
 
     pdf.finish()
     print(OUTPUT)
