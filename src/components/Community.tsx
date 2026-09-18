@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, AtSign, BookOpen, Bookmark, CalendarDays, Check, ChevronRight, ExternalLink, Hash, Heart, Link2, LockKeyhole, MapPin, Megaphone, MessageSquare, MoreHorizontal, Paperclip, Pin, Plus, Search, Send, Share2, SlidersHorizontal, ThumbsUp, Trophy, Users, X } from "lucide-react";
+import { ArrowLeft, AtSign, BookOpen, Bookmark, CalendarDays, Check, ChevronRight, ExternalLink, Hash, Heart, Link2, LockKeyhole, MapPin, Megaphone, MessageSquare, MoreHorizontal, Pin, Plus, Search, Send, Share2, ThumbsUp, Trophy, Users, X } from "lucide-react";
 import type { AcademyEvent, CommunityComment, CommunityMedia, CommunityPost, Member } from "../domain";
 import { communityChannels, communityLeaders, communityStats, featuredCommunityPost } from "../lib/communityOverview";
 import { communityBodyBlocks, communityBodyNeedsExpansion, communityPostShareUrl } from "../lib/communityPost";
@@ -275,7 +275,7 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
         <h2>{selected.name}</h2><PostBody body={selected.body} />
         <CommunityMediaGallery items={selected.mediaItems ?? []} />
         <EngagementSummary likes={selected.likes ?? 0} comments={thread.length} />
-        <div className="post-actions"><button className={selected.liked ? "active" : ""} onClick={() => void toggleLike(selected)}><ThumbsUp size={17} fill={selected.liked ? "currentColor" : "none"} /> Like</button><button onClick={() => document.getElementById("thread-reply")?.focus()}><MessageSquare size={17} /> Comment</button><button onClick={() => void sharePost(selected)}><Share2 size={17} /> Share</button></div>
+        <div className="post-actions"><button className={selected.liked ? "active" : ""} onClick={() => void toggleLike(selected)}><ThumbsUp size={17} fill={selected.liked ? "currentColor" : "none"} /> Like</button><button onClick={() => { const input = document.getElementById("thread-reply"); input?.focus(); input?.scrollIntoView({ behavior: "smooth", block: "center" }); }}><MessageSquare size={17} /> Comment</button><button onClick={() => void sharePost(selected)}><Share2 size={17} /> Share</button></div>
       </article>
       <section className="thread-comments">
         <div className="thread-count">{thread.length} {thread.length === 1 ? "comment" : "comments"}</div>
@@ -313,11 +313,11 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
             <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Clear, specific title" aria-label="Post title" maxLength={120} />
             <textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="Add the details other operators need..." rows={4} aria-label="Post body" maxLength={5000} />
             {mentionMatches(body, members).length > 0 && <MentionSuggestions members={mentionMatches(body, members)} onSelect={(member) => setBody(insertMention(body, member.name))} />}
-            <div className="composer-foot"><select value={newCategory} onChange={(event) => setNewCategory(event.target.value)} aria-label="Post category">{categories.slice(1).map((item) => <option key={item}>{item}</option>)}</select><button type="button" className="attach-button" aria-label="Attach media" onClick={() => onToast("Photo and file uploads activate with private storage.")}><Paperclip size={17} /></button><button className="publish-button" disabled={saving || !title.trim() || !body.trim()}>{saving ? "Publishing..." : "Publish"}</button></div>
+            <div className="composer-foot"><select value={newCategory} onChange={(event) => setNewCategory(event.target.value)} aria-label="Post category">{categories.slice(1).map((item) => <option key={item}>{item}</option>)}</select><button className="publish-button" disabled={saving || !title.trim() || !body.trim()}>{saving ? "Publishing..." : "Publish"}</button></div>
           </form>}
           {featuredPost && <section className="featured-discussion"><span><Pin size={15} /> Featured</span><button onClick={() => openThread(featuredPost.id)}><span><strong>{featuredPost.name}</strong><small>{featuredPost.author} · {featuredPost.likes ?? 0} likes</small></span><ChevronRight size={17} /></button></section>}
           <div className="category-scroller" role="tablist" aria-label="Discussion categories">{categories.map((item) => <button role="tab" aria-selected={category === item} className={category === item ? "active" : ""} onClick={() => selectCategory(item)} key={item}>{item}</button>)}</div>
-          <div className="feed-controls"><div className="feed-tabs">{(["Recent", "Popular", "Following", "Saved"] as const).map((item) => <button className={sort === item ? "active" : ""} onClick={() => setSort(item)} key={item}>{item}</button>)}</div><button className="icon-plain" aria-label="Feed filters" onClick={() => onToast("Showing posts from your company community.")}><SlidersHorizontal size={17} /></button></div>
+          <div className="feed-controls"><div className="feed-tabs">{(["Recent", "Popular", "Following", "Saved"] as const).map((item) => <button className={sort === item ? "active" : ""} onClick={() => setSort(item)} key={item}>{item}</button>)}</div></div>
           <section className="community-feed">{visible.map((post) => {
             const quickReplyText = quickReplyDrafts[post.id] ?? "";
             const bodyExpandable = communityBodyNeedsExpansion(post.body);

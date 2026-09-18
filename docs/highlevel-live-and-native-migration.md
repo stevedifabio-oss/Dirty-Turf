@@ -8,12 +8,12 @@ This is a controlled migration, not a screen scrape directly into production. Ev
 
 ## Production Migration Status
 
-The initial native Academy migration completed on September 18, 2026. The ignored source archive validates at SHA-256 `e919ba8701b532ca3c8e4b63fa6612a87f621bd27c7ce33e9c6e8397c9d4a4f7`. All 28 dependency-ordered batches passed dry run, commit, and an idempotent repeat.
+The initial native Academy migration completed on September 18, 2026. The ignored source archive validates at SHA-256 `e919ba8701b532ca3c8e4b63fa6612a87f621bd27c7ce33e9c6e8397c9d4a4f7`. All 29 dependency-ordered batches passed dry run, commit, and an idempotent repeat.
 
 - 60 unique member emails were silently provisioned in Supabase Auth; no customer email was sent.
 - All 49 imported enrollments are linked to login-ready accounts.
 - One additional GHL member row is retained as a historical post author. It has no email or enrollment and is intentionally not provisioned.
-- The production Academy contains 1 course, 21 modules, 128 lessons, 137 asset records, 62 posts, 59 comments, and 5 events.
+- The production Academy contains 1 course, 21 modules, 128 lessons (109 published and 19 draft), 142 asset records, 62 posts, 59 comments, and 5 events. The import validator reports zero empty published lessons.
 - The private `academy-assets` bucket contains 117 deduplicated course objects plus 31 imported post objects. The live post records reference only the 7 real post images and preserve 4 external resources; 162 captured profile/avatar artifacts were removed from post media.
 - The owner account, owner organization, Academy community, source ledgers, storage policies, and server-side import/provisioning functions are live.
 
@@ -73,7 +73,7 @@ Move owned assets to the private `academy-assets` bucket. Keep third-party hoste
 5. Run `npm run academy:access-audit`. It must report 60 unique login emails, 49 enrollment records, and `allEnrolledCanLogin: true` without printing member PII.
 6. Create the client owner in Supabase, obtain the organization UUID, and add it to the private source archive as `ownerOrganizationId`, then compose and validate again.
 7. Sign into the app as that Academy owner/admin and call `academy-import` with every generated batch in filename order and `commit: false`.
-8. Compare the combined batch counts with the private report and source archive. The current capture expects 60 login-eligible members plus one historical author, 49 enrollments, 128 lessons, 62 posts, 59 comments, and 5 events.
+8. Compare the combined batch counts with the private report and source archive. The current capture expects 60 login-eligible members plus one historical author, 49 enrollments, 128 lessons (109 published and 19 draft), 142 asset rows, 62 posts, 59 comments, and 5 events.
 9. Call the same batches in order with `commit: true`, then repeat the complete ordered batch set. Provider IDs make application records idempotent; source-ledger batches remain separate audit records.
 10. Call `academy-invite-members` with `action: "preview"`. The historical author must not receive an invite.
 11. Call `academy-invite-members` with `action: "provision"` in batches of no more than 50 until `summary.allEnrolledReady` is true. This creates and links accounts without sending email.
@@ -103,7 +103,7 @@ Company job records remain isolated by organization. Academy records are shared 
 1. Member, course, module, lesson, asset, enrollment, post, comment, and event counts match the final archive.
 2. At least three records of every content type are visually compared with HighLevel.
 3. Rich text, videos, downloads, timestamps, replies, pins, roles, progress, and access rules match.
-4. All 49 enrolled source members show ready in the access summary; notification delivery, login, logout, expired links, and magic links work on iPhone and Android.
+4. All 60 current source members show login-ready in the access summary and all 49 course enrollments are linked; notification delivery, login, logout, expired links, and magic links work on iPhone and Android.
 5. Active members can access only their assigned content; cancelled and suspended members cannot.
 6. A final delta capture is imported after HighLevel enters read-only/frozen mode.
 7. The client approves the archive and native production release before HighLevel is retired.

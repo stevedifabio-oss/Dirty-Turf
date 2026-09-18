@@ -204,8 +204,9 @@ Steve's point-to-point camera workflow needs real world-space raycasts, not a ph
 
 The browser preview deliberately does not estimate distance from ordinary camera pixels. Visit photos remain a separate property-history action.
 
-The current native source compiles as an Android debug APK/release AAB and an
-iOS Release simulator app. It still must be calibrated on real supported
+The current native source compiles as an Android debug APK, a signed release
+AAB, and an iOS Release simulator app. Android release `1 (1.0)` is Active on
+the Play Internal testing track. It still must be calibrated on real supported
 iPhone and Android devices; compilation and a web preview cannot prove ARKit or
 ARCore accuracy.
 
@@ -245,7 +246,7 @@ npm run ghl:verify
 
 `ghl-status` is an authenticated, owner/admin-only Edge Function that verifies the configured location and reports available pipeline, workflow, and product metadata. Current HighLevel API documentation exposes course import but no supported course catalog export/read endpoint, so the one-time content archive is captured through the client-owned admin session and imported through the server-side migration function.
 
-The current private capture has been reconciled to the client HighLevel location and composes into a valid dry-run manifest containing 60 current members with email, 49 enrollments, 128 lessons, 62 posts, 59 comments, and 5 events. One former commenter is retained as a non-login historical author. Aggregate course completion is preserved on enrollments; no lesson completions, reaction identities, or RSVP identities are fabricated when HighLevel exposes only totals.
+The current private capture has been reconciled to the client HighLevel location and composes into a valid dry-run manifest containing 60 current members with email, 49 enrollments, 128 lessons (109 published and 19 draft), 142 asset rows, 62 posts, 59 comments, and 5 events. Every published lesson has importable content. One former commenter is retained as a non-login historical author. Aggregate course completion is preserved on enrollments; no lesson completions, reaction identities, or RSVP identities are fabricated when HighLevel exposes only totals.
 
 Private exports remain under ignored `output/private/`. Build and verify the package without printing credentials or member data:
 

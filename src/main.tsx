@@ -59,6 +59,7 @@ import {
   saveJob,
   saveLessonCompletion,
   savePost,
+  signInWithPassword,
   signOut,
   subscribeToNotifications,
   supabase,
@@ -135,6 +136,7 @@ function App() {
   const [toast, setToast] = useState("");
   const [draft, setDraft] = useState<QuoteDraft>(defaultDraft);
   const [photoUrl, setPhotoUrl] = useState("");
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [jobs, setJobs] = useState<Job[]>(initialJobs);
   const [courses, setCourses] = useState<Course[]>(seedCourses);
   const [posts, setPosts] = useState<CommunityPost[]>(initialPosts);
@@ -261,8 +263,10 @@ function App() {
       photos: photoUrl ? 1 : 0,
     };
     try {
-      const savedJob = await saveJob(job);
+      const savedJob = await saveJob(job, photoFile ?? undefined);
       setJobs((current) => [savedJob, ...current.filter((item) => item.id !== savedJob.id)]);
+      setPhotoFile(null);
+      setPhotoUrl("");
       setQuoteOpen(false);
       setActiveView("home");
       setToast(dataMode === "cloud" ? "Calculation synced to the company workspace." : "Calculation saved on this device.");
@@ -306,6 +310,11 @@ function App() {
     setActiveView("home");
     setToast("Signed out of the workspace.");
   };
+  const handlePasswordSignIn = async (email: string, password: string) => {
+    const { error } = await signInWithPassword(email, password);
+    if (error) throw error;
+    setToast("Signed in to the Academy workspace.");
+  };
 
   const openNotification = (notification: AppNotification) => {
     setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, read: true } : item));
@@ -340,6 +349,7 @@ function App() {
     return <LaunchAccessGate
       status={workspaceAccess.status}
       onRequestMagicLink={sendMagicLink}
+      onPasswordSignIn={handlePasswordSignIn}
       onSignOut={handleSignOut}
     />;
   }
@@ -384,7 +394,7 @@ function App() {
         {searchOpen && <SearchPanel query={query} setQuery={setQuery} jobs={jobs} onOpenJob={() => openQuote("manual")} onNavigate={changeView} />}
         {!searchOpen && activeView === "home" && <HomeView jobs={jobs} openQuote={openQuote} changeView={changeView} />}
         {!searchOpen && activeView === "tools" && <ToolsView draft={draft} quote={quote} openQuote={openQuote} setToast={setToast} />}
-        {!searchOpen && activeView === "learn" && <AcademyView courses={courses} onCoursesChange={setCourses} onLessonCompletion={saveLessonCompletion} onToast={setToast} onDiscuss={() => changeView("community")} />}
+        {!searchOpen && activeView === "learn" && <AcademyView courses={courses} dataMode={dataMode} onCoursesChange={setCourses} onLessonCompletion={saveLessonCompletion} onToast={setToast} onDiscuss={() => changeView("community")} />}
         {!searchOpen && activeView === "community" && <CommunityView posts={posts} comments={comments} members={members} events={events} requestedPostCloudId={requestedPostCloudId} onRequestedPostOpened={() => setRequestedPostCloudId(undefined)} onPostsChange={setPosts} onCommentsChange={setComments} onCreatePost={savePost} onCreateComment={saveComment} onToggleLike={(post) => post.cloudId ? togglePostReaction(post.cloudId) : Promise.resolve(null)} onToggleCommentLike={(comment) => comment.cloudId ? toggleCommentReaction(comment.cloudId) : Promise.resolve(null)} onToggleBookmark={(post) => post.cloudId ? togglePostBookmark(post.cloudId) : Promise.resolve(null)} onNavigate={changeView} onToast={setToast} />}
         {!searchOpen && activeView === "events" && <EventsView events={events} onEventsChange={setEvents} onToggleRsvp={(event) => event.cloudId ? toggleAcademyEventRsvp(event.cloudId) : Promise.resolve(null)} onToast={setToast} />}
 
@@ -396,7 +406,7 @@ function App() {
           <NavItem icon={<Wrench size={20} />} label="Tools" active={activeView === "tools"} onClick={() => changeView("tools")} />
         </footer>
 
-        {quoteOpen && <QuoteSheet draft={draft} setDraft={setDraft} quote={quote} photoUrl={photoUrl} setPhotoUrl={setPhotoUrl} onClose={() => setQuoteOpen(false)} onSave={saveQuote} />}
+        {quoteOpen && <QuoteSheet draft={draft} setDraft={setDraft} quote={quote} photoUrl={photoUrl} setPhotoUrl={setPhotoUrl} setPhotoFile={setPhotoFile} onClose={() => setQuoteOpen(false)} onSave={saveQuote} onError={setToast} />}
         {hubSection && <Suspense fallback={<div className="sheet-loading" role="status">Loading workspace...</div>}><HubSheet section={hubSection} onClose={() => setHubSection(null)} onToast={setToast} onRequestMagicLink={sendMagicLink} onSignOut={handleSignOut} dataMode={dataMode} notifications={notifications} onOpenNotification={openNotification} onMarkAllNotificationsRead={markEveryNotificationRead} /></Suspense>}
         {toast && <div className="toast" role="status"><CheckCircle2 size={18} />{toast}</div>}
       </section>
@@ -407,13 +417,17 @@ function App() {
 function LaunchAccessGate({
   status,
   onRequestMagicLink,
+  onPasswordSignIn,
   onSignOut,
 }: {
   status: "loading" | "signed_out" | "no_access";
   onRequestMagicLink: (email: string) => Promise<void>;
+  onPasswordSignIn: (email: string, password: string) => Promise<void>;
   onSignOut: () => Promise<void>;
 }) {
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [passwordMode, setPasswordMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const paymentLink = academyPaymentLink();
@@ -421,14 +435,20 @@ function LaunchAccessGate({
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!email.trim()) return;
+    if (!email.trim() || (passwordMode && !password)) return;
     setBusy(true);
     setMessage("");
     try {
-      await onRequestMagicLink(email.trim());
-      setMessage("If this email has Academy access, a secure sign-in link is on the way.");
+      if (passwordMode) {
+        await onPasswordSignIn(email.trim(), password);
+      } else {
+        await onRequestMagicLink(email.trim());
+        setMessage("If this email has Academy access, a secure sign-in link is on the way.");
+      }
     } catch {
-      setMessage("The sign-in link could not be sent. Please try again.");
+      setMessage(passwordMode
+        ? "Those credentials could not be verified. Check them and try again."
+        : "The sign-in link could not be sent. Please try again.");
     } finally {
       setBusy(false);
     }
@@ -457,11 +477,17 @@ function LaunchAccessGate({
       {status === "signed_out" ? <>
         <p className="kicker">Dirty Turf Academy</p>
         <h1>Welcome back.</h1>
-        <p className="launch-copy">Enter the email connected to your Academy membership. No password is needed.</p>
+        <p className="launch-copy">{passwordMode
+          ? "Sign in with the reusable credentials provided for review or support."
+          : "Enter the email connected to your Academy membership. No password is needed."}</p>
         <form className="access-form" onSubmit={submit}>
           <label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="operator@company.com" autoComplete="email" inputMode="email" required /></label>
-          <button className="primary-button wide" disabled={busy || !email.trim()}>{busy ? "Sending..." : "Email me a sign-in link"}</button>
+          {passwordMode && <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></label>}
+          <button className="primary-button wide" disabled={busy || !email.trim() || (passwordMode && !password)}>{busy ? (passwordMode ? "Signing in..." : "Sending...") : (passwordMode ? "Sign in" : "Email me a sign-in link")}</button>
         </form>
+        <button className="launch-auth-switch" type="button" disabled={busy} onClick={() => { setPasswordMode((current) => !current); setPassword(""); setMessage(""); }}>
+          {passwordMode ? "Email me a sign-in link instead" : "Use a password"}
+        </button>
         {paymentLink && <div className="launch-purchase"><span>Not a member yet?</span><a className="secondary-button wide" href={paymentLink}><CreditCard size={17} /> Join Academy on the web</a></div>}
       </> : <>
         <p className="kicker">Account found</p>
@@ -480,6 +506,7 @@ function LaunchAccessGate({
 
 function HomeView({ jobs, openQuote, changeView }: { jobs: Job[]; openQuote: (mode: MeasurementMode) => void; changeView: (view: View) => void }) {
   const latest = jobs[0];
+  const historyPhotos = jobs.flatMap((job) => (job.photoItems ?? []).map((photo) => ({ ...photo, label: job.address }))).slice(0, 6);
   return (
     <div className="view-content home-view">
       <section className="field-hero">
@@ -502,9 +529,9 @@ function HomeView({ jobs, openQuote, changeView }: { jobs: Job[]; openQuote: (mo
         </> : <div className="dashboard-empty"><Ruler size={24} /><div><p>First calculation</p><h3>No saved measurements yet</h3><span>Measure a yard to calculate infill bags and customer price.</span></div><button className="ghost-button" onClick={() => openQuote("manual")}>Start <Plus size={16} /></button></div>}
       </section>
 
-      {latest && <section className="history-strip">
-        <div className="section-heading compact"><div><p>Site history</p><h3>Photos by visit</h3></div><button className="bare-icon" aria-label="View all site photos"><ChevronRight size={18} /></button></div>
-        <div className="photo-row" aria-label="Past turf photos"><div className="photo-tile spring"><span>Today</span><small>After service</small></div><div className="photo-tile summer"><span>2025</span><small>Infill refresh</small></div><div className="photo-tile winter"><span>2024</span><small>First visit</small></div></div>
+      {historyPhotos.length > 0 && <section className="history-strip">
+        <div className="section-heading compact"><div><p>Site history</p><h3>Photos by visit</h3></div><ImagePlus size={18} /></div>
+        <div className="photo-row" aria-label="Past turf photos">{historyPhotos.map((photo, index) => <a className="photo-tile real-photo" href={photo.url} target="_blank" rel="noreferrer" key={`${photo.url}-${index}`}><img src={photo.url} alt={`${photo.label} visit`} /><span>{formatPhotoDate(photo.capturedAt)}</span><small>{photo.label}</small></a>)}</div>
       </section>}
 
       <section className="academy-preview">
@@ -555,11 +582,26 @@ function SearchPanel({ query, setQuery, jobs, onOpenJob, onNavigate }: { query: 
   );
 }
 
-function QuoteSheet({ draft, setDraft, quote, photoUrl, setPhotoUrl, onClose, onSave }: { draft: QuoteDraft; setDraft: React.Dispatch<React.SetStateAction<QuoteDraft>>; quote: QuoteTotals; photoUrl: string; setPhotoUrl: (url: string) => void; onClose: () => void; onSave: () => void | Promise<void> }) {
+function QuoteSheet({ draft, setDraft, quote, photoUrl, setPhotoUrl, setPhotoFile, onClose, onSave, onError }: { draft: QuoteDraft; setDraft: React.Dispatch<React.SetStateAction<QuoteDraft>>; quote: QuoteTotals; photoUrl: string; setPhotoUrl: (url: string) => void; setPhotoFile: (file: File | null) => void; onClose: () => void; onSave: () => void | Promise<void>; onError: (message: string) => void }) {
   const dialogRef = useRef<HTMLElement>(null);
   useModalDialog(dialogRef, onClose);
   const update = <K extends keyof QuoteDraft>(key: K, value: QuoteDraft[K]) => setDraft((current) => ({ ...current, [key]: value }));
-  const changePhoto = (event: React.ChangeEvent<HTMLInputElement>) => { const file = event.target.files?.[0]; if (file) setPhotoUrl(URL.createObjectURL(file)); };
+  const changePhoto = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      onError("Choose a photo in JPEG, PNG, WebP, or HEIC format.");
+      event.target.value = "";
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      onError("Visit photos must be smaller than 20 MB.");
+      event.target.value = "";
+      return;
+    }
+    setPhotoFile(file);
+    setPhotoUrl(URL.createObjectURL(file));
+  };
   return (
     <div className="sheet-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section ref={dialogRef} className="quote-sheet" role="dialog" aria-modal="true" aria-labelledby="quote-title">
@@ -640,6 +682,7 @@ function numberValue(value: string) { const parsed = Number(value); return Numbe
 function formatNumber(value: number) { return new Intl.NumberFormat("en-US").format(value); }
 function formatCurrency(value: number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value); }
 function measurementLabel(method: MeasurementMode) { return method === "camera" ? "Camera measurement" : method === "map" ? "Map trace" : "Manual measurement"; }
+function formatPhotoDate(value: string) { const date = new Date(value); return Number.isNaN(date.valueOf()) ? "Visit" : new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(date); }
 
 const rootElement = document.getElementById("root")!;
 const appWindow = window as Window & { __dirtyTurfRoot?: ReturnType<typeof createRoot> };

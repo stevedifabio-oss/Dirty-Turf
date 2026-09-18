@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { lessonHasContent } from "./lib/academy-import-validation.mjs";
 
 const inputPath = process.argv[2];
 if (!inputPath) {
@@ -79,6 +80,9 @@ for (const course of manifest.courses ?? []) {
     for (const lesson of module.lessons ?? []) {
       requireText(lesson.externalId, `lesson in ${module.externalId}.externalId`);
       requireText(lesson.title, `lesson ${lesson.externalId || "<unknown>"}.title`);
+      if (lesson.status === "published" && !lessonHasContent(lesson)) {
+        failures.push(`Published lesson ${lesson.externalId || "<unknown>"} (${lesson.title || "untitled"}) has no lesson content`);
+      }
       if (lessonIds.has(lesson.externalId)) failures.push(`Duplicate lesson externalId: ${lesson.externalId}`);
       lessonIds.add(lesson.externalId);
     }
