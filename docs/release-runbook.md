@@ -60,9 +60,9 @@ member emails, private tokens, or reviewer credentials in this repository.
 
 | Evidence | Value |
 | --- | --- |
-| Git commit SHA | `5d8c1e30cd5f89c111ab4266dcef04f792cd03f8` |
-| GitHub PR and successful run | `stevedifabio-oss/Dirty-Turf#2` / CI run 15 passed |
-| Netlify deploy ID and URL | Preview status passed at `https://deploy-preview-2--bright-brigadeiros-df8b48.netlify.app`; deploy ID pending Netlify UI |
+| Git commit SHA | Record the immutable merge SHA at release |
+| GitHub PR and successful run | `stevedifabio-oss/Dirty-Turf#2`; require the latest head to pass immediately before merge |
+| Netlify deploy ID and URL | Preview is ready at `https://deploy-preview-2--bright-brigadeiros-df8b48.netlify.app`; record the production deploy after merge |
 | Supabase migrations | 12 applied / 51 public RLS-protected tables |
 | Supabase Edge Function versions | Six deployed; record immutable versions at production release |
 | Source archive SHA-256 | `0e1f53311b4635a7ed2969ff5bf6e2b038781eeb3126a958e3aaea82633f1aee` |
