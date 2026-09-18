@@ -222,8 +222,8 @@ def build_pdf():
     y1 = pdf.card("BACKEND LIVE", "Nineteen migrations, 55 RLS tables, and ten Edge Functions are active. Mailgun Auth SMTP is configured; delivery awaits pilot proof.", GREEN, col_w, 82, MARGIN)
     pdf.card("ACADEMY IMPORTED", "60 login accounts, all 49 enrollments, 109 published lessons, 19 drafts, 142 assets, community, and events are in Supabase.", LIME, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y1 - 14
-    y2 = pdf.card("APP VERIFIED", "Eighty-three tests, five responsive breakpoints, private photos, PWA checks, a signed Play AAB, and an iOS simulator build pass.", ORANGE, col_w, 82, MARGIN)
-    pdf.card("RELEASE CANDIDATE", "Web, iOS, and Android contain the same verified bundle. GHL stays live until the remaining client gates pass.", GREEN_DARK, col_w, 82, MARGIN + col_w + 12)
+    y2 = pdf.card("APP VERIFIED", "Production web, Academy, community, calculator, responsive layouts, PWA checks, signed Play AAB, and iOS simulator build pass.", ORANGE, col_w, 82, MARGIN)
+    pdf.card("RELEASE LIVE", "Web, iOS source, Android source, APK, and AAB share the same verified bundle. GHL stays live until client gates pass.", GREEN_DARK, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y2 - 18
     pdf.section("Completed and removed from this checklist")
     pdf.checklist([
@@ -232,12 +232,12 @@ def build_pdf():
         "[x] Sixty unique member accounts were silently provisioned and all 49 enrollments are linked. No customer email was sent.",
         "[x] One course, 21 modules, 109 complete published lessons, 19 retained drafts, 142 asset rows, 62 posts, 59 comments, 5 events, 7 real post images, and 4 external resources are live.",
         "[x] Google Play identity/phone/website verification, Apple and Play app records, Apple renewal billing, package reservation, and Play App Signing enrollment are complete.",
-        "[x] Google Play release 1 (1.0) is Active on Internal testing with the signed AAB, listing graphics, and a checked four-account tester list.",
+        "[x] Google Play release 1 (1.0) is Active on Internal testing with the signed AAB, listing graphics, and a checked five-account tester list.",
         "[x] Desktop, PWA, calculator, map math, protected address search, native wrappers, importer, billing, legal/deletion flows, private signed job photos, store metadata, permissions, icons, Android builds, and iOS simulator build pass.",
         "[x] In-app notifications, unread state, replies, mentions, post/comment likes, granular email preferences, branded Mailgun templates, retries, deep links, and signed unsubscribe are built.",
     ], compact=True)
-    pdf.section("Five remaining acceptance gates")
-    pdf.paragraph("1. Mailgun delivery proof.  2. Real-member Magic Link pilot.  3. Stripe test proof.  4. Physical-device and store release proof.  5. Controlled GHL delta and cutover.", width_chars=94, size=8.6, leading=11)
+    pdf.section("Six remaining acceptance gates")
+    pdf.paragraph("1. Mailgun proof.  2. Ralph provisioning and member Magic Link pilot.  3. Stripe test proof.  4. Pilot sign-off.  5. Physical-device/store proof.  6. Controlled GHL delta and cutover.", width_chars=94, size=8.6, leading=11)
     pdf.gate("Keep HighLevel live until member login, content access, production smoke tests, real-device measurement, and rollback evidence all pass.")
 
     pdf.new_page("Gate 1", "Mailgun acceptance", "The domain, production deployment, and Auth SMTP are live; now prove delivery and redirects")
@@ -256,7 +256,7 @@ def build_pdf():
     pdf.checklist([
         "[x] Lock the permanent web origin as https://app.dirtyturf.com and add it to the Supabase Auth redirect allowlist.",
         "[x] Netlify ownership, Cloudflare routing, HTTPS/TLS, and HTTP-to-HTTPS redirect pass for app.dirtyturf.com.",
-        "[x] PR #2 merged as ab26370a; Netlify production deploy 6aad91918ffb9d0007f1c178 is ready on app.dirtyturf.com.",
+        "[x] PRs #8 and #9 merged through 3bc61b7; Netlify production deploy 6aadcb721b0a1500083537b1 is ready on app.dirtyturf.com.",
         "[x] app.dirtyturf.com is the Supabase Site URL, APP_URL, allowed origin, and web Magic Link target; the native callback remains allowed.",
         "[x] The permanent Dirty Turf owner, owner profile, organization, membership, and Academy administrator access exist in Supabase.",
         "[x] The owner organization UUID is recorded in the ignored private import package and the production import is complete.",
@@ -282,6 +282,7 @@ def build_pdf():
     pdf.checklist([
         "[x] Invite/provision preview and post-import audit report all 60 login-eligible members ready and all 49 enrollments linked.",
         "[x] All 60 accounts were provisioned without sending mail. Imported access grants are durable; passwords were not migrated.",
+        "[ ] Provision ralph@rangeljanitorial.com in Supabase Auth and grant Academy access. His Google Play tester access is already live.",
         "[ ] With Auth SMTP configured, prove an imported member can request a Magic Link and an unknown email cannot create Academy access.",
         "[ ] Pilot Magic Links with 3-5 members across iPhone, Android, and web. Check delivery, cold start, expiration, reuse, logout, and second-device login.",
         "[ ] After the pilot passes, notify the remaining members in batches of no more than 25 and monitor delivery failures.",
@@ -307,16 +308,16 @@ def build_pdf():
     ], compact=True)
     pdf.timeline("STEP 6", "Merge and prove production", "Release owner")
     pdf.checklist([
-        "[x] GitHub PRs #2, #3, and #6, their CI evidence, the repository credential-pattern scan, and the complete local gate pass.",
-        "[x] GitHub CI runs 35386112811 and 35386821902 passed on their exact heads immediately before merge.",
-        "[x] Team-authenticated preview smoke confirms the login shell, production canonical metadata, Mailgun disclosure, and public legal routes with no console errors.",
+        "[x] GitHub PRs #8 and #9, their CI evidence, repository credential-pattern scan, and Netlify secret scan pass.",
+        "[x] GitHub CI runs 35405864477 and 35406450303 passed on their exact heads immediately before merge.",
+        "[x] Authenticated production QA confirms the Academy, real lesson content, community feed/details/comments, calculator, and legal routes.",
         "[x] app.dirtyturf.com ownership, Cloudflare/Netlify routing, TLS, and HTTP redirect pass the automated domain gate.",
         "[x] Verify the local release candidate at 320x640, 360x800, 800x360, 768x1024, and 1440x900 with no horizontal overflow; calculator actions, post details, comments, and navigation remain usable.",
-        "[ ] Verify preview auth, deep links, Academy, community, events, private assets, progress, headers, and network logs with an existing pilot member.",
+        "[x] Verify Academy, community, imported private lesson content, calculator math, secure headers, and responsive behavior with an existing signed-in member.",
         "[x] Notification-center QA passes at 390 and 1440 pixels with zero overflow, no console errors, working mark-all, mentions, nested replies, and settings toggles.",
-        "[x] Merge commit 3b51728a is live in Netlify production deploy 6aad92da88497700081bd70a.",
+        "[x] Merge commit 3bc61b7 is live in Netlify production deploy 6aadcb721b0a1500083537b1.",
         "[x] Production smoke passes app shell, legal pages, PWA assets, SPA fallback, redirect, manifest MIME, and secure headers.",
-        "[ ] Run the authenticated golden path with a pilot member and record the test and rollback owners.",
+        "[ ] Record the pilot test owner and rollback owner, then repeat the golden path from a newly delivered Magic Link.",
     ], compact=True)
     pdf.gate("Keep the new production app in controlled-pilot mode until billing proof and the authenticated member path both pass.")
 
@@ -333,8 +334,8 @@ def build_pdf():
     pdf.checklist([
         "[x] Build a clean Android debug APK and signed release AAB, run Android unit tests, and verify web/iOS/Android share bundle SHA-256 bc584012c7d38805....",
         "[x] Declare that the iOS app uses only exempt standard encryption; the app does not add custom cryptography.",
-        "[!] Apple App ID and App Store Connect record 6813588770 exist. The Mac has no usable distribution certificate/profile. Issue the client-owned signing assets, complete EU trader compliance, then archive and upload to TestFlight. A physical iPhone is separately required for AR acceptance.",
-        "[x] Google Play app record 4973615558687213779, protected client upload key, Play App Signing, signed AAB, four-account tester list, and Active Internal testing release 1 (1.0) are complete.",
+        "[!] Apple App ID and App Store Connect record 6813588770 exist, automatic-signing cleanup is merged, and the Release simulator build passes. No TestFlight build exists: create an Apple Distribution certificate and App Store profile, then archive/upload. A physical iPhone is separately required for AR acceptance.",
+        "[x] Google Play app record 4973615558687213779, protected client upload key, Play App Signing, signed AAB, five-account tester list, and Active Internal testing release 1 (1.0) are complete.",
         "[x] Google Cloud is not required for measurement: live camera measurement uses ARKit/ARCore and map tracing uses Esri/NAIP/OSM. Address search now runs through a protected, cached, rate-limited service.",
         "[x] Save the Google Play Education listing copy, 512x512 icon, 1024x500 feature graphic, five 1080x1920 screenshots, data-safety baseline, URLs, reviewer notes, and consumption-only billing guidance.",
         "[ ] Create a dedicated reusable password reviewer account, grant Academy access, and store its credentials only in Google Play's private review fields.",
@@ -368,7 +369,7 @@ def build_pdf():
     pdf.signoff_row("TestFlight / Play Internal acceptance")
     pdf.signoff_row("GHL delta, backup, and rollback")
     pdf.section("Simple next actions")
-    pdf.paragraph("1. Install the Internal test on Steve's Galaxy and finish Play declarations/reviewer access.  2. Confirm Mailgun and pilot 3-5 members.  3. Prove Stripe.  4. Test a real Samsung and iPhone.  5. Upload TestFlight.  6. Run the final GHL delta, notify, and cut over.", width_chars=94, size=8.4, leading=11)
+    pdf.paragraph("1. Provision Ralph.  2. Install Play Internal on Steve's Galaxy and run the golden path.  3. Prove Mailgun with 3-5 members.  4. Prove Stripe.  5. Finish Play declarations.  6. Create Apple distribution signing and upload TestFlight.  7. Run the final GHL delta, notify, and cut over.", width_chars=94, size=8.4, leading=11)
     pdf.gate("Launch only after every sign-off passes. Until then, keep HighLevel available and label the new app as a controlled pilot.")
 
     pdf.finish()
