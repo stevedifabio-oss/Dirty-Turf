@@ -7,12 +7,13 @@ preview is evidence for compilation and layout, not production acceptance.
 
 ## Release order
 
-1. Point `app.dirtyturf.com` at Netlify, finish ownership verification, and
-   wait for a valid TLS certificate.
-2. Configure the existing verified Mailgun domain as Supabase custom SMTP and
-   add the Mailgun API values plus two generated notification secrets to Edge
-   Function secrets.
-3. Verify custom SMTP and both web and native Magic Link redirects. Deploy the
+1. `app.dirtyturf.com` ownership, Cloudflare-to-Netlify routing, TLS, and the
+   production merge are complete.
+2. Supabase Auth custom SMTP is configured with the existing Mailgun sender.
+   Confirm Mailgun DKIM, then add the Mailgun API values plus two generated
+   notification secrets to Edge Function secrets. `APP_URL` already points to
+   `https://app.dirtyturf.com`.
+3. Verify real delivery and both web and native Magic Link redirects. Deploy the
    notification function, send to one internal recipient, verify direct links
    and unsubscribe, then enable its five-minute Cron schedule.
 4. The permanent owner, organization, Academy community, and all 60 login
@@ -25,10 +26,9 @@ preview is evidence for compilation and layout, not production acceptance.
    precedence.
 7. Deploy `map-geocode`, verify member-only address search, attribution,
    per-user cache, and the one-request-per-second upstream guard.
-8. Publish the PR preview and run the complete smoke, responsive, and
-   authenticated golden paths.
-9. Merge to `main`, wait for the exact production deploy, and repeat the smoke
-   and authenticated paths.
+8. PRs #2 and #3 passed GitHub CI and Netlify preview builds before merge.
+9. The exact production deploy passes the unauthenticated custom-domain smoke.
+   Repeat the authenticated golden path with the pilot member.
 10. Build signed TestFlight and Play Internal releases. Run physical iPhone and
    Android measurement tests.
 11. Pilot 3-5 members, capture the final GHL delta, then notify the remaining
@@ -103,9 +103,9 @@ member emails, private tokens, or reviewer credentials in this repository.
 
 | Evidence | Value |
 | --- | --- |
-| Git commit SHA | Record the immutable merge SHA at release |
-| GitHub PR and successful run | `stevedifabio-oss/Dirty-Turf#2`; require the latest head to pass immediately before merge |
-| Netlify deploy ID and URL | Preview is ready at `https://deploy-preview-2--bright-brigadeiros-df8b48.netlify.app`; record the production deploy after merge |
+| Git commit SHA | `3b51728afb910e6e08e2cfbc99e541a2eefdb805` |
+| GitHub PR and successful run | `stevedifabio-oss/Dirty-Turf#2` and `#3`; CI runs `35386112811` and `35386821902` passed before merge |
+| Netlify deploy ID and URL | Production deploy `6aad92da88497700081bd70a` at `https://app.dirtyturf.com`; unauthenticated production smoke passed |
 | Supabase migrations | 19 applied / 55 public RLS-protected tables; recheck at production release |
 | Supabase Edge Function versions | Ten active: `academy-import` v5; `map-geocode` v2; health/invite/checkout/portal/Stripe webhook v3; GHL status/webhook and Academy notifications v1 |
 | Source archive SHA-256 | `e919ba8701b532ca3c8e4b63fa6612a87f621bd27c7ce33e9c6e8397c9d4a4f7` |

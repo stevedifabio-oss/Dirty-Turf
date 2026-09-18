@@ -50,7 +50,10 @@ export function inspectPublicPages(pages) {
     failures.push("Support page must distinguish live camera measurement");
   }
   if (!/Request account deletion/i.test(deletion)) failures.push("Account deletion instructions are incomplete");
-  if (!/hello@dirtyturf\.com/i.test(deletion)) failures.push("Account deletion page is missing the support email");
+  const hasSupportEmail = /hello@dirtyturf\.com/i.test(deletion)
+    || /data-cfemail=["'][a-f0-9]+["']/i.test(deletion)
+    || /\/cdn-cgi\/l\/email-protection#/i.test(deletion);
+  if (!hasSupportEmail) failures.push("Account deletion page is missing the support email");
 
   return { failures };
 }

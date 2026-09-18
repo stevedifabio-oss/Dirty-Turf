@@ -219,7 +219,7 @@ def build_pdf():
         "Every current Academy member can request a Magic Link, reach the content they already own, use the community and field tools, and reopen saved work on another device. The desktop web app, mobile web/PWA, and signed iOS and Android builds all pass their production paths."
     )
     col_w = (PAGE_W - 2 * MARGIN - 12) / 2
-    y1 = pdf.card("BACKEND LIVE", "Nineteen migrations, 55 RLS tables, and ten Edge Functions are active. Email delivery remains safely paused for Mailgun.", GREEN, col_w, 82, MARGIN)
+    y1 = pdf.card("BACKEND LIVE", "Nineteen migrations, 55 RLS tables, and ten Edge Functions are active. Mailgun Auth SMTP is configured; delivery awaits pilot proof.", GREEN, col_w, 82, MARGIN)
     pdf.card("ACADEMY IMPORTED", "60 login accounts, 49 linked enrollments, 128 lessons, community history, events, and private media are in Supabase.", LIME, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y1 - 14
     y2 = pdf.card("APP VERIFIED", "Eighty-one tests, responsive web QA, private media, PWA checks, Android APK/AAB, and an iOS simulator build all pass.", ORANGE, col_w, 82, MARGIN)
@@ -235,17 +235,16 @@ def build_pdf():
         "[x] Desktop, PWA, calculator, map math, protected address search, native wrappers, importer, billing, legal/deletion flows, private signed media, store metadata, permissions, icons, Android builds, and iOS simulator build pass.",
         "[x] In-app notifications, unread state, replies, mentions, post/comment likes, granular email preferences, branded Mailgun templates, retries, deep links, and signed unsubscribe are built.",
     ], compact=True)
-    pdf.section("Five remaining client gates")
-    pdf.paragraph("1. DNS, TLS, and Mailgun delivery.  2. Real-member Magic Link pilot.  3. Stripe test proof.  4. Physical-device and store release proof.  5. Controlled GHL delta and cutover.", width_chars=94, size=8.6, leading=11)
+    pdf.section("Five remaining acceptance gates")
+    pdf.paragraph("1. Mailgun delivery proof.  2. Real-member Magic Link pilot.  3. Stripe test proof.  4. Physical-device and store release proof.  5. Controlled GHL delta and cutover.", width_chars=94, size=8.6, leading=11)
     pdf.gate("Keep HighLevel live until member login, content access, production smoke tests, real-device measurement, and rollback evidence all pass.")
 
-    pdf.new_page("Gate 1", "Mailgun and production identity", "Activate app.dirtyturf.com and verify Auth and community email with the existing Mailgun account")
-    pdf.timeline("STEP 1", "Configure the existing Mailgun sender", "Dirty Turf owner")
+    pdf.new_page("Gate 1", "Mailgun acceptance", "The domain, production deployment, and Auth SMTP are live; now prove delivery and redirects")
+    pdf.timeline("STEP 1", "Verify the existing Mailgun sender", "Dirty Turf owner")
     pdf.checklist([
-        "[!] Dirty Turf already uses Mailgun. Add its existing verified domain, SMTP host, username, and password to Supabase; do not create another mail provider account.",
-        "[ ] In Mailgun, confirm the selected sending domain is active with SPF, DKIM, and DMARC healthy. Use a sender address covered by that verified domain.",
-        "[ ] Configure Supabase Auth custom SMTP with Mailgun. Use smtp.mailgun.org and port 587 unless the account shows an EU-region host.",
-        "[ ] Add MAILGUN_API_KEY, MAILGUN_DOMAIN, MAILGUN_FROM_EMAIL, MAILGUN_FROM_NAME, MAILGUN_REGION, APP_URL, and two different generated notification secrets to Supabase Edge Function secrets.",
+        "[x] Supabase Auth custom SMTP is saved with hello@mail.dirtyturf.com through smtp.mailgun.org:465.",
+        "[!] Public DNS confirms Mailgun MX/SPF and DMARC for mail.dirtyturf.com. Confirm Mailgun shows DKIM healthy before the pilot.",
+        "[ ] Add MAILGUN_API_KEY, MAILGUN_DOMAIN, MAILGUN_FROM_EMAIL, MAILGUN_FROM_NAME, MAILGUN_REGION, and two different generated notification secrets to Supabase Edge Function secrets. APP_URL is already live.",
         "[ ] Disable Mailgun click tracking for authentication mail so Magic Link URLs are not rewritten.",
         "[ ] Send a Supabase Magic Link to the owner and one existing pilot member. Confirm both cold-start web redirect and com.dirtyturf.academy://auth/callback on a physical phone.",
         "[ ] Send every community template to one internal recipient. Verify sender, layout, direct link, no duplicate on retry, category opt-out, and signed unsubscribe before enabling Cron.",
@@ -255,11 +254,12 @@ def build_pdf():
     pdf.timeline("STEP 2", "Lock production identity", "Release owner")
     pdf.checklist([
         "[x] Lock the permanent web origin as https://app.dirtyturf.com and add it to the Supabase Auth redirect allowlist.",
-        "[!] Netlify is waiting for TXT subdomain-owner-verification = a274de0c635882497aea3cc2e0df6f49 in the Cloudflare account that owns dirtyturf.com. Then point app to bright-brigadeiros-df8b48.netlify.app and wait for TLS.",
-        "[ ] Once HTTPS passes, set app.dirtyturf.com as the Supabase Site URL, APP_URL, allowed origin, and web Magic Link target; preserve the native callback.",
+        "[x] Netlify ownership, Cloudflare routing, HTTPS/TLS, and HTTP-to-HTTPS redirect pass for app.dirtyturf.com.",
+        "[x] PR #2 merged as ab26370a; Netlify production deploy 6aad91918ffb9d0007f1c178 is ready on app.dirtyturf.com.",
+        "[x] app.dirtyturf.com is the Supabase Site URL, APP_URL, allowed origin, and web Magic Link target; the native callback remains allowed.",
         "[x] The permanent Dirty Turf owner, owner profile, organization, membership, and Academy administrator access exist in Supabase.",
         "[x] The owner organization UUID is recorded in the ignored private import package and the production import is complete.",
-        "[!] Privacy, support, deletion instructions, and the signed-in deletion workflow are built; confirm all three public routes on app.dirtyturf.com after TLS.",
+        "[x] Privacy, support, deletion instructions, and the signed-in deletion workflow are built and return 200 over production HTTPS.",
         "[ ] Record a client owner and recovery owner with MFA for Supabase, Mailgun, GitHub, Netlify, Stripe, Apple, Google Play, GHL, and DNS.",
     ], compact=True)
     pdf.section("Secret boundary")
@@ -280,7 +280,7 @@ def build_pdf():
     pdf.checklist([
         "[x] Invite/provision preview and post-import audit report all 60 login-eligible members ready and all 49 enrollments linked.",
         "[x] All 60 accounts were provisioned without sending mail. Imported access grants are durable; passwords were not migrated.",
-        "[ ] After Mailgun is active, prove an imported member can request a Magic Link and an unknown email cannot create Academy access.",
+        "[ ] With Auth SMTP configured, prove an imported member can request a Magic Link and an unknown email cannot create Academy access.",
         "[ ] Pilot Magic Links with 3-5 members across iPhone, Android, and web. Check delivery, cold start, expiration, reuse, logout, and second-device login.",
         "[ ] After the pilot passes, notify the remaining members in batches of no more than 25 and monitor delivery failures.",
         "[x] Imported historical posts and lessons did not generate old-content email; delivery remains paused until the pilot.",
@@ -288,7 +288,7 @@ def build_pdf():
     ], compact=True)
     pdf.section("Exact sequence")
     pdf.command(
-        "COMPLETE: owner -> audit -> dry run -> commit -> repeat -> provision silently\nREMAINING: Mailgun -> 3-5 pilot links -> notify in batches <= 25"
+        "COMPLETE: owner -> import -> provision silently -> Auth SMTP\nREMAINING: delivery proof -> 3-5 pilot links -> notify in batches <= 25"
     )
     pdf.gate("Do not send all 60 links at once. A silent account import plus a small delivery pilot protects members from lockouts and duplicate invitations.")
 
@@ -305,17 +305,18 @@ def build_pdf():
     ], compact=True)
     pdf.timeline("STEP 6", "Merge and prove production", "Release owner")
     pdf.checklist([
-        "[x] GitHub PR #2 and its Netlify preview exist; the final tree passes the repository credential-pattern scan and complete local gate.",
-        "[!] Recheck GitHub CI and the Netlify deploy-preview status on the final pushed head immediately before merge.",
+        "[x] GitHub PRs #2 and #3, their Netlify previews, the repository credential-pattern scan, and the complete local gate pass.",
+        "[x] GitHub CI runs 35386112811 and 35386821902 passed on their exact heads immediately before merge.",
         "[x] Team-authenticated preview smoke confirms the login shell, production canonical metadata, Mailgun disclosure, and public legal routes with no console errors.",
-        "[ ] Finish app.dirtyturf.com ownership, CNAME, and TLS. Run npm run release:domain, then the production release:smoke gate; keep secrets server-side.",
+        "[x] app.dirtyturf.com ownership, Cloudflare/Netlify routing, TLS, and HTTP redirect pass the automated domain gate.",
         "[x] Verify the local release candidate at desktop, 390px iPhone, and 412px Android widths with no horizontal overflow; private one- and five-image community posts load correctly.",
         "[ ] Verify preview auth, deep links, Academy, community, events, private assets, progress, headers, and network logs with an existing pilot member.",
         "[x] Notification-center QA passes at 390 and 1440 pixels with zero overflow, no console errors, working mark-all, mentions, nested replies, and settings toggles.",
-        "[ ] Merge PR #2 to main, wait for Netlify production, and repeat the authenticated golden path on the deployed URL.",
-        "[ ] Run npm run release:preflight -- --check-domain. Record commit SHA, deploy ID, function versions, test account, rollback owner, and result.",
+        "[x] Merge commit 3b51728a is live in Netlify production deploy 6aad92da88497700081bd70a.",
+        "[x] Production smoke passes app shell, legal pages, PWA assets, SPA fallback, redirect, manifest MIME, and secure headers.",
+        "[ ] Run the authenticated golden path with a pilot member and record the test and rollback owners.",
     ], compact=True)
-    pdf.gate("Stripe stays in test mode and the old production site stays untouched until PR checks, preview QA, billing proof, and authenticated production smoke all pass.")
+    pdf.gate("Keep the new production app in controlled-pilot mode until billing proof and the authenticated member path both pass.")
 
     pdf.new_page("Gate 5", "Real phones and store builds", "A simulator proves compilation; launch approval requires physical-device accuracy and signed releases")
     pdf.timeline("STEP 7", "Run the measured-yard test", "Field QA owner")
@@ -363,7 +364,7 @@ def build_pdf():
     pdf.signoff_row("TestFlight / Play Internal acceptance")
     pdf.signoff_row("GHL delta, backup, and rollback")
     pdf.section("Simple next actions")
-    pdf.paragraph("1. Publish Netlify DNS.  2. Add Mailgun SMTP/API values and test one recipient.  3. Pilot 3-5 existing members.  4. Prove Stripe.  5. Merge and smoke production.  6. Test real phones.  7. Upload signed builds.  8. Run the final GHL delta, notify, and cut over.", width_chars=94, size=8.4, leading=11)
+    pdf.paragraph("1. Confirm Mailgun DKIM/API secrets and test one recipient.  2. Pilot 3-5 existing members.  3. Prove Stripe.  4. Run the authenticated production path.  5. Test real phones.  6. Upload signed builds.  7. Run the final GHL delta, notify, and cut over.", width_chars=94, size=8.4, leading=11)
     pdf.gate("Launch only after every sign-off passes. Until then, keep HighLevel available and label the new app as a controlled pilot.")
 
     pdf.finish()

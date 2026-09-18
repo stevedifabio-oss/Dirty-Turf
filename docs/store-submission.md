@@ -139,8 +139,9 @@ each asset.
 - The Google Play app record is created, `com.dirtyturf.academy` is reserved,
   and Play App Signing is accepted. The release AAB still needs a client-owned
   upload key before it can be signed and uploaded to Internal testing.
-- Reviewer credentials cannot be created until the owner organization, Academy
-  import, custom SMTP, and Magic Link pilot are complete.
+- The owner organization, Academy import, and custom Auth SMTP are complete.
+  Reviewer credentials remain pending until one real Magic Link and the
+  representative member pilot pass on production web and native builds.
 
 ## Android release signing
 
