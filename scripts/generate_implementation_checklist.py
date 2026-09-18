@@ -307,7 +307,7 @@ def build_pdf():
     pdf.timeline("STEP 6", "Merge and prove production", "Release owner")
     pdf.checklist([
         "[x] Publish the exact tested tree to GitHub PR #2, review the complete diff, and pass the repository credential-pattern scan.",
-        "[x] GitHub CI run 22 passes on head 3c4e20c; Netlify deploy 6aad689cb3d14a0007492db5 completed in 17 seconds. Recheck both immediately before merge.",
+        "[x] GitHub CI and the Netlify deploy-preview status pass on PR #2's current head; recheck both immediately before merge.",
         "[x] Team-authenticated preview smoke confirms the login shell, production canonical metadata, Mailgun disclosure, and public legal routes with no console errors.",
         "[ ] Finish app.dirtyturf.com ownership, CNAME, and TLS. Run npm run release:domain, then the production release:smoke gate; keep secrets server-side.",
         "[x] Verify the local release candidate at 320, 390, and 1440 pixels with no horizontal overflow or console errors; smoke all six public routes.",
