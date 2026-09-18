@@ -121,6 +121,14 @@ export async function requestMagicLink(email: string) {
   });
 }
 
+export async function signInWithPassword(email: string, password: string) {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  return supabase.auth.signInWithPassword({
+    email: normalizeLoginEmail(email),
+    password,
+  });
+}
+
 export async function searchPropertyAddress(query: string): Promise<PropertyGeocodeResult[]> {
   if (!supabase) throw new Error("Sign in to search for an address.");
   const { data, error } = await supabase.functions.invoke("map-geocode", {
@@ -358,8 +366,58 @@ export async function loadJobs(seed: Job[]): Promise<Job[]> {
     .order("created_at", { ascending: false });
 
   if (error) throw error;
+  const estimateIds = (data ?? []).map((row) => row.id);
+  const estimateLookup = new Map<string, { organizationId: string; propertyId: string }>();
+  const photoLookup = new Map<string, NonNullable<Job["photoItems"]>>();
+  if (estimateIds.length) {
+    const { data: estimates, error: estimateError } = await supabase!
+      .from("estimates")
+      .select("id,organization_id,property_id")
+      .in("id", estimateIds);
+    if (estimateError) throw estimateError;
+    for (const estimate of estimates ?? []) {
+      estimateLookup.set(estimate.id, {
+        organizationId: estimate.organization_id,
+        propertyId: estimate.property_id,
+      });
+    }
+
+    const propertyIds = [...new Set((estimates ?? []).map((estimate) => estimate.property_id))];
+    if (propertyIds.length) {
+      const { data: photos, error: photoError } = await supabase!
+        .from("photos")
+        .select("property_id,storage_path,captured_at,kind")
+        .in("property_id", propertyIds)
+        .order("captured_at", { ascending: false });
+      if (photoError) throw photoError;
+      const paths = (photos ?? []).map((photo) => photo.storage_path);
+      const signedByPath = new Map<string, string>();
+      if (paths.length) {
+        const { data: signedRows, error: signedError } = await supabase!.storage
+          .from("job-photos")
+          .createSignedUrls(paths, 60 * 60);
+        if (signedError) throw signedError;
+        for (const signed of signedRows ?? []) {
+          if (signed.path && signed.signedUrl) signedByPath.set(signed.path, signed.signedUrl);
+        }
+      }
+      for (const photo of photos ?? []) {
+        const url = signedByPath.get(photo.storage_path);
+        if (!url) continue;
+        photoLookup.set(photo.property_id, [
+          ...(photoLookup.get(photo.property_id) ?? []),
+          {
+            url,
+            capturedAt: photo.captured_at,
+            kind: photo.kind as "before" | "after" | "site" | "issue",
+          },
+        ]);
+      }
+    }
+  }
   return (data ?? []).map((row) => ({
     id: stableNumericId(row.id),
+    cloudId: row.id,
     address: row.property_name,
     area: Number(row.square_feet),
     preciseArea: Number(row.square_feet),
@@ -373,10 +431,11 @@ export async function loadJobs(seed: Job[]): Promise<Job[]> {
     method: row.measurement_method,
     createdAt: relativeDate(row.created_at),
     photos: Number(row.photo_count),
+    photoItems: photoLookup.get(estimateLookup.get(row.id)?.propertyId ?? "") ?? [],
   }));
 }
 
-export async function saveJob(job: Job): Promise<Job> {
+export async function saveJob(job: Job, photoFile?: File): Promise<Job> {
   if (!(await hasCloudSession())) {
     const current = readLocal<Job[]>(JOBS_KEY, []);
     writeLocal(JOBS_KEY, [job, ...current.filter((item) => item.id !== job.id)]);
@@ -391,7 +450,43 @@ export async function saveJob(job: Job): Promise<Job> {
     p_measurement_method: job.method,
   });
   if (error) throw error;
-  return { ...job, id: stableNumericId(data) };
+  const estimateId = String(data);
+  if (!photoFile) return { ...job, id: stableNumericId(estimateId), cloudId: estimateId };
+
+  const { data: estimate, error: estimateError } = await supabase!
+    .from("estimates")
+    .select("organization_id,property_id")
+    .eq("id", estimateId)
+    .single();
+  if (estimateError || !estimate) throw estimateError || new Error("Saved calculation could not be resolved.");
+
+  const { data: userData, error: userError } = await supabase!.auth.getUser();
+  if (userError || !userData.user) throw userError || new Error("Sign in again before uploading a visit photo.");
+
+  const storagePath = await uploadJobPhoto(estimate.organization_id, estimate.property_id, photoFile);
+  const { error: metadataError } = await supabase!.from("photos").insert({
+    organization_id: estimate.organization_id,
+    property_id: estimate.property_id,
+    storage_path: storagePath,
+    kind: "site",
+    created_by: userData.user.id,
+  });
+  if (metadataError) {
+    await supabase!.storage.from("job-photos").remove([storagePath]);
+    throw metadataError;
+  }
+
+  const { data: signed, error: signedError } = await supabase!.storage
+    .from("job-photos")
+    .createSignedUrl(storagePath, 60 * 60);
+  if (signedError) throw signedError;
+  return {
+    ...job,
+    id: stableNumericId(estimateId),
+    cloudId: estimateId,
+    photos: 1,
+    photoItems: signed?.signedUrl ? [{ url: signed.signedUrl, capturedAt: new Date().toISOString(), kind: "site" }] : [],
+  };
 }
 
 export async function loadPosts(seed: CommunityPost[]): Promise<CommunityPost[]> {

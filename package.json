@@ -13,6 +13,7 @@
     "native:verify:artifacts": "node scripts/check-native-bundles.mjs --require-android-artifacts",
     "native:android:signing-status": "cd android && ./gradlew :app:releaseSigningStatus",
     "native:android:release": "npm run native:copy && cd android && ./gradlew :app:bundleRelease",
+    "native:android:install-device": "node scripts/install-android-device.mjs",
     "native:ios": "cap open ios",
     "native:android": "cap open android",
     "native:doctor": "cap doctor",
