@@ -137,15 +137,21 @@ export async function verifyUnsubscribeToken(token: string, secret: string, now 
   const [encodedPayload, encodedSignature, extra] = token.split(".");
   if (!encodedPayload || !encodedSignature || extra) return null;
   try {
+    const payloadBytes = base64UrlDecode(encodedPayload);
+    const signatureBytes = base64UrlDecode(encodedSignature);
+    if (
+      base64UrlEncode(payloadBytes) !== encodedPayload
+      || base64UrlEncode(signatureBytes) !== encodedSignature
+    ) return null;
     const key = await importSigningKey(secret);
     const verified = await crypto.subtle.verify(
       "HMAC",
       key,
-      base64UrlDecode(encodedSignature),
+      signatureBytes,
       new TextEncoder().encode(encodedPayload),
     );
     if (!verified) return null;
-    const payload = JSON.parse(new TextDecoder().decode(base64UrlDecode(encodedPayload))) as Partial<UnsubscribePayload>;
+    const payload = JSON.parse(new TextDecoder().decode(payloadBytes)) as Partial<UnsubscribePayload>;
     if (
       payload.version !== 1 ||
       typeof payload.memberId !== "string" ||
