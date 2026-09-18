@@ -80,6 +80,7 @@ supabase functions deploy ghl-webhook --no-verify-jwt
 supabase functions deploy ghl-status
 supabase functions deploy academy-import
 supabase functions deploy academy-invite-members
+supabase functions deploy academy-notifications --no-verify-jwt
 supabase functions deploy create-checkout
 supabase functions deploy create-billing-portal
 supabase functions deploy stripe-webhook --no-verify-jwt
@@ -95,7 +96,14 @@ supabase secrets set \
   APP_ALLOWED_ORIGINS=https://app.dirtyturf.com,https://bright-brigadeiros-df8b48.netlify.app \
   AUTH_REDIRECT_URLS=https://bright-brigadeiros-df8b48.netlify.app,com.dirtyturf.academy://auth/callback \
   STRIPE_SECRET_KEY=... \
-  STRIPE_WEBHOOK_SECRET=...
+  STRIPE_WEBHOOK_SECRET=... \
+  MAILGUN_API_KEY=... \
+  MAILGUN_DOMAIN=... \
+  MAILGUN_FROM_EMAIL=... \
+  MAILGUN_FROM_NAME='Dirty Turf Academy' \
+  MAILGUN_REGION=us \
+  NOTIFICATION_DISPATCH_SECRET=... \
+  NOTIFICATION_SIGNING_SECRET=...
 ```
 
 Copy the project URL, publishable key, and public Stripe Payment Link into
@@ -119,6 +127,20 @@ invitations are sent. Web links return to the production origin; iOS and
 Android links return directly to the installed app through the registered
 custom URL scheme. The app handles PKCE redirects from cold start and while it
 is already open.
+
+Community email uses the same verified Mailgun domain through the
+`academy-notifications` Edge Function. It is separate from Supabase Auth SMTP:
+Auth SMTP sends Magic Links, while the Edge Function sends welcome, comment,
+reply, mention, like, post, announcement, course, event, reminder, and weekly
+digest messages. Delivery is backed by a retry-safe database outbox. The
+function rejects requests without `NOTIFICATION_DISPATCH_SECRET`, signs every
+unsubscribe link with `NOTIFICATION_SIGNING_SECRET`, and does not claim queued
+mail when Mailgun configuration is incomplete.
+
+After secrets are set, schedule the dispatcher with Supabase Cron and Vault as
+documented in `docs/release-runbook.md`. Keep the schedule disabled until a
+single test recipient has passed sender, deep-link, preference, and unsubscribe
+verification. Historical HighLevel imports do not create notification mail.
 
 `academy-import` and `academy-invite-members` accept browser and native
 requests only from `APP_URL`, `APP_ALLOWED_ORIGINS`, or the fixed Capacitor
@@ -258,12 +280,15 @@ in `docs/production-domain-cutover.md`.
 - `supabase/migrations/20260918023000_lock_public_schema_creation.sql`: prevents API users from shadowing trusted database objects
 - `supabase/migrations/20260918080238_academy_billing_entitlements.sql`: imported and Stripe access grants, billing records, RLS, and transactional webhook application
 - `supabase/migrations/20260918150000_account_deletion_requests.sql`: RLS-isolated member deletion requests
+- `supabase/migrations/20260918154500_academy_notification_delivery.sql`: notification triggers, member preferences, signed-email outbox, replies, mentions, and scheduled reminder queue
+- `supabase/migrations/20260918161500_optimize_notification_paths.sql`: notification outbox and mention lookup indexes for launch traffic
 - `supabase/functions/ghl-webhook/index.ts`: signed HighLevel webhook receiver
 - `supabase/functions/ghl-status/index.ts`: private integration and resource status check
 - `supabase/functions/_shared/ghl.ts`: server-only HighLevel API client
 - `supabase/functions/create-checkout/index.ts`: authenticated Stripe Checkout session creation for client-owned plans
 - `supabase/functions/create-billing-portal/index.ts`: authenticated web-only Stripe customer portal sessions
 - `supabase/functions/stripe-webhook/index.ts`: Stripe-SDK signature verification, retry-safe event storage, silent buyer provisioning, and entitlement updates
+- `supabase/functions/academy-notifications/index.ts`: authenticated Mailgun dispatcher, retries, branded templates, direct links, and signed unsubscribe handling
 - `src/lib/backend.ts`: cloud/device data adapter, auth, and photo upload
 - `src/lib/authRedirect.ts`: validated iOS/Android PKCE callback handling
 - `src/components/MapMeasurement.tsx`: interactive property tracing and imagery-source controls

@@ -9,8 +9,12 @@ preview is evidence for compilation and layout, not production acceptance.
 
 1. Point `app.dirtyturf.com` at Netlify, finish ownership verification, and
    wait for a valid TLS certificate.
-2. Configure the existing verified Mailgun domain as Supabase custom SMTP.
-3. Verify custom SMTP and both web and native Magic Link redirects.
+2. Configure the existing verified Mailgun domain as Supabase custom SMTP and
+   add the Mailgun API values plus two generated notification secrets to Edge
+   Function secrets.
+3. Verify custom SMTP and both web and native Magic Link redirects. Deploy the
+   notification function, send to one internal recipient, verify direct links
+   and unsubscribe, then enable its five-minute Cron schedule.
 4. Create the permanent owner and normal test member.
 5. Run the source access audit, import dry run, one commit, and an idempotent
    repeat. Provision all current members without sending email.
@@ -57,6 +61,13 @@ and the PWA offline manifest check.
 - Provisioned member receives one Magic Link and reaches the assigned course.
 - Expired and reused links fail without creating another account.
 - Academy, lesson progress, community, comments, events, and RSVPs persist.
+- The notification bell receives comments, replies, mentions, likes, new
+  posts, announcements, courses, events, and reminders in realtime.
+- One internal recipient receives every email template with the correct
+  sender, subject, responsive layout, direct link, unsubscribe link, and no
+  duplicate after a dispatcher retry.
+- Turning off one email category suppresses only that category; the master
+  switch suppresses all community mail while in-app alerts remain visible.
 - Manual length x width, map polygons, and native live points produce the same
   infill formula and rounded-up 40-lb/50-lb bags.
 - A saved calculation reopens on a second authorized device.
@@ -75,10 +86,10 @@ member emails, private tokens, or reviewer credentials in this repository.
 | Git commit SHA | Record the immutable merge SHA at release |
 | GitHub PR and successful run | `stevedifabio-oss/Dirty-Turf#2`; require the latest head to pass immediately before merge |
 | Netlify deploy ID and URL | Preview is ready at `https://deploy-preview-2--bright-brigadeiros-df8b48.netlify.app`; record the production deploy after merge |
-| Supabase migrations | 13 applied / 51 public RLS-protected tables |
-| Supabase Edge Function versions | Eight deployed; record immutable versions at production release |
+| Supabase migrations | 15 applied / 53 public RLS-protected tables; recheck at production release |
+| Supabase Edge Function versions | Nine deployed; record immutable versions at production release |
 | Source archive SHA-256 | `0e1f53311b4635a7ed2969ff5bf6e2b038781eeb3126a958e3aaea82633f1aee` |
-| Local automated gate | 15 test files / 62 tests, typecheck, build, PWA, schema, and secret scan passed |
+| Local automated gate | Record current test count, typecheck, build, PWA, schema, and secret scan result |
 | Native candidate proof | Android debug/release AAB and iOS Release simulator launch passed; embedded app-shell hashes match |
 | Smoke-test account owner | Client vault only |
 | iPhone model / OS / AR error | Pending physical test |
@@ -110,3 +121,35 @@ Monitor Supabase Auth delivery, Edge Function failures, Postgres errors,
 Stripe webhook retries, Netlify errors, native crashes, and support messages.
 Pause the next notification batch on any unexplained login, entitlement, or
 content mismatch.
+
+## Notification dispatcher schedule
+
+Create a long random dispatch secret and set it both as the Edge Function
+secret `NOTIFICATION_DISPATCH_SECRET` and in Supabase Vault. Store the project
+URL in Vault too. Then schedule one request every five minutes from the SQL
+editor. Replace only the two placeholder values; never commit them.
+
+```sql
+select vault.create_secret('https://YOUR_PROJECT.supabase.co', 'project_url');
+select vault.create_secret('YOUR_LONG_RANDOM_DISPATCH_SECRET', 'academy_notification_dispatch_secret');
+
+select cron.schedule(
+  'academy-notification-dispatch',
+  '*/5 * * * *',
+  $$
+  select net.http_post(
+    url := (select decrypted_secret from vault.decrypted_secrets where name = 'project_url')
+      || '/functions/v1/academy-notifications',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'x-notification-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'academy_notification_dispatch_secret')
+    ),
+    body := '{"limit":25}'::jsonb
+  );
+  $$
+);
+```
+
+Keep this Cron job removed or inactive until Mailgun domain verification and
+the single-recipient acceptance test pass. The outbox can safely accumulate
+while delivery is paused.

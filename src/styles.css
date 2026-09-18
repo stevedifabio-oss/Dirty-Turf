@@ -204,6 +204,34 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .desktop-workspace-status small { overflow: hidden; color: var(--ink-soft); font-size: .52rem; text-overflow: ellipsis; white-space: nowrap; }
 .desktop-settings { display: inline-flex; min-height: 38px; align-items: center; gap: 8px; padding: 0 10px; border-radius: 7px; background: transparent; color: var(--ink-soft); font-size: .65rem; font-weight: 750; }
 
+/* Community notifications and mentions */
+.panel-toolbar button { display: inline-flex; align-items: center; gap: 5px; }
+.notification-list { display: grid; }
+.notification-empty { padding: 44px 12px; }
+.notification-settings .toggle-row > span { display: grid; gap: 2px; }
+.notification-settings .toggle-row strong { font-size: .7rem; }
+.notification-settings .toggle-row small, .setting-help, .settings-loading { color: var(--ink-soft); font-size: .58rem; line-height: 1.45; }
+.notification-options { display: grid; padding-left: 10px; border-left: 2px solid var(--line); transition: opacity 150ms ease; }
+.notification-options.disabled { opacity: .52; }
+.toggle-row input:disabled + i { cursor: not-allowed; }
+.comment.nested { margin-left: 32px; padding-left: 10px; border-left: 2px solid #c9dcc5; }
+.comment-actions { display: flex; align-items: center; gap: 14px; }
+.comment-actions button.active { color: var(--clay); }
+.replying-to { display: flex; align-items: center; justify-content: space-between; margin: 8px 18px -4px 58px; padding: 7px 10px; border-radius: 6px; background: #eaf4e6; color: var(--ink-soft); font-size: .62rem; }
+.replying-to button { display: grid; width: 24px; height: 24px; place-items: center; background: transparent; color: var(--ink-soft); }
+.reply-input-wrap { position: relative; min-width: 0; }
+.reply-input-wrap input { width: 100%; }
+.thread-view ~ .toast { bottom: calc(142px + env(safe-area-inset-bottom)); }
+.mention-suggestions { position: absolute; z-index: 8; right: 0; bottom: calc(100% + 6px); left: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 7px; background: white; box-shadow: 0 12px 30px rgba(0,49,19,.15); }
+.full-composer { position: relative; }
+.full-composer > .mention-suggestions { right: 12px; bottom: 54px; left: 12px; }
+.mention-suggestions button { display: grid; grid-template-columns: auto minmax(0,1fr); width: 100%; gap: 8px; align-items: center; padding: 9px 11px; border-bottom: 1px solid var(--line); background: white; color: var(--turf); text-align: left; }
+.mention-suggestions button:last-child { border-bottom: 0; }
+.mention-suggestions button:hover, .mention-suggestions button:focus-visible { background: #f0f7ec; }
+.mention-suggestions button > span { display: grid; min-width: 0; }
+.mention-suggestions strong { overflow: hidden; color: var(--asphalt); font-size: .68rem; text-overflow: ellipsis; white-space: nowrap; }
+.mention-suggestions small { overflow: hidden; color: var(--ink-soft); font-size: .55rem; text-overflow: ellipsis; white-space: nowrap; }
+
 @keyframes view-in { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes sheet-up { from { transform: translateY(28px); opacity: .7; } }

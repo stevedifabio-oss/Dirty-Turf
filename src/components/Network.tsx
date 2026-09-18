@@ -1,12 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, BookOpen, CheckCircle2, CreditCard, Database, ExternalLink, FileLock2, LifeBuoy, LockKeyhole, ShieldCheck, Signpost, Trash2, UserRoundCheck, X } from "lucide-react";
+import { ArrowLeft, AtSign, Bell, BookOpen, CalendarDays, CheckCheck, CheckCircle2, CreditCard, Database, ExternalLink, FileLock2, GraduationCap, Heart, LifeBuoy, LockKeyhole, Megaphone, MessageCircle, ShieldCheck, Signpost, Trash2, UserRoundCheck, X } from "lucide-react";
+import type { AppNotification, NotificationPreferences } from "../domain";
 import {
+  defaultNotificationPreferences,
   loadAccountDeletionRequest,
   loadAcademyBillingOverview,
   loadMemberAccessSummary,
+  loadNotificationPreferences,
   openAcademyBillingPortal,
   provisionAcademyMemberAccounts,
   requestAccountDeletion,
+  saveNotificationPreferences,
   startAcademyCheckout,
   webBillingAvailable,
   type AcademyBillingOverview,
@@ -15,7 +19,7 @@ import {
 } from "../lib/backend";
 import { useModalDialog } from "../lib/useModalDialog";
 
-export type HubSection = "settings" | "access";
+export type HubSection = "settings" | "access" | "notifications";
 
 type HubProps = {
   section: HubSection;
@@ -24,13 +28,16 @@ type HubProps = {
   onRequestMagicLink: (email: string) => Promise<void>;
   onSignOut: () => Promise<void>;
   dataMode: "device" | "cloud";
+  notifications: AppNotification[];
+  onOpenNotification: (notification: AppNotification) => void;
+  onMarkAllNotificationsRead: () => Promise<void>;
 };
 
 export function HubSheet(props: HubProps) {
   const { section, onClose } = props;
   const dialogRef = useRef<HTMLElement>(null);
   useModalDialog(dialogRef, onClose);
-  const title = section === "settings" ? "Workspace settings" : "Workspace access";
+  const title = section === "settings" ? "Workspace settings" : section === "notifications" ? "Notifications" : "Workspace access";
 
   return (
     <div className="sheet-layer hub-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
@@ -43,7 +50,9 @@ export function HubSheet(props: HubProps) {
         <div className="hub-body">
           {section === "settings"
             ? <SettingsPanel onToast={props.onToast} dataMode={props.dataMode} onSignOut={props.onSignOut} />
-            : <AccessPanel onRequestMagicLink={props.onRequestMagicLink} />}
+            : section === "notifications"
+              ? <NotificationsPanel notifications={props.notifications} onOpen={props.onOpenNotification} onMarkAll={props.onMarkAllNotificationsRead} />
+              : <AccessPanel onRequestMagicLink={props.onRequestMagicLink} />}
         </div>
       </section>
     </div>
@@ -59,6 +68,7 @@ function SettingsPanel({ onToast, dataMode, onSignOut }: { onToast: (message: st
   const [deletionRequest, setDeletionRequest] = useState<AccountDeletionRequest | null>(null);
   const [deletionBusy, setDeletionBusy] = useState(false);
   const [confirmDeletion, setConfirmDeletion] = useState(false);
+  const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -69,6 +79,14 @@ function SettingsPanel({ onToast, dataMode, onSignOut }: { onToast: (message: st
       .then((response) => { if (mounted) setMemberAccess(response.summary); })
       .catch(() => undefined)
       .finally(() => { if (mounted) setCheckingAccess(false); });
+    return () => { mounted = false; };
+  }, [dataMode]);
+
+  useEffect(() => {
+    let mounted = true;
+    void loadNotificationPreferences()
+      .then((preferences) => { if (mounted) setNotificationPreferences(preferences); })
+      .catch(() => { if (mounted) setNotificationPreferences(defaultNotificationPreferences); });
     return () => { mounted = false; };
   }, [dataMode]);
 
@@ -149,6 +167,19 @@ function SettingsPanel({ onToast, dataMode, onSignOut }: { onToast: (message: st
   };
   const canChoosePlan = !billing?.subscription || ["cancelled", "expired"].includes(billing.subscription.status);
 
+  const updateNotificationPreference = async (key: keyof NotificationPreferences, value: boolean) => {
+    const previous = notificationPreferences ?? defaultNotificationPreferences;
+    const next = { ...previous, [key]: value };
+    setNotificationPreferences(next);
+    try {
+      await saveNotificationPreferences(next);
+      onToast("Notification preferences saved.");
+    } catch {
+      setNotificationPreferences(previous);
+      onToast("Notification preferences could not be saved.");
+    }
+  };
+
   return <>
     <section className="profile-summary">
       <span className="avatar">DT</span>
@@ -170,6 +201,23 @@ function SettingsPanel({ onToast, dataMode, onSignOut }: { onToast: (message: st
           <button className="secondary-button" disabled={memberAccess.allEligibleReady || provisioning} onClick={() => void provisionMembers()}>{provisioning ? "Provisioning accounts..." : memberAccess.allEligibleReady ? "Every current member is ready" : `Provision ${memberAccess.membersNotReady} missing account${memberAccess.membersNotReady === 1 ? "" : "s"}`}</button>
         </>}
     </div>}
+    <div className="setting-group notification-settings">
+      <h3>Email notifications</h3>
+      {notificationPreferences ? <>
+        <NotificationToggle label="Email notifications" detail="Master email switch" checked={notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("emailEnabled", checked)} />
+        <div className={notificationPreferences.emailEnabled ? "notification-options" : "notification-options disabled"}>
+          <NotificationToggle label="Comments and replies" checked={notificationPreferences.replies} disabled={!notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("replies", checked)} />
+          <NotificationToggle label="Mentions" checked={notificationPreferences.mentions} disabled={!notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("mentions", checked)} />
+          <NotificationToggle label="Likes" checked={notificationPreferences.reactions} disabled={!notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("reactions", checked)} />
+          <NotificationToggle label="New community posts" checked={notificationPreferences.newPosts} disabled={!notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("newPosts", checked)} />
+          <NotificationToggle label="Academy announcements" checked={notificationPreferences.adminAnnouncements} disabled={!notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("adminAnnouncements", checked)} />
+          <NotificationToggle label="Events and reminders" checked={notificationPreferences.eventReminders} disabled={!notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("eventReminders", checked)} />
+          <NotificationToggle label="Course updates" checked={notificationPreferences.courseUpdates} disabled={!notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("courseUpdates", checked)} />
+          <NotificationToggle label="Weekly digest" checked={notificationPreferences.weeklyDigest} disabled={!notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("weeklyDigest", checked)} />
+        </div>
+        <p className="setting-help">In-app alerts stay available in the bell even when email is off.</p>
+      </> : <div className="settings-loading">Loading notification preferences...</div>}
+    </div>
     {billing && (billing.subscription || billing.plans.length > 0) && <div className="setting-group billing-group">
       <h3>Billing</h3>
       {billing.subscription && <div className="billing-current">
@@ -251,6 +299,34 @@ function AccessPanel({ onRequestMagicLink }: { onRequestMagicLink: (email: strin
     <form className="access-form" onSubmit={submit}><label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="operator@company.com" autoComplete="email" required /></label><button className="primary-button wide" disabled={sending || !email.trim()}>{sending ? "Sending link..." : "Email me a sign-in link"}</button></form>
     <div className="access-note"><LockKeyhole size={16} /><p>No password is stored in the app. Access and company membership are controlled by the client-owned Supabase workspace.</p></div>
   </>;
+}
+
+function NotificationsPanel({ notifications, onOpen, onMarkAll }: { notifications: AppNotification[]; onOpen: (notification: AppNotification) => void; onMarkAll: () => Promise<void> }) {
+  const unread = notifications.filter((notification) => !notification.read).length;
+  return <>
+    <div className="panel-toolbar"><span>{unread ? `${unread} unread` : "You're all caught up"}</span>{unread > 0 && <button onClick={() => void onMarkAll()}><CheckCheck size={15} /> Mark all read</button>}</div>
+    <section className="notification-list" aria-label="Recent notifications">
+      {notifications.map((notification) => <button className={notification.read ? "notification-row" : "notification-row unread"} key={notification.cloudId ?? notification.id} onClick={() => onOpen(notification)}>
+        <span className="notification-icon">{notificationIcon(notification.kind)}</span>
+        <span><strong>{notification.title}</strong><small>{notification.detail}</small><em>{notification.age}</em></span>
+        {!notification.read && <i aria-label="Unread" />}
+      </button>)}
+      {notifications.length === 0 && <div className="empty-state notification-empty"><Bell size={25} /><h3>No notifications yet</h3><p>Replies, likes, mentions, events, and course updates will show here.</p></div>}
+    </section>
+  </>;
+}
+
+function notificationIcon(kind: AppNotification["kind"]) {
+  if (kind === "reply") return <MessageCircle size={18} />;
+  if (kind === "mention") return <AtSign size={18} />;
+  if (kind === "reaction") return <Heart size={18} />;
+  if (kind === "event") return <CalendarDays size={18} />;
+  if (kind === "course") return <GraduationCap size={18} />;
+  return <Megaphone size={18} />;
+}
+
+function NotificationToggle({ label, detail, checked, disabled = false, onChange }: { label: string; detail?: string; checked: boolean; disabled?: boolean; onChange: (checked: boolean) => void }) {
+  return <label className="toggle-row"><span><strong>{label}</strong>{detail && <small>{detail}</small>}</span><input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} /><i aria-hidden="true" /></label>;
 }
 
 function SettingRow({ icon, title, detail }: { icon: React.ReactNode; title: string; detail: string }) {

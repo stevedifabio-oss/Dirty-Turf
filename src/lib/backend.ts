@@ -1,6 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { AcademyEvent, CommunityComment, CommunityPost, Course, Job, LessonQuiz, Member } from "../domain";
+import type { AcademyEvent, AppNotification, CommunityComment, CommunityPost, Course, Job, LessonQuiz, Member, NotificationPreferences } from "../domain";
 import { NATIVE_AUTH_REDIRECT, parseNativeAuthRedirect } from "./authRedirect";
 import { clampProgress, combinedCourseProgress } from "./courseProgress";
 import { memberMagicLinkOptions, normalizeLoginEmail } from "./memberAuth";
@@ -10,6 +10,7 @@ const POSTS_KEY = "dirty-turf-posts-v1";
 const COMMENTS_KEY = "dirty-turf-comments-v1";
 const COURSES_KEY = "dirty-turf-courses-v1";
 const EVENTS_KEY = "dirty-turf-events-v1";
+const NOTIFICATION_PREFERENCES_KEY = "dirty-turf-notification-preferences-v1";
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
 const supabasePublishableKey = (
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -87,6 +88,18 @@ export type AccountDeletionRequest = {
   id: string;
   status: "requested" | "in_review" | "completed" | "declined";
   requestedAt: string;
+};
+
+export const defaultNotificationPreferences: NotificationPreferences = {
+  emailEnabled: true,
+  replies: true,
+  mentions: true,
+  reactions: true,
+  newPosts: true,
+  adminAnnouncements: true,
+  eventReminders: true,
+  courseUpdates: true,
+  weeklyDigest: true,
 };
 
 type MemberAccessResponse = {
@@ -421,6 +434,7 @@ export async function savePost(post: CommunityPost): Promise<CommunityPost> {
     p_title: post.name,
     p_body: post.body,
     p_category_name: post.category ?? "General",
+    p_mentioned_member_ids: post.mentionedMemberIds ?? [],
   });
   if (error) throw error;
   return { ...post, id: stableNumericId(data), cloudId: String(data) };
@@ -432,20 +446,34 @@ export async function loadComments(seed: CommunityComment[]): Promise<CommunityC
 
   const { data, error } = await supabase!
     .from("academy_comment_feed")
-    .select("id,post_id,author_name,body,created_at,like_count,is_answer")
+    .select("id,post_id,parent_id,author_name,body,created_at,like_count,is_answer")
     .eq("academy_community_id", context.communityId)
     .order("created_at", { ascending: true })
     .limit(500);
   if (error) throw error;
 
+  const commentIds = (data ?? []).map((row) => row.id);
+  const { data: reactionRows, error: reactionError } = commentIds.length
+    ? await supabase!
+        .from("academy_comment_reactions")
+        .select("comment_id")
+        .eq("academy_member_id", context.memberId)
+        .in("comment_id", commentIds)
+    : { data: [], error: null };
+  if (reactionError) throw reactionError;
+  const liked = new Set((reactionRows ?? []).map((row) => row.comment_id));
+
   return (data ?? []).map((row) => ({
     id: stableNumericId(row.id),
     cloudId: row.id,
     postId: stableNumericId(row.post_id),
+    parentId: row.parent_id ? stableNumericId(row.parent_id) : undefined,
+    parentCloudId: row.parent_id ?? undefined,
     author: row.author_name,
     body: row.body,
     age: relativeDate(row.created_at),
     likes: Number(row.like_count),
+    liked: liked.has(row.id),
     answer: Boolean(row.is_answer),
   }));
 }
@@ -462,6 +490,8 @@ export async function saveComment(comment: CommunityComment, postCloudId?: strin
   const { data, error } = await supabase!.rpc("create_academy_comment", {
     p_post_id: postCloudId,
     p_body: comment.body,
+    p_parent_id: comment.parentCloudId ?? null,
+    p_mentioned_member_ids: comment.mentionedMemberIds ?? [],
   });
   if (error) throw error;
   return { ...comment, id: stableNumericId(data), cloudId: String(data) };
@@ -643,6 +673,99 @@ export async function togglePostReaction(cloudPostId: string) {
   return Boolean(data);
 }
 
+export async function toggleCommentReaction(cloudCommentId: string) {
+  const context = await getAcademyContext();
+  if (!context) return null;
+  const { data, error } = await supabase!.rpc("toggle_academy_comment_reaction", { p_comment_id: cloudCommentId });
+  if (error) throw error;
+  return Boolean(data);
+}
+
+export async function loadNotifications(seed: AppNotification[]): Promise<AppNotification[]> {
+  const context = await getAcademyContext();
+  if (!context) return (await hasCloudSession()) ? [] : seed;
+  const { data, error } = await supabase!
+    .from("notifications")
+    .select("id,title,detail,kind,target_type,target_id,read_at,created_at")
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    id: stableNumericId(row.id),
+    cloudId: row.id,
+    title: row.title,
+    detail: row.detail,
+    age: relativeDate(row.created_at),
+    kind: row.kind as AppNotification["kind"],
+    read: Boolean(row.read_at),
+    targetType: row.target_type ?? undefined,
+    targetCloudId: row.target_id ?? undefined,
+  }));
+}
+
+export async function markNotificationRead(notificationCloudId: string) {
+  if (!(await hasCloudSession())) return;
+  const { error } = await supabase!
+    .from("notifications")
+    .update({ read_at: new Date().toISOString() })
+    .eq("id", notificationCloudId);
+  if (error) throw error;
+}
+
+export async function markAllNotificationsRead() {
+  if (!(await hasCloudSession())) return;
+  const { error } = await supabase!
+    .from("notifications")
+    .update({ read_at: new Date().toISOString() })
+    .is("read_at", null);
+  if (error) throw error;
+}
+
+export async function loadNotificationPreferences(): Promise<NotificationPreferences> {
+  if (!(await hasCloudSession())) return readLocal(NOTIFICATION_PREFERENCES_KEY, defaultNotificationPreferences);
+  const { data, error } = await supabase!
+    .from("notification_preferences")
+    .select("email_enabled,replies,mentions,reactions,new_posts,admin_announcements,event_reminders,course_updates,weekly_digest")
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return defaultNotificationPreferences;
+  return {
+    emailEnabled: Boolean(data.email_enabled),
+    replies: Boolean(data.replies),
+    mentions: Boolean(data.mentions),
+    reactions: Boolean(data.reactions),
+    newPosts: Boolean(data.new_posts),
+    adminAnnouncements: Boolean(data.admin_announcements),
+    eventReminders: Boolean(data.event_reminders),
+    courseUpdates: Boolean(data.course_updates),
+    weeklyDigest: Boolean(data.weekly_digest),
+  };
+}
+
+export async function saveNotificationPreferences(preferences: NotificationPreferences) {
+  if (!(await hasCloudSession())) {
+    writeLocal(NOTIFICATION_PREFERENCES_KEY, preferences);
+    return preferences;
+  }
+  const { data: sessionData } = await supabase!.auth.getSession();
+  const userId = sessionData.session?.user.id;
+  if (!userId) throw new Error("Sign in before changing notification settings.");
+  const { error } = await supabase!.from("notification_preferences").upsert({
+    user_id: userId,
+    email_enabled: preferences.emailEnabled,
+    replies: preferences.replies,
+    mentions: preferences.mentions,
+    reactions: preferences.reactions,
+    new_posts: preferences.newPosts,
+    admin_announcements: preferences.adminAnnouncements,
+    event_reminders: preferences.eventReminders,
+    course_updates: preferences.courseUpdates,
+    weekly_digest: preferences.weeklyDigest,
+  }, { onConflict: "user_id" });
+  if (error) throw error;
+  return preferences;
+}
+
 export async function togglePostBookmark(cloudPostId: string) {
   const context = await getAcademyContext();
   if (!context) return null;
@@ -670,6 +793,15 @@ export function subscribeToWorkspaceChanges(onChange: () => void) {
     .channel("dirty-turf-workspace")
     .on("postgres_changes", { event: "*", schema: "public", table: "community_posts" }, onChange)
     .on("postgres_changes", { event: "*", schema: "public", table: "community_comments" }, onChange)
+    .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, onChange)
+    .subscribe();
+  return () => { void supabase.removeChannel(channel); };
+}
+
+export function subscribeToNotifications(onChange: () => void) {
+  if (!supabase) return () => undefined;
+  const channel = supabase
+    .channel(`dirty-turf-notifications-${crypto.randomUUID()}`)
     .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, onChange)
     .subscribe();
   return () => { void supabase.removeChannel(channel); };

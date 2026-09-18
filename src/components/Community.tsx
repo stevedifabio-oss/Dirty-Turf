@@ -1,16 +1,19 @@
-import { useMemo, useState } from "react";
-import { ArrowLeft, Bookmark, Check, Heart, Image, MapPin, MessageSquare, MoreHorizontal, Paperclip, Pin, Plus, Search, Send, Share2, SlidersHorizontal, Users, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft, AtSign, Bookmark, Check, Heart, Image, MapPin, MessageSquare, MoreHorizontal, Paperclip, Pin, Plus, Search, Send, Share2, SlidersHorizontal, Users, X } from "lucide-react";
 import type { CommunityComment, CommunityPost, Member } from "../domain";
 
 type Props = {
   posts: CommunityPost[];
   comments: CommunityComment[];
   members: Member[];
+  requestedPostCloudId?: string;
+  onRequestedPostOpened: () => void;
   onPostsChange: (posts: CommunityPost[]) => void;
   onCommentsChange: (comments: CommunityComment[]) => void;
   onCreatePost: (post: CommunityPost) => Promise<CommunityPost>;
   onCreateComment: (comment: CommunityComment, postCloudId?: string) => Promise<CommunityComment>;
   onToggleLike: (post: CommunityPost) => Promise<boolean | null>;
+  onToggleCommentLike: (comment: CommunityComment) => Promise<boolean | null>;
   onToggleBookmark: (post: CommunityPost) => Promise<boolean | null>;
   onToast: (message: string) => void;
 };
@@ -33,7 +36,7 @@ const highLevelChannels = [
   "Completed Jobs",
 ];
 
-export function CommunityView({ posts, comments, members, onPostsChange, onCommentsChange, onCreatePost, onCreateComment, onToggleLike, onToggleBookmark, onToast }: Props) {
+export function CommunityView({ posts, comments, members, requestedPostCloudId, onRequestedPostOpened, onPostsChange, onCommentsChange, onCreatePost, onCreateComment, onToggleLike, onToggleCommentLike, onToggleBookmark, onToast }: Props) {
   const [category, setCategory] = useState("All");
   const [sort, setSort] = useState<"Recent" | "Popular" | "Following" | "Saved">("Recent");
   const [composerOpen, setComposerOpen] = useState(false);
@@ -42,9 +45,18 @@ export function CommunityView({ posts, comments, members, onPostsChange, onComme
   const [body, setBody] = useState("");
   const [newCategory, setNewCategory] = useState("General");
   const [commentText, setCommentText] = useState("");
+  const [replyingTo, setReplyingTo] = useState<CommunityComment | null>(null);
   const [membersOpen, setMembersOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const selected = posts.find((post) => post.id === selectedPostId);
+
+  useEffect(() => {
+    if (!requestedPostCloudId) return;
+    const requested = posts.find((post) => post.cloudId === requestedPostCloudId);
+    if (!requested) return;
+    setSelectedPostId(requested.id);
+    onRequestedPostOpened();
+  }, [onRequestedPostOpened, posts, requestedPostCloudId]);
   const categories = useMemo(() => {
     const discovered = posts
       .map((post) => post.category?.trim())
@@ -70,7 +82,7 @@ export function CommunityView({ posts, comments, members, onPostsChange, onComme
   const publish = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!title.trim() || !body.trim()) return;
-    const post: CommunityPost = { id: Date.now(), name: title.trim(), author: "You", body: body.trim(), replies: 0, likes: 0, age: "Just now", category: newCategory };
+    const post: CommunityPost = { id: Date.now(), name: title.trim(), author: "You", body: body.trim(), replies: 0, likes: 0, age: "Just now", category: newCategory, mentionedMemberIds: mentionedMemberIds(body, members) };
     setSaving(true);
     try {
       const saved = await onCreatePost(post);
@@ -87,13 +99,24 @@ export function CommunityView({ posts, comments, members, onPostsChange, onComme
   const addComment = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!selected || !commentText.trim()) return;
-    const comment: CommunityComment = { id: Date.now(), postId: selected.id, author: "You", body: commentText.trim(), age: "Just now", likes: 0 };
+    const comment: CommunityComment = {
+      id: Date.now(),
+      postId: selected.id,
+      parentId: replyingTo?.id,
+      parentCloudId: replyingTo?.cloudId,
+      author: "You",
+      body: commentText.trim(),
+      age: "Just now",
+      likes: 0,
+      mentionedMemberIds: mentionedMemberIds(commentText, members),
+    };
     setSaving(true);
     try {
       const saved = await onCreateComment(comment, selected.cloudId);
       onCommentsChange([...comments, saved]);
       updatePost(selected.id, { replies: selected.replies + 1 });
       setCommentText("");
+      setReplyingTo(null);
       onToast("Reply posted.");
     } catch {
       onToast("Reply could not be posted.");
@@ -126,6 +149,20 @@ export function CommunityView({ posts, comments, members, onPostsChange, onComme
     }
   };
 
+  const toggleCommentLike = async (comment: CommunityComment) => {
+    const nextLiked = !comment.liked;
+    onCommentsChange(comments.map((item) => item.id === comment.id ? { ...item, liked: nextLiked, likes: Math.max(0, item.likes + (nextLiked ? 1 : -1)) } : item));
+    try {
+      const cloudValue = await onToggleCommentLike(comment);
+      if (cloudValue !== null && cloudValue !== nextLiked) {
+        onCommentsChange(comments.map((item) => item.id === comment.id ? { ...item, liked: cloudValue } : item));
+      }
+    } catch {
+      onCommentsChange(comments);
+      onToast("Reaction could not be saved.");
+    }
+  };
+
   const sharePost = async (post: CommunityPost) => {
     const shareData = { title: post.name, text: post.body };
     try {
@@ -154,7 +191,8 @@ export function CommunityView({ posts, comments, members, onPostsChange, onComme
   }
 
   if (selected) {
-    const thread = comments.filter((comment) => comment.postId === selected.id);
+    const thread = orderThread(comments.filter((comment) => comment.postId === selected.id));
+    const commentMentionMatches = mentionMatches(commentText, members);
     return <div className="view-content thread-view">
       <div className="subview-bar"><button className="back-link" onClick={() => setSelectedPostId(null)}><ArrowLeft size={17} /> Community</button><button className="icon-plain" aria-label="Post options" onClick={() => onToast("Post moderation options are ready for admins.")}><MoreHorizontal size={19} /></button></div>
       <article className="thread-post">
@@ -165,9 +203,10 @@ export function CommunityView({ posts, comments, members, onPostsChange, onComme
       </article>
       <section className="thread-comments">
         <div className="thread-count">{thread.length} replies</div>
-        {thread.map((comment) => <article className={comment.answer ? "comment answer" : "comment"} key={comment.id}><Avatar name={comment.author} /><div><div className="comment-head"><strong>{comment.author}</strong><span>{comment.age}</span>{comment.answer && <em><Check size={11} /> Answer</em>}</div><p>{comment.body}</p><button onClick={() => onCommentsChange(comments.map((item) => item.id === comment.id ? { ...item, liked: !item.liked, likes: Math.max(0, item.likes + (item.liked ? -1 : 1)) } : item))}><Heart size={14} fill={comment.liked ? "currentColor" : "none"} /> {comment.likes}</button></div></article>)}
+        {thread.map((comment) => <article className={`${comment.answer ? "comment answer" : "comment"}${comment.parentId ? " nested" : ""}`} key={comment.id}><Avatar name={comment.author} /><div><div className="comment-head"><strong>{comment.author}</strong><span>{comment.age}</span>{comment.answer && <em><Check size={11} /> Answer</em>}</div><p>{comment.body}</p><div className="comment-actions"><button className={comment.liked ? "active" : ""} onClick={() => void toggleCommentLike(comment)}><Heart size={14} fill={comment.liked ? "currentColor" : "none"} /> {comment.likes}</button><button onClick={() => { setReplyingTo(comment); setCommentText(`@${comment.author} `); }}><MessageSquare size={14} /> Reply</button></div></div></article>)}
       </section>
-      <form className="reply-composer" onSubmit={addComment}><Avatar name="You" /><input value={commentText} onChange={(event) => setCommentText(event.target.value)} placeholder="Write a reply..." aria-label="Write a reply" /><button disabled={saving || !commentText.trim()} aria-label="Post reply"><Send size={17} /></button></form>
+      {replyingTo && <div className="replying-to"><span>Replying to <strong>{replyingTo.author}</strong></span><button onClick={() => setReplyingTo(null)} aria-label="Cancel reply"><X size={14} /></button></div>}
+      <form className="reply-composer" onSubmit={addComment}><Avatar name="You" /><div className="reply-input-wrap"><input value={commentText} onChange={(event) => setCommentText(event.target.value)} placeholder={replyingTo ? `Reply to ${replyingTo.author}...` : "Write a reply..."} aria-label="Write a reply" />{commentMentionMatches.length > 0 && <MentionSuggestions members={commentMentionMatches} onSelect={(member) => setCommentText(insertMention(commentText, member.name))} />}</div><button disabled={saving || !commentText.trim()} aria-label="Post reply"><Send size={17} /></button></form>
     </div>;
   }
 
@@ -179,6 +218,7 @@ export function CommunityView({ posts, comments, members, onPostsChange, onComme
         <div className="composer-head"><strong>New discussion</strong><button type="button" aria-label="Close composer" onClick={() => setComposerOpen(false)}><X size={18} /></button></div>
         <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Clear, specific title" aria-label="Post title" maxLength={120} />
         <textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="Add the details other operators need..." rows={4} aria-label="Post body" maxLength={5000} />
+        {mentionMatches(body, members).length > 0 && <MentionSuggestions members={mentionMatches(body, members)} onSelect={(member) => setBody(insertMention(body, member.name))} />}
         <div className="composer-foot"><select value={newCategory} onChange={(event) => setNewCategory(event.target.value)} aria-label="Post category">{categories.slice(1).map((item) => <option key={item}>{item}</option>)}</select><button type="button" className="attach-button" aria-label="Attach media" onClick={() => onToast("Photo and file uploads activate with private storage.")}><Paperclip size={17} /></button><button className="publish-button" disabled={saving || !title.trim() || !body.trim()}>{saving ? "Publishing..." : "Publish"}</button></div>
       </form>}
       <div className="category-scroller" role="tablist" aria-label="Discussion categories">{categories.map((item) => <button role="tab" aria-selected={category === item} className={category === item ? "active" : ""} onClick={() => setCategory(item)} key={item}>{item}</button>)}</div>
@@ -195,4 +235,45 @@ export function CommunityView({ posts, comments, members, onPostsChange, onComme
 function Avatar({ name }: { name: string }) {
   const initials = name === "You" ? "YR" : name.split(" ").map((part) => part[0]).join("").slice(0, 2).toUpperCase();
   return <span className="avatar small">{initials}</span>;
+}
+
+function MentionSuggestions({ members, onSelect }: { members: Member[]; onSelect: (member: Member) => void }) {
+  return <div className="mention-suggestions" role="listbox" aria-label="Mention a member">
+    {members.slice(0, 5).map((member) => <button type="button" role="option" key={member.cloudId ?? member.id} onClick={() => onSelect(member)}><AtSign size={14} /><span><strong>{member.name}</strong><small>{member.company || member.role}</small></span></button>)}
+  </div>;
+}
+
+function mentionMatches(value: string, members: Member[]) {
+  const match = value.match(/(?:^|\s)@([^@\n]{0,60})$/);
+  if (!match) return [];
+  const query = match[1].trim().toLocaleLowerCase();
+  return members.filter((member) => !query || member.name.toLocaleLowerCase().includes(query));
+}
+
+function insertMention(value: string, name: string) {
+  return value.replace(/(^|\s)@([^@\n]{0,60})$/, (_match, prefix: string) => `${prefix}@${name} `);
+}
+
+function mentionedMemberIds(value: string, members: Member[]) {
+  const normalized = value.toLocaleLowerCase();
+  return members.flatMap((member) => member.cloudId && normalized.includes(`@${member.name.toLocaleLowerCase()}`) ? [member.cloudId] : []);
+}
+
+function orderThread(comments: CommunityComment[]) {
+  const children = new Map<number | undefined, CommunityComment[]>();
+  for (const comment of comments) {
+    const key = comment.parentId && comments.some((candidate) => candidate.id === comment.parentId) ? comment.parentId : undefined;
+    children.set(key, [...(children.get(key) ?? []), comment]);
+  }
+  const ordered: CommunityComment[] = [];
+  const visited = new Set<number>();
+  const visit = (comment: CommunityComment) => {
+    if (visited.has(comment.id)) return;
+    visited.add(comment.id);
+    ordered.push(comment);
+    for (const child of children.get(comment.id) ?? []) visit(child);
+  };
+  for (const comment of children.get(undefined) ?? []) visit(comment);
+  for (const comment of comments) visit(comment);
+  return ordered;
 }

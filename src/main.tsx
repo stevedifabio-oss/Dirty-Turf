@@ -38,7 +38,7 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import type { AcademyEvent, CommunityComment, CommunityPost, Course, Job, MeasurementMode, QuoteDraft, QuoteTotals, Member } from "./domain";
+import type { AcademyEvent, AppNotification, CommunityComment, CommunityPost, Course, Job, MeasurementMode, QuoteDraft, QuoteTotals, Member } from "./domain";
 import {
   claimAcademyMemberships,
   getDataMode,
@@ -49,7 +49,10 @@ import {
   loadEvents,
   loadJobs,
   loadMembers,
+  loadNotifications,
   loadPosts,
+  markAllNotificationsRead,
+  markNotificationRead,
   requestMagicLink,
   openAcademyBillingPortal,
   saveComment,
@@ -57,8 +60,10 @@ import {
   saveLessonCompletion,
   savePost,
   signOut,
+  subscribeToNotifications,
   supabase,
   toggleAcademyEventRsvp,
+  toggleCommentReaction,
   togglePostBookmark,
   togglePostReaction,
   type DataMode,
@@ -74,7 +79,7 @@ import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { CommunityView } from "./components/Community";
 import { EventsView } from "./components/Events";
 import type { HubSection } from "./components/Network";
-import { courses as seedCourses, initialComments, initialEvents, initialMembers, initialPosts } from "./appData";
+import { courses as seedCourses, initialComments, initialEvents, initialMembers, initialNotifications, initialPosts } from "./appData";
 import "./styles.css";
 
 const MapMeasurement = lazy(() =>
@@ -111,11 +116,21 @@ const navTitles: Record<View, string> = {
   tools: "Operator tools",
 };
 
+function initialViewFromUrl(): View {
+  const requested = new URLSearchParams(window.location.search).get("view");
+  return requested && requested in navTitles ? requested as View : "home";
+}
+
+function initialHubSectionFromUrl(): HubSection | null {
+  const requested = new URLSearchParams(window.location.search).get("panel");
+  return requested === "settings" || requested === "access" || requested === "notifications" ? requested : null;
+}
+
 function App() {
-  const [activeView, setActiveView] = useState<View>("home");
+  const [activeView, setActiveView] = useState<View>(initialViewFromUrl);
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [hubSection, setHubSection] = useState<HubSection | null>(null);
+  const [hubSection, setHubSection] = useState<HubSection | null>(initialHubSectionFromUrl);
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState("");
   const [draft, setDraft] = useState<QuoteDraft>(defaultDraft);
@@ -126,6 +141,8 @@ function App() {
   const [comments, setComments] = useState<CommunityComment[]>(initialComments);
   const [events, setEvents] = useState<AcademyEvent[]>(initialEvents);
   const [members, setMembers] = useState<Member[]>(initialMembers);
+  const [notifications, setNotifications] = useState<AppNotification[]>(initialNotifications);
+  const [requestedPostCloudId, setRequestedPostCloudId] = useState(() => new URLSearchParams(window.location.search).get("post") ?? undefined);
   const [dataMode, setDataMode] = useState<DataMode>("device");
   const [workspaceAccess, setWorkspaceAccess] = useState<
     WorkspaceAccessState | { status: "loading" }
@@ -152,15 +169,17 @@ function App() {
           setComments([]);
           setEvents([]);
           setMembers([]);
+          setNotifications([]);
           return;
         }
-        const [loadedJobs, loadedCourses, loadedPosts, loadedComments, loadedEvents, loadedMembers] = await Promise.all([
+        const [loadedJobs, loadedCourses, loadedPosts, loadedComments, loadedEvents, loadedMembers, loadedNotifications] = await Promise.all([
           loadJobs(initialJobs),
           loadCourses(seedCourses),
           loadPosts(initialPosts),
           loadComments(initialComments),
           loadEvents(initialEvents),
           loadMembers(initialMembers),
+          loadNotifications(initialNotifications),
         ]);
         if (!mounted || activeRefresh !== refreshId) return;
         setJobs(loadedJobs);
@@ -169,6 +188,7 @@ function App() {
         setComments(loadedComments);
         setEvents(loadedEvents);
         setMembers(loadedMembers);
+        setNotifications(loadedNotifications);
       } catch {
         if (mounted && activeRefresh === refreshId) {
           setWorkspaceAccess(supabase ? { status: "no_access" } : { status: "preview" });
@@ -187,11 +207,17 @@ function App() {
       if (mounted) disposeNativeAuth = dispose;
       else dispose();
     });
+    const disposeNotifications = subscribeToNotifications(() => {
+      void loadNotifications(initialNotifications)
+        .then((items) => { if (mounted) setNotifications(items); })
+        .catch(() => undefined);
+    });
 
     return () => {
       mounted = false;
       authSubscription?.unsubscribe();
       disposeNativeAuth();
+      disposeNotifications();
     };
   }, []);
 
@@ -247,6 +273,7 @@ function App() {
 
   const changeView = (view: View) => {
     setActiveView(view);
+    if (view !== "community") setRequestedPostCloudId(undefined);
     setSearchOpen(false);
     setQuery("");
     document.querySelector(".phone-frame")?.scrollTo({ top: 0, behavior: "auto" });
@@ -270,6 +297,7 @@ function App() {
     setComments(initialComments);
     setEvents(initialEvents);
     setMembers(initialMembers);
+    setNotifications(initialNotifications);
     setDataMode("device");
     setWorkspaceAccess(supabase ? { status: "signed_out" } : { status: "preview" });
     setHubSection(null);
@@ -278,6 +306,35 @@ function App() {
     setActiveView("home");
     setToast("Signed out of the workspace.");
   };
+
+  const openNotification = (notification: AppNotification) => {
+    setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, read: true } : item));
+    if (notification.cloudId) void markNotificationRead(notification.cloudId).catch(() => setToast("Notification could not be marked as read."));
+    setHubSection(null);
+    if (notification.targetType === "post") {
+      setRequestedPostCloudId(notification.targetCloudId);
+      changeView("community");
+    } else if (notification.targetType === "event") {
+      changeView("events");
+    } else if (notification.targetType === "course") {
+      changeView("learn");
+    } else {
+      changeView("community");
+    }
+  };
+
+  const markEveryNotificationRead = async () => {
+    const previous = notifications;
+    setNotifications((current) => current.map((notification) => ({ ...notification, read: true })));
+    try {
+      await markAllNotificationsRead();
+    } catch {
+      setNotifications(previous);
+      setToast("Notifications could not be updated.");
+    }
+  };
+
+  const unreadNotifications = notifications.filter((notification) => !notification.read).length;
 
   if (workspaceAccess.status === "loading" || workspaceAccess.status === "signed_out" || workspaceAccess.status === "no_access") {
     return <LaunchAccessGate
@@ -318,7 +375,7 @@ function App() {
             <div><h1>{navTitles[activeView]}</h1><button className={`data-mode ${dataMode}`} onClick={() => setHubSection(dataMode === "cloud" ? "settings" : "access")}>{dataMode === "cloud" ? "Workspace synced" : "Device preview"}</button></div>
           </div>
           <div className="topbar-actions">
-            <button className="icon-button notification-button" aria-label="Open community notifications" onClick={() => changeView("community")}><Bell size={18} /></button>
+            <button className="icon-button notification-button" aria-label={`Open notifications${unreadNotifications ? `, ${unreadNotifications} unread` : ""}`} onClick={() => setHubSection("notifications")}><Bell size={18} />{unreadNotifications > 0 && <span>{Math.min(unreadNotifications, 99)}</span>}</button>
             <button className={searchOpen ? "icon-button active" : "icon-button"} aria-label={searchOpen ? "Close search" : "Search"} onClick={() => setSearchOpen((open) => !open)}>{searchOpen ? <X size={19} /> : <Search size={19} />}</button>
             <button className="profile-button" aria-label="Open workspace menu" onClick={() => setHubSection("settings")}>DT</button>
           </div>
@@ -328,7 +385,7 @@ function App() {
         {!searchOpen && activeView === "home" && <HomeView jobs={jobs} openQuote={openQuote} changeView={changeView} />}
         {!searchOpen && activeView === "tools" && <ToolsView draft={draft} quote={quote} openQuote={openQuote} setToast={setToast} />}
         {!searchOpen && activeView === "learn" && <AcademyView courses={courses} onCoursesChange={setCourses} onLessonCompletion={saveLessonCompletion} onToast={setToast} onDiscuss={() => changeView("community")} />}
-        {!searchOpen && activeView === "community" && <CommunityView posts={posts} comments={comments} members={members} onPostsChange={setPosts} onCommentsChange={setComments} onCreatePost={savePost} onCreateComment={saveComment} onToggleLike={(post) => post.cloudId ? togglePostReaction(post.cloudId) : Promise.resolve(null)} onToggleBookmark={(post) => post.cloudId ? togglePostBookmark(post.cloudId) : Promise.resolve(null)} onToast={setToast} />}
+        {!searchOpen && activeView === "community" && <CommunityView posts={posts} comments={comments} members={members} requestedPostCloudId={requestedPostCloudId} onRequestedPostOpened={() => setRequestedPostCloudId(undefined)} onPostsChange={setPosts} onCommentsChange={setComments} onCreatePost={savePost} onCreateComment={saveComment} onToggleLike={(post) => post.cloudId ? togglePostReaction(post.cloudId) : Promise.resolve(null)} onToggleCommentLike={(comment) => comment.cloudId ? toggleCommentReaction(comment.cloudId) : Promise.resolve(null)} onToggleBookmark={(post) => post.cloudId ? togglePostBookmark(post.cloudId) : Promise.resolve(null)} onToast={setToast} />}
         {!searchOpen && activeView === "events" && <EventsView events={events} onEventsChange={setEvents} onToggleRsvp={(event) => event.cloudId ? toggleAcademyEventRsvp(event.cloudId) : Promise.resolve(null)} onToast={setToast} />}
 
         <footer className="bottom-nav" aria-label="App sections">
@@ -340,7 +397,7 @@ function App() {
         </footer>
 
         {quoteOpen && <QuoteSheet draft={draft} setDraft={setDraft} quote={quote} photoUrl={photoUrl} setPhotoUrl={setPhotoUrl} onClose={() => setQuoteOpen(false)} onSave={saveQuote} />}
-        {hubSection && <Suspense fallback={<div className="sheet-loading" role="status">Loading workspace...</div>}><HubSheet section={hubSection} onClose={() => setHubSection(null)} onToast={setToast} onRequestMagicLink={sendMagicLink} onSignOut={handleSignOut} dataMode={dataMode} /></Suspense>}
+        {hubSection && <Suspense fallback={<div className="sheet-loading" role="status">Loading workspace...</div>}><HubSheet section={hubSection} onClose={() => setHubSection(null)} onToast={setToast} onRequestMagicLink={sendMagicLink} onSignOut={handleSignOut} dataMode={dataMode} notifications={notifications} onOpenNotification={openNotification} onMarkAllNotificationsRead={markEveryNotificationRead} /></Suspense>}
         {toast && <div className="toast" role="status"><CheckCircle2 size={18} />{toast}</div>}
       </section>
     </main>

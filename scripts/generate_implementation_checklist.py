@@ -102,7 +102,7 @@ class ChecklistPDF:
 
     def checklist(self, items: list[str], compact=False):
         size = 8.2 if compact else 9
-        leading = 11 if compact else 12
+        leading = 10 if compact else 12
         max_chars = 91 if compact else 84
         for item in items:
             state = "todo"
@@ -115,7 +115,7 @@ class ChecklistPDF:
             elif item.startswith("[ ] "):
                 item = item[4:]
             lines = wrap(item, width=max_chars)
-            item_h = max(22, len(lines) * leading + 8)
+            item_h = max(20, len(lines) * leading + (6 if compact else 8))
             if self.y - item_h < 50:
                 raise RuntimeError("Checklist content overflowed a page")
             box_color = GREEN if state != "attention" else ORANGE
@@ -219,20 +219,21 @@ def build_pdf():
         "Every current Academy member can request a Magic Link, reach the content they already own, use the community and field tools, and reopen saved work on another device. The desktop web app, mobile web/PWA, and signed iOS and Android builds all pass their production paths."
     )
     col_w = (PAGE_W - 2 * MARGIN - 12) / 2
-    y1 = pdf.card("BACKEND LIVE", "Thirteen migrations and eight Edge Functions are active. Live Auth and Academy tables remain empty until owner bootstrap and import.", GREEN, col_w, 82, MARGIN)
+    y1 = pdf.card("BACKEND LIVE", "Fifteen migrations and nine Edge Functions are active. Notification delivery is safely paused until Mailgun secrets are added.", GREEN, col_w, 82, MARGIN)
     pdf.card("ARCHIVE VERIFIED", "60 login members, 49 enrollments, 109 published lessons, 19 drafts, community data, and assets reconcile to GHL.", LIME, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y1 - 14
-    y2 = pdf.card("APP VERIFIED", "Sixty-two tests, responsive QA, PWA checks, Android AAB, and a clean iOS Release simulator launch all pass.", ORANGE, col_w, 82, MARGIN)
+    y2 = pdf.card("APP VERIFIED", "Sixty-five tests, responsive notification QA, PWA checks, Android AAB, and a clean iOS Release simulator launch all pass.", ORANGE, col_w, 82, MARGIN)
     pdf.card("RELEASE CANDIDATE", "PR #2 CI and Netlify deploy status pass. Production remains gated on identity, import, billing, and physical-device proof.", GREEN_DARK, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y2 - 18
     pdf.section("Completed and removed from this checklist")
     pdf.checklist([
-        "[x] Thirteen Supabase migrations, 51-table RLS audit, access indexes, security hardening, and eight Edge Function deployments are complete.",
+        "[x] Fifteen Supabase migrations, 53-table RLS audit, access/notification indexes, security hardening, and nine Edge Function deployments are complete.",
         "[x] GHL course, lesson, member, enrollment, community, event, and asset capture is complete and exact-count verified.",
         "[x] Google Play developer identity, website, and phone verification are complete.",
         "[x] The Apple renewal card is added. The branded iOS Release build installs and opens in the iPhone 17 simulator; Android debug and release builds pass.",
         "[x] Desktop web, mobile/PWA, calculator, exact map-area math, native wrappers, importer, billing logic, legal pages, and account-deletion workflow are built.",
         "[x] The source access audit proves 60 unique login emails, 49 linked enrollments, zero duplicate login emails, and all enrolled members login-ready.",
+        "[x] In-app notifications, unread state, replies, mentions, post/comment likes, granular email preferences, branded Mailgun templates, retries, deep links, and signed unsubscribe are built.",
     ], compact=True)
     pdf.section("Six remaining gates")
     pdf.paragraph("1. Email and owner identity.  2. Academy import and member access.  3. Stripe test proof.  4. GitHub and Netlify production release.  5. Real-device AR and signed store builds.  6. Controlled GHL cutover.", width_chars=94, size=8.6, leading=11)
@@ -244,8 +245,11 @@ def build_pdf():
         "[!] Dirty Turf already uses Mailgun. Add its existing verified domain, SMTP host, username, and password to Supabase; do not create another mail provider account.",
         "[ ] In Mailgun, confirm the selected sending domain is active with SPF, DKIM, and DMARC healthy. Use a sender address covered by that verified domain.",
         "[ ] Configure Supabase Auth custom SMTP with Mailgun. Use smtp.mailgun.org and port 587 unless the account shows an EU-region host.",
+        "[ ] Add MAILGUN_API_KEY, MAILGUN_DOMAIN, MAILGUN_FROM_EMAIL, MAILGUN_FROM_NAME, MAILGUN_REGION, APP_URL, and two different generated notification secrets to Supabase Edge Function secrets.",
         "[ ] Disable Mailgun click tracking for authentication mail so Magic Link URLs are not rewritten.",
         "[ ] Send a Supabase Magic Link to the owner and test member. Confirm both cold-start web redirect and com.dirtyturf.academy://auth/callback on a physical phone.",
+        "[ ] Send every community template to one internal recipient. Verify sender, layout, direct link, no duplicate on retry, category opt-out, and signed unsubscribe before enabling Cron.",
+        "[ ] Store the project URL and dispatch secret in Supabase Vault, then enable the documented five-minute academy-notification-dispatch Cron job.",
         "[ ] Revoke the unused Resend API key shared in chat after Mailgun delivery passes. Keep Mailgun SMTP credentials only in Supabase's encrypted settings.",
     ], compact=True)
     pdf.timeline("STEP 2", "Lock production identity", "Release owner")
@@ -259,7 +263,7 @@ def build_pdf():
         "[ ] Record a client owner and recovery owner with MFA for Supabase, Mailgun, GitHub, Netlify, Stripe, Apple, Google Play, GHL, and DNS.",
     ], compact=True)
     pdf.section("Secret boundary")
-    pdf.command("BROWSER-SAFE: VITE_SUPABASE_URL, publishable key, public Payment Link\nSERVER-ONLY: service-role key, GHL token, Mailgun SMTP password, Stripe secrets")
+    pdf.command("BROWSER-SAFE: VITE_SUPABASE_URL, publishable key, public Payment Link\nSERVER-ONLY: service-role key, GHL token, Mailgun SMTP/API values, notification signing/dispatch secrets, Stripe secrets")
     pdf.gate("Do not invite members until a real Supabase Magic Link delivers from the verified Dirty Turf sender and both web and native redirects work.")
 
     pdf.new_page("Gate 2", "Import and guarantee member access", "Load the verified archive, provision every account silently, then pilot Magic Links")
@@ -279,6 +283,7 @@ def build_pdf():
         "[ ] Prove an imported member can request a Magic Link and an unknown email cannot create Academy access.",
         "[ ] Pilot Magic Links with 3-5 members across iPhone, Android, and web. Check delivery, cold start, expiration, reuse, logout, and second-device login.",
         "[ ] After the pilot passes, notify the remaining members in batches of no more than 25 and monitor delivery failures.",
+        "[ ] Queue the welcome/community email only after all 60 accounts pass the access audit. Imported historical posts and lessons must not generate old-content email.",
         "[ ] Confirm owner, admin, moderator, active, cancelled, suspended, and unassigned access behavior before broad notification.",
     ], compact=True)
     pdf.section("Exact sequence")
@@ -306,6 +311,7 @@ def build_pdf():
         "[ ] Finish app.dirtyturf.com ownership, CNAME, and TLS. Run npm run release:domain, then the production release:smoke gate; keep secrets server-side.",
         "[x] Verify the local release candidate at 320, 390, and 1440 pixels with no horizontal overflow or console errors; smoke all six public routes.",
         "[ ] Verify preview auth, deep links, Academy, community, events, private assets, progress, headers, and network logs with the real test member.",
+        "[x] Notification-center QA passes at 390 and 1440 pixels with zero overflow, no console errors, working mark-all, mentions, nested replies, and settings toggles.",
         "[ ] Merge PR #2 to main, wait for Netlify production, and repeat the authenticated golden path on the deployed URL.",
         "[ ] Run npm run release:preflight -- --check-domain. Record commit SHA, deploy ID, function versions, test account, rollback owner, and result.",
     ], compact=True)
@@ -344,7 +350,7 @@ def build_pdf():
     pdf.timeline("STEP 10", "Pilot, launch, and monitor", "Product owner")
     pdf.checklist([
         "[ ] Complete the 3-5 member pilot before the broad member notification. Resolve every login, entitlement, or content mismatch first.",
-        "[ ] Monitor auth delivery, invite failures, Edge Function errors, webhook failures, database errors, app crashes, and support during the first 24 hours.",
+        "[ ] Monitor Auth mail, Mailgun events, notification outbox retries, invite failures, Edge Function errors, webhook failures, database errors, app crashes, and support during the first 24 hours.",
         "[ ] Record an owner, timestamp, and evidence link for each final sign-off below.",
     ], compact=True)
     pdf.section("Final sign-off")
@@ -355,7 +361,7 @@ def build_pdf():
     pdf.signoff_row("TestFlight / Play Internal acceptance")
     pdf.signoff_row("GHL delta, backup, and rollback")
     pdf.section("Simple next actions")
-    pdf.paragraph("1. Publish Netlify DNS.  2. Configure Mailgun.  3. Create owner and test member.  4. Import and provision.  5. Prove Stripe.  6. Merge and smoke production.  7. Test real phones.  8. Upload signed builds.  9. Pilot and cut over.", width_chars=94, size=8.4, leading=11)
+    pdf.paragraph("1. Publish Netlify DNS.  2. Add Mailgun SMTP/API values and test one recipient.  3. Create owner and test member.  4. Import and provision.  5. Prove Stripe.  6. Merge and smoke production.  7. Test real phones.  8. Upload signed builds.  9. Pilot, notify, and cut over.", width_chars=94, size=8.4, leading=11)
     pdf.gate("Launch only after every sign-off passes. Until then, keep HighLevel available and label the new app as a controlled pilot.")
 
     pdf.finish()

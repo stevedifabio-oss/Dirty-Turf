@@ -112,7 +112,7 @@ export const initialMembers: Member[] = [
 
 export const initialNotifications: AppNotification[] = [
   { id: 1, title: "Steve marked an answer", detail: "Route pricing for shaded pet yards", age: "8 min", kind: "reply", read: false },
-  { id: 2, title: "12 operators liked your checklist", detail: "Crew setup that cut return trips", age: "1 hr", kind: "like", read: false },
+  { id: 2, title: "12 operators liked your checklist", detail: "Crew setup that cut return trips", age: "1 hr", kind: "reaction", read: false },
   { id: 3, title: "Live job review starts tomorrow", detail: "You are attending at 9:00 AM", age: "3 hr", kind: "event", read: false },
   { id: 4, title: "New lesson available", detail: "Truck-mount extraction pass", age: "Yesterday", kind: "course", read: true },
 ];

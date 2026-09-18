@@ -21,7 +21,9 @@ const progressSql = migration("20260918010000_preserve_imported_course_progress.
 const memberAccessSql = migration("20260918073008_academy_member_access_provisioning.sql");
 const billingSql = migration("20260918080238_academy_billing_entitlements.sql");
 const deletionSql = migration("20260918150000_account_deletion_requests.sql");
+const notificationSql = migration("20260918154500_academy_notification_delivery.sql");
 const accessPathSql = migration("20260918155500_optimize_member_access_paths.sql");
+const notificationPathSql = migration("20260918161500_optimize_notification_paths.sql");
 
 requireFragments(academySql, "schema", [
   "create table public.academy_communities",
@@ -115,11 +117,43 @@ requireFragments(deletionSql, "account deletion schema", [
   "grant insert (user_id, reason) on table public.account_deletion_requests to authenticated",
 ]);
 
+requireFragments(notificationSql, "Academy notification schema", [
+  "create table public.academy_email_deliveries",
+  "create table public.academy_content_mentions",
+  "create or replace function private.queue_academy_notification",
+  "create or replace function private.record_academy_mentions",
+  "create or replace function public.toggle_academy_comment_reaction",
+  "create trigger academy_post_notification",
+  "create trigger academy_post_reaction_notification",
+  "create trigger academy_comment_reaction_notification",
+  "create trigger academy_mention_notification",
+  "create trigger academy_event_published_notification",
+  "create trigger academy_course_published_notification",
+  "create trigger academy_access_grant_notification",
+  "create or replace function private.notify_academy_access_granted",
+  "source_import_batch_id is not null",
+  "create or replace function public.queue_academy_welcome_emails",
+  "create or replace function public.queue_academy_scheduled_notifications",
+  "create or replace function public.claim_academy_email_deliveries",
+  "create or replace function public.complete_academy_email_delivery",
+  "create or replace function public.fail_academy_email_delivery",
+  "grant execute on function public.claim_academy_email_deliveries(integer, uuid) to service_role",
+]);
+
 requireFragments(accessPathSql, "member access optimization", [
   "using (user_id = (select auth.uid()))",
   "academy_members_user_lookup_idx",
   "academy_billing_customers_member_idx",
   "academy_billing_customers_user_idx",
+]);
+
+requireFragments(notificationPathSql, "notification path optimization", [
+  "academy_email_deliveries_community_idx",
+  "academy_email_deliveries_notification_idx",
+  "academy_email_deliveries_profile_idx",
+  "academy_content_mentions_community_idx",
+  "academy_content_mentions_actor_idx",
+  "academy_content_mentions_recipient_idx",
 ]);
 
 requireFragments(allSql, "security hardening", [
@@ -131,10 +165,17 @@ requireFragments(allSql, "security hardening", [
 for (const [file, fragments] of [
   ["supabase/functions/ghl-webhook/index.ts", ["x-ghl-signature", "MAX_WEBHOOK_BYTES"]],
   ["supabase/functions/ghl-status/index.ts", ["handlePreflight(request, \"GET, OPTIONS\")", "Administrator access required"]],
+  ["supabase/functions/academy-notifications/index.ts", ["x-notification-secret", "claim_academy_email_deliveries", "NOTIFICATION_SIGNING_SECRET", "List-Unsubscribe=One-Click", "MAILGUN_API_KEY"]],
 ]) {
   const source = await readFile(path.join(root, file), "utf8");
   requireFragments(source, file, fragments);
 }
+
+const supabaseConfig = await readFile(path.join(root, "supabase", "config.toml"), "utf8");
+requireFragments(supabaseConfig, "notification function configuration", [
+  "[functions.academy-notifications]",
+  "verify_jwt = false",
+]);
 
 const publicTables = new Set(matches(allSql, /create\s+table\s+(?:if\s+not\s+exists\s+)?public\.([a-z0-9_]+)/gi));
 for (const table of publicTables) {

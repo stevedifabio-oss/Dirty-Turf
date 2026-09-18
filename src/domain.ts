@@ -32,18 +32,22 @@ export type CommunityPost = {
   pinned?: boolean;
   following?: boolean;
   media?: "photo" | "poll";
+  mentionedMemberIds?: string[];
 };
 
 export type CommunityComment = {
   id: number;
   cloudId?: string;
   postId: number;
+  parentId?: number;
+  parentCloudId?: string;
   author: string;
   body: string;
   age: string;
   likes: number;
   liked?: boolean;
   answer?: boolean;
+  mentionedMemberIds?: string[];
 };
 
 export type LessonQuizOption = {
@@ -131,11 +135,26 @@ export type Member = {
 
 export type AppNotification = {
   id: number;
+  cloudId?: string;
   title: string;
   detail: string;
   age: string;
-  kind: "reply" | "like" | "event" | "course" | "admin";
+  kind: "reply" | "mention" | "reaction" | "event" | "course" | "admin";
   read: boolean;
+  targetType?: string;
+  targetCloudId?: string;
+};
+
+export type NotificationPreferences = {
+  emailEnabled: boolean;
+  replies: boolean;
+  mentions: boolean;
+  reactions: boolean;
+  newPosts: boolean;
+  adminAnnouncements: boolean;
+  eventReminders: boolean;
+  courseUpdates: boolean;
+  weeklyDigest: boolean;
 };
 
 export type QuoteDraft = {
