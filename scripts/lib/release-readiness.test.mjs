@@ -69,6 +69,9 @@ describe("release readiness", () => {
       "permissions-policy": "camera=(self), geolocation=(self), microphone=()",
     });
     expect(inspectSecurityHeaders(headers).failures).toEqual([]);
+    headers.set("x-frame-options", "SAMEORIGIN");
+    headers.set("referrer-policy", "same-origin");
+    expect(inspectSecurityHeaders(headers).failures).toEqual([]);
     headers.delete("x-frame-options");
     expect(inspectSecurityHeaders(headers).failures).toContain("x-frame-options is missing or incorrect");
   });

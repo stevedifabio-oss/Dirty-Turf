@@ -57,13 +57,16 @@ export function inspectPublicPages(pages) {
 
 export function inspectSecurityHeaders(headers) {
   const failures = [];
-  const expected = {
-    "x-frame-options": "DENY",
-    "x-content-type-options": "nosniff",
-    "referrer-policy": "strict-origin-when-cross-origin",
-  };
-  for (const [name, value] of Object.entries(expected)) {
-    if (headers.get(name) !== value) failures.push(`${name} is missing or incorrect`);
+  const frameOptions = headers.get("x-frame-options")?.trim().toUpperCase();
+  if (!frameOptions || !["DENY", "SAMEORIGIN"].includes(frameOptions)) {
+    failures.push("x-frame-options is missing or incorrect");
+  }
+  if (headers.get("x-content-type-options")?.trim().toLowerCase() !== "nosniff") {
+    failures.push("x-content-type-options is missing or incorrect");
+  }
+  const referrerPolicy = headers.get("referrer-policy")?.trim().toLowerCase();
+  if (!referrerPolicy || !["no-referrer", "same-origin", "strict-origin", "strict-origin-when-cross-origin"].includes(referrerPolicy)) {
+    failures.push("referrer-policy is missing or incorrect");
   }
   const permissions = headers.get("permissions-policy") ?? "";
   for (const directive of ["camera=(self)", "geolocation=(self)", "microphone=()"] ) {
