@@ -1,11 +1,15 @@
 export type MeasurementMode = "camera" | "map" | "manual";
-export type CleaningPlan = "quick" | "premium" | "annihilator";
 
 export type Job = {
   id: number;
   address: string;
   area: number;
+  preciseArea?: number;
   infill: number;
+  infillPounds?: number;
+  bags50?: number;
+  infillRate?: number;
+  serviceRate?: number;
   quote: number;
   status: string;
   method: MeasurementMode;
@@ -15,6 +19,7 @@ export type Job = {
 
 export type CommunityPost = {
   id: number;
+  cloudId?: string;
   name: string;
   author: string;
   body: string;
@@ -31,6 +36,7 @@ export type CommunityPost = {
 
 export type CommunityComment = {
   id: number;
+  cloudId?: string;
   postId: number;
   author: string;
   body: string;
@@ -40,30 +46,62 @@ export type CommunityComment = {
   answer?: boolean;
 };
 
+export type LessonQuizOption = {
+  text: string;
+  html?: string;
+};
+
+export type LessonQuizQuestion = {
+  prompt: string;
+  promptHtml?: string;
+  options: LessonQuizOption[];
+  explanation?: string;
+  explanationHtml?: string;
+  correctOptionIndex?: number;
+};
+
+export type LessonQuiz = {
+  name: string;
+  requiresPassing: boolean;
+  passingPercent?: number;
+  completionMessage?: string;
+  questions: LessonQuizQuestion[];
+};
+
 export type Lesson = {
   id: string;
+  cloudId?: string;
   title: string;
   duration: string;
   type: "video" | "guide" | "quiz";
   completed: boolean;
   locked?: boolean;
+  body?: string;
+  bodyHtml?: string;
+  videoUrl?: string;
+  transcript?: string;
+  resources?: { title: string; url: string; type?: string }[];
+  quiz?: LessonQuiz;
 };
 
 export type Course = {
   id: string;
+  cloudId?: string;
   title: string;
   description: string;
   category: string;
   instructor: string;
   progress: number;
+  importedProgress?: number;
   duration: string;
-  modules: { title: string; lessons: Lesson[] }[];
+  modules: { title: string; groupTitle?: string; lessons: Lesson[] }[];
   access: "open" | "level" | "purchase";
   requiredLevel?: number;
 };
 
 export type AcademyEvent = {
   id: number;
+  cloudId?: string;
   title: string;
   description: string;
   date: string;
@@ -73,10 +111,12 @@ export type AcademyEvent = {
   kind: "live" | "workshop" | "office-hours";
   attending: boolean;
   attendeeCount: number;
+  meetingUrl?: string;
 };
 
 export type Member = {
   id: number;
+  cloudId?: string;
   name: string;
   initials: string;
   company: string;
@@ -86,6 +126,7 @@ export type Member = {
   points: number;
   following: boolean;
   online?: boolean;
+  avatarUrl?: string;
 };
 
 export type AppNotification = {
@@ -104,16 +145,16 @@ export type QuoteDraft = {
   width: number;
   cameraArea: number;
   mapArea: number;
-  serviceRate: number;
   infillRate: number;
+  serviceRate: number;
 };
 
 export type QuoteTotals = {
   area: number;
+  preciseArea: number;
   infillPounds: number;
   bags40: number;
   bags50: number;
-  infillBags: number;
-  serviceSubtotal: number;
+  serviceTotal: number;
   total: number;
 };

@@ -72,7 +72,7 @@ export const courses: Course[] = [
     access: "open",
     modules: [
       { title: "Quote the work", lessons: [
-        { id: "quote-1", title: "Choose the cleaning plan", duration: "7 min", type: "video", completed: false },
+        { id: "quote-1", title: "Set your service rate", duration: "7 min", type: "video", completed: false },
         { id: "quote-2", title: "Calculate infill", duration: "8 min", type: "guide", completed: false },
         { id: "quote-3", title: "Handle price objections", duration: "11 min", type: "video", completed: false },
       ] },

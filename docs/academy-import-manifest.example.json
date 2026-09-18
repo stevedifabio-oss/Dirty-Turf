@@ -1,0 +1,138 @@
+{
+  "commit": false,
+  "ownerOrganizationId": "00000000-0000-4000-8000-000000000000",
+  "sourceExportedAt": "2026-09-17T00:00:00Z",
+  "archivePath": "client-encrypted://dirty-turf/ghl-final-export",
+  "community": {
+    "externalId": "replace-with-ghl-group-id",
+    "name": "7 Figure Turf Cleaning",
+    "slug": "7-figure-turf-cleaning",
+    "portalUrl": "https://academy.dirtyturf.com",
+    "metadata": {
+      "source": "highlevel"
+    }
+  },
+  "categories": [
+    {
+      "externalId": "channel-announcements",
+      "name": "Announcements",
+      "color": "#047631",
+      "memberCanPost": false
+    }
+  ],
+  "members": [
+    {
+      "externalId": "community-member-id",
+      "contactId": "ghl-contact-id",
+      "email": "member@example.com",
+      "displayName": "Example Member",
+      "companyName": "Example Turf Co.",
+      "location": "Phoenix, AZ",
+      "role": "member",
+      "status": "active",
+      "points": 0,
+      "level": 1
+    }
+  ],
+  "courses": [
+    {
+      "externalId": "0a9ea28f-eaa0-4b4f-a1eb-4b6bc23df18b",
+      "title": "Turf Cleaning Academy",
+      "description": "Professional turf cleaning training and business operations from Dirty Turf.",
+      "category": "Core",
+      "instructorName": "Dirty Turf Academy",
+      "coverUrl": "https://assets.cdn.filesafe.space/eqVZcs8fro8qiGD2sgoG/media/6aab5c0baabc65fd5d18121c.png",
+      "status": "published",
+      "accessType": "open",
+      "modules": [
+        {
+          "externalId": "replace-with-ghl-module-id",
+          "title": "Dirty Turf Positioning (Marketing Intro)",
+          "groupTitle": "Turf Cleaning Academy",
+          "lessons": [
+            {
+              "externalId": "replace-with-ghl-lesson-id",
+              "title": "The Dirty Turf Standard",
+              "type": "video",
+              "body": {
+                "text": "Replace with the captured lesson body."
+              },
+              "videoUrl": "https://client-owned-video-host.example/video",
+              "resources": [],
+              "durationSeconds": 600,
+              "status": "published"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "enrollments": [
+    {
+      "externalId": "enrollment-id",
+      "memberExternalId": "community-member-id",
+      "courseExternalId": "0a9ea28f-eaa0-4b4f-a1eb-4b6bc23df18b",
+      "status": "active"
+    }
+  ],
+  "progress": [
+    {
+      "externalId": "progress-id",
+      "memberExternalId": "community-member-id",
+      "lessonExternalId": "replace-with-ghl-lesson-id",
+      "progressPercent": 100,
+      "positionSeconds": 600,
+      "completedAt": "2026-09-17T00:00:00Z"
+    }
+  ],
+  "posts": [],
+  "comments": [],
+  "reactions": [],
+  "events": [],
+  "rsvps": [],
+  "assets": [
+    {
+      "externalId": "6aab5c0baabc65fd5d18121c",
+      "courseExternalId": "0a9ea28f-eaa0-4b4f-a1eb-4b6bc23df18b",
+      "title": "Turf Cleaning Academy cover",
+      "type": "image",
+      "originalUrl": "https://assets.cdn.filesafe.space/eqVZcs8fro8qiGD2sgoG/media/6aab5c0baabc65fd5d18121c.png",
+      "mimeType": "image/png",
+      "byteSize": 1933068,
+      "contentHash": "c4cea9e28dd088d9ee195a5d588fda6623ba19b50f551c1e17cca02287f2c960"
+    },
+    {
+      "externalId": "6aac336cff484614db1479e6",
+      "courseExternalId": "0a9ea28f-eaa0-4b4f-a1eb-4b6bc23df18b",
+      "title": "Turf Cleaning Academy certificate template",
+      "type": "image",
+      "originalUrl": "https://assets.cdn.filesafe.space/eqVZcs8fro8qiGD2sgoG/media/6aac336cff484614db1479e6.png",
+      "mimeType": "image/png",
+      "byteSize": 1393319,
+      "contentHash": "c7f3480c967525c84e606debae24e7745ce40948b07b3817efb40fe3cec80843",
+      "metadata": { "purpose": "certificate-template" }
+    },
+    {
+      "externalId": "6aac38edde8ed1c29f3ddc6a",
+      "courseExternalId": "0a9ea28f-eaa0-4b4f-a1eb-4b6bc23df18b",
+      "title": "Turf Cleaning Tech certificate template",
+      "type": "image",
+      "originalUrl": "https://assets.cdn.filesafe.space/eqVZcs8fro8qiGD2sgoG/media/6aac38edde8ed1c29f3ddc6a.png",
+      "mimeType": "image/png",
+      "byteSize": 1394400,
+      "contentHash": "a124398d434fa4d759939addbb54b8d39f64c511e5aa331a5c1698b7612cdc68",
+      "metadata": { "purpose": "certificate-template" }
+    },
+    {
+      "externalId": "6aac684ede8ed1c29f4294b8",
+      "courseExternalId": "0a9ea28f-eaa0-4b4f-a1eb-4b6bc23df18b",
+      "title": "Turf Cleaning Academy certified badge",
+      "type": "image",
+      "originalUrl": "https://assets.cdn.filesafe.space/eqVZcs8fro8qiGD2sgoG/media/6aac684ede8ed1c29f4294b8.png",
+      "mimeType": "image/png",
+      "byteSize": 1298373,
+      "contentHash": "ee8c80fa06d83383470c4643d2a7445312d6a3044eeb8d14b3212b1a878556f3",
+      "metadata": { "purpose": "certification-badge" }
+    }
+  ]
+}

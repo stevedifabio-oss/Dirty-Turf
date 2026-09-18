@@ -1,109 +1,424 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  createClient,
+  type SupabaseClient,
+  type User,
+} from "npm:@supabase/supabase-js@2.116.0";
+import Stripe from "npm:stripe@22.6.2";
+import {
+  errorMessage,
+  isUuid,
+  looksLikeEmail,
+  normalizeBillingEmail,
+  normalizeStripeSubscriptionStatus,
+  stringId,
+  unixTimestamp,
+} from "../_shared/billing.ts";
+
+type BillingPlan = {
+  id: string;
+  academy_community_id: string;
+  stripe_price_id: string;
+  billing_type: "subscription" | "one_time";
+};
+
+type Buyer = {
+  userId: string;
+  memberId: string;
+  email: string;
+};
 
 Deno.serve(async (request) => {
-  if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
-  const rawBody = await request.text();
+  if (request.method !== "POST") {
+    return new Response("Method not allowed", { status: 405 });
+  }
+
   const signature = request.headers.get("stripe-signature");
   const webhookSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET");
-  if (!signature || !webhookSecret || !(await verifyStripeSignature(rawBody, signature, webhookSecret))) {
-    return Response.json({ error: "Invalid webhook signature" }, { status: 401 });
-  }
-
-  let event: StripeEvent;
-  try {
-    event = JSON.parse(rawBody);
-  } catch {
-    return Response.json({ error: "Invalid JSON payload" }, { status: 400 });
-  }
-
+  const stripeSecret = Deno.env.get("STRIPE_SECRET_KEY");
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  if (!supabaseUrl || !serviceRoleKey) return Response.json({ error: "Server is not configured" }, { status: 503 });
-  const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
+  if (
+    !signature || !webhookSecret || !stripeSecret || !supabaseUrl ||
+    !serviceRoleKey
+  ) {
+    return Response.json({ error: "Webhook is not configured" }, {
+      status: 503,
+    });
+  }
 
-  const { error: eventError } = await supabase.from("integration_events").insert({
+  const stripe = new Stripe(stripeSecret);
+  let event: Stripe.Event;
+  try {
+    const payload = await request.text();
+    event = await stripe.webhooks.constructEventAsync(
+      payload,
+      signature,
+      webhookSecret,
+      undefined,
+      Stripe.createSubtleCryptoProvider(),
+    );
+  } catch (error) {
+    console.error("Stripe signature validation failed", error);
+    return Response.json({ error: "Invalid webhook signature" }, {
+      status: 400,
+    });
+  }
+
+  const admin = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false },
+  });
+  const { error: eventError } = await admin.from("integration_events").insert({
     provider: "stripe",
     external_event_id: event.id,
     event_type: event.type,
     payload: event,
   });
-  if (eventError?.code === "23505") return Response.json({ accepted: true, duplicate: true });
-  if (eventError) {
+  if (eventError?.code === "23505") {
+    const { data: existing } = await admin
+      .from("integration_events")
+      .select("processed_at")
+      .eq("provider", "stripe")
+      .eq("external_event_id", event.id)
+      .maybeSingle();
+    if (existing?.processed_at) {
+      return Response.json({ accepted: true, duplicate: true });
+    }
+  } else if (eventError) {
     console.error("Failed to store Stripe event", eventError);
-    return Response.json({ error: "Webhook could not be queued" }, { status: 500 });
-  }
-
-  const object = event.data.object;
-  if (event.type === "checkout.session.completed" && object.mode === "subscription") {
-    await upsertSubscription(supabase, object.metadata, {
-      provider_customer_id: stringValue(object.customer),
-      provider_subscription_id: stringValue(object.subscription),
-      status: "active",
-    });
-  }
-  if (event.type.startsWith("customer.subscription.")) {
-    await upsertSubscription(supabase, object.metadata, {
-      provider_customer_id: stringValue(object.customer),
-      provider_subscription_id: object.id,
-      status: membershipStatus(stringValue(object.status)),
-      current_period_end: typeof object.current_period_end === "number" ? new Date(object.current_period_end * 1000).toISOString() : null,
+    return Response.json({ error: "Webhook could not be queued" }, {
+      status: 500,
     });
   }
 
-  await supabase.from("integration_events").update({ processed_at: new Date().toISOString() }).eq("provider", "stripe").eq("external_event_id", event.id);
-  return Response.json({ accepted: true, duplicate: false });
+  try {
+    if (
+      event.type === "checkout.session.completed" ||
+      event.type === "checkout.session.async_payment_succeeded"
+    ) {
+      await processCheckout(admin, stripe, event.data.object);
+    } else if (
+      event.type === "customer.subscription.created" ||
+      event.type === "customer.subscription.updated" ||
+      event.type === "customer.subscription.deleted"
+    ) {
+      await processSubscription(admin, stripe, event.data.object);
+    }
+
+    const { error } = await admin.from("integration_events").update({
+      processed_at: new Date().toISOString(),
+      error_message: null,
+    }).eq("provider", "stripe").eq("external_event_id", event.id);
+    if (error) throw error;
+    return Response.json({ accepted: true, duplicate: false });
+  } catch (error) {
+    const message = errorMessage(error).slice(0, 1000);
+    console.error("Stripe event processing failed", event.id, message);
+    await admin.from("integration_events").update({ error_message: message })
+      .eq("provider", "stripe")
+      .eq("external_event_id", event.id);
+    return Response.json({ error: "Webhook processing failed" }, {
+      status: 500,
+    });
+  }
 });
 
-async function upsertSubscription(
-  supabase: any,
-  metadata: Record<string, string> | undefined,
-  values: Record<string, unknown>,
+async function processCheckout(
+  admin: SupabaseClient,
+  stripe: Stripe,
+  object: Stripe.Event.Data.Object,
 ) {
-  const organizationId = metadata?.organization_id;
-  const userId = metadata?.user_id;
-  const planId = metadata?.plan_id;
-  if (!organizationId || !userId) throw new Error("Stripe subscription metadata is incomplete");
-  const { error } = await supabase.from("member_subscriptions").upsert({
-    organization_id: organizationId,
-    user_id: userId,
-    plan_id: planId || null,
-    ...values,
-  }, { onConflict: "organization_id,user_id" });
+  if (!("id" in object) || typeof object.id !== "string") {
+    throw new Error("Checkout event has no session ID");
+  }
+  const session = await stripe.checkout.sessions.retrieve(object.id, {
+    expand: ["line_items.data.price", "customer", "subscription"],
+  });
+  if (
+    session.payment_status !== "paid" &&
+    session.payment_status !== "no_payment_required"
+  ) {
+    throw new Error("Checkout is not paid");
+  }
+
+  const priceId = stringId(session.line_items?.data[0]?.price);
+  const plan = await resolvePlan(admin, session.metadata?.plan_id, priceId);
+  const email = normalizeBillingEmail(
+    session.customer_details?.email ||
+      (typeof session.customer === "object" && session.customer &&
+          !("deleted" in session.customer)
+        ? session.customer.email
+        : ""),
+  );
+  const customerId = stringId(session.customer);
+  if (!looksLikeEmail(email) || !customerId) {
+    throw new Error("Checkout buyer identity is incomplete");
+  }
+
+  const buyer = await ensureBuyer(
+    admin,
+    plan.academy_community_id,
+    email,
+    session.customer_details?.name || "",
+  );
+  if (session.mode === "subscription") {
+    const subscriptionId = stringId(session.subscription);
+    if (!subscriptionId) throw new Error("Checkout subscription is missing");
+    const subscription = typeof session.subscription === "object" &&
+        session.subscription
+      ? session.subscription
+      : await stripe.subscriptions.retrieve(subscriptionId);
+    await applyBillingEvent(admin, {
+      plan,
+      buyer,
+      customerId,
+      subscriptionId,
+      checkoutSessionId: session.id,
+      status: normalizeStripeSubscriptionStatus(subscription.status),
+      cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end),
+      currentPeriodEnd: subscriptionPeriodEnd(subscription),
+      sourceType: "stripe_subscription",
+      sourceKey: subscriptionId,
+    });
+    return;
+  }
+
+  await applyBillingEvent(admin, {
+    plan,
+    buyer,
+    customerId,
+    subscriptionId: "",
+    checkoutSessionId: session.id,
+    status: "active",
+    cancelAtPeriodEnd: false,
+    currentPeriodEnd: null,
+    sourceType: "stripe_payment",
+    sourceKey: session.id,
+  });
+}
+
+async function processSubscription(
+  admin: SupabaseClient,
+  stripe: Stripe,
+  object: Stripe.Event.Data.Object,
+) {
+  if (!("id" in object) || typeof object.id !== "string") {
+    throw new Error("Subscription event has no ID");
+  }
+  const subscription = object as Stripe.Subscription;
+  const customerId = stringId(subscription.customer);
+  const priceId = stringId(subscription.items.data[0]?.price);
+  const plan = await resolvePlan(admin, subscription.metadata?.plan_id, priceId);
+  const customer = await stripe.customers.retrieve(customerId);
+  if ("deleted" in customer && customer.deleted) {
+    throw new Error("Stripe customer has been deleted");
+  }
+  const email = normalizeBillingEmail(customer.email);
+  if (!looksLikeEmail(email) || !customerId) {
+    throw new Error("Subscription customer identity is incomplete");
+  }
+  const buyer = await ensureBuyer(
+    admin,
+    plan.academy_community_id,
+    email,
+    customer.name || "",
+  );
+  await applyBillingEvent(admin, {
+    plan,
+    buyer,
+    customerId,
+    subscriptionId: subscription.id,
+    checkoutSessionId: "",
+    status: normalizeStripeSubscriptionStatus(subscription.status),
+    cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end),
+    currentPeriodEnd: subscriptionPeriodEnd(subscription),
+    sourceType: "stripe_subscription",
+    sourceKey: subscription.id,
+  });
+}
+
+async function resolvePlan(
+  admin: SupabaseClient,
+  metadataPlanId: string | undefined,
+  priceId: string,
+): Promise<BillingPlan> {
+  if (!priceId) throw new Error("Stripe price is missing");
+  let query = admin
+    .from("academy_billing_plans")
+    .select("id,academy_community_id,stripe_price_id,billing_type");
+  query = isUuid(metadataPlanId)
+    ? query.eq("id", metadataPlanId)
+    : query.eq("stripe_price_id", priceId);
+  const { data: plan, error } = await query.maybeSingle();
+  if (error || !plan || plan.stripe_price_id !== priceId) {
+    throw new Error("Stripe price is not mapped to an Academy plan");
+  }
+  return plan as BillingPlan;
+}
+
+async function ensureBuyer(
+  admin: SupabaseClient,
+  communityId: string,
+  email: string,
+  displayName: string,
+): Promise<Buyer> {
+  let user = await findAuthUser(admin, email);
+  if (!user) {
+    const { data, error } = await admin.auth.admin.createUser({
+      email,
+      email_confirm: true,
+      user_metadata: { full_name: displayName || email.split("@")[0] },
+    });
+    if (error) {
+      user = await findAuthUser(admin, email);
+      if (!user) throw error;
+    } else {
+      user = data.user;
+    }
+  }
+
+  const { error: workspaceError } = await admin.rpc(
+    "ensure_academy_user_workspace",
+    {
+      target_user_id: user.id,
+      target_full_name: displayName || "",
+      target_company_name: "",
+    },
+  );
+  if (workspaceError) throw workspaceError;
+
+  const { data: linkedMember, error: linkedError } = await admin
+    .from("academy_members")
+    .select("id,user_id")
+    .eq("academy_community_id", communityId)
+    .eq("user_id", user.id)
+    .limit(1)
+    .maybeSingle();
+  if (linkedError) throw linkedError;
+  let memberId = linkedMember?.id as string | undefined;
+
+  if (!memberId) {
+    const { data: invite, error: inviteError } = await admin
+      .from("academy_member_invites")
+      .select("academy_member_id")
+      .eq("academy_community_id", communityId)
+      .ilike("email", email)
+      .neq("status", "cancelled")
+      .limit(1)
+      .maybeSingle();
+    if (inviteError) throw inviteError;
+    if (invite?.academy_member_id) {
+      const { data: claimed, error: claimError } = await admin
+        .from("academy_members")
+        .update({
+          user_id: user.id,
+          status: "active",
+          last_seen_at: new Date().toISOString(),
+        })
+        .eq("id", invite.academy_member_id)
+        .eq("academy_community_id", communityId)
+        .or(`user_id.is.null,user_id.eq.${user.id}`)
+        .select("id")
+        .maybeSingle();
+      if (claimError || !claimed) {
+        throw claimError || new Error("Imported Academy identity belongs to another account");
+      }
+      memberId = claimed.id;
+    }
+  }
+
+  if (!memberId) {
+    const { data: created, error: createError } = await admin
+      .from("academy_members")
+      .insert({
+        academy_community_id: communityId,
+        user_id: user.id,
+        status: "active",
+        display_name: displayName || email.split("@")[0],
+        joined_at: new Date().toISOString(),
+      })
+      .select("id")
+      .single();
+    if (createError) throw createError;
+    memberId = created.id;
+  }
+  if (!memberId) throw new Error("Academy member could not be resolved");
+
+  const now = new Date().toISOString();
+  const { error: inviteError } = await admin.from("academy_member_invites")
+    .upsert({
+      academy_community_id: communityId,
+      academy_member_id: memberId,
+      email,
+      status: "provisioned",
+      invited_user_id: user.id,
+      source_provider: "stripe",
+      provisioned_at: now,
+      last_attempt_at: now,
+      last_action: "provision",
+      error_message: null,
+    }, { onConflict: "academy_member_id" });
+  if (inviteError) throw inviteError;
+  return { userId: user.id, memberId, email };
+}
+
+async function findAuthUser(admin: SupabaseClient, email: string) {
+  for (let page = 1; page <= 20; page += 1) {
+    const { data, error } = await admin.auth.admin.listUsers({
+      page,
+      perPage: 1000,
+    });
+    if (error) throw error;
+    const found = data.users.find((candidate) =>
+      normalizeBillingEmail(candidate.email) === email
+    );
+    if (found) return found;
+    if (data.users.length < 1000) return null;
+  }
+  throw new Error("Auth user lookup exceeded the supported account size");
+}
+
+async function applyBillingEvent(
+  admin: SupabaseClient,
+  values: {
+    plan: BillingPlan;
+    buyer: Buyer;
+    customerId: string;
+    subscriptionId: string;
+    checkoutSessionId: string;
+    status: string;
+    cancelAtPeriodEnd: boolean;
+    currentPeriodEnd: string | null;
+    sourceType: "stripe_subscription" | "stripe_payment";
+    sourceKey: string;
+  },
+) {
+  const { error } = await admin.rpc("apply_academy_billing_event", {
+    p_plan_id: values.plan.id,
+    p_member_id: values.buyer.memberId,
+    p_provider_customer_id: values.customerId,
+    p_provider_subscription_id: values.subscriptionId,
+    p_checkout_session_id: values.checkoutSessionId,
+    p_status: values.status,
+    p_cancel_at_period_end: values.cancelAtPeriodEnd,
+    p_current_period_end: values.currentPeriodEnd,
+    p_source_type: values.sourceType,
+    p_source_key: values.sourceKey,
+    p_email: values.buyer.email,
+  });
   if (error) throw error;
 }
 
-async function verifyStripeSignature(payload: string, header: string, secret: string) {
-  const parts = Object.fromEntries(header.split(",").map((part) => part.split("=", 2)));
-  const timestamp = Number(parts.t);
-  const received = parts.v1;
-  if (!timestamp || !received || Math.abs(Date.now() / 1000 - timestamp) > 300) return false;
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-  const digest = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`${timestamp}.${payload}`));
-  const expected = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-  return timingSafeEqual(expected, received);
+function subscriptionPeriodEnd(subscription: Stripe.Subscription) {
+  const raw = subscription as unknown as Record<string, unknown>;
+  const direct = unixTimestamp(raw.current_period_end);
+  if (direct) return direct;
+  const itemPeriods = subscription.items.data
+    .map((item) =>
+      unixTimestamp(
+        (item as unknown as Record<string, unknown>).current_period_end,
+      )
+    )
+    .filter((value): value is string => Boolean(value));
+  return itemPeriods.sort().at(-1) ?? null;
 }
-
-function timingSafeEqual(left: string, right: string) {
-  if (left.length !== right.length) return false;
-  let result = 0;
-  for (let index = 0; index < left.length; index += 1) result |= left.charCodeAt(index) ^ right.charCodeAt(index);
-  return result === 0;
-}
-
-function stringValue(value: unknown) {
-  return typeof value === "string" ? value : null;
-}
-
-function membershipStatus(status: string | null) {
-  if (status === "active" || status === "trialing") return "active";
-  if (status === "past_due" || status === "unpaid" || status === "paused") return "suspended";
-  if (status === "canceled" || status === "incomplete_expired") return "cancelled";
-  return "pending";
-}
-
-type StripeEvent = {
-  id: string;
-  type: string;
-  data: { object: Record<string, unknown> & { id: string; metadata?: Record<string, string> } };
-};

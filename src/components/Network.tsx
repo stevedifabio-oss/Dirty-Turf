@@ -1,5 +1,16 @@
-import { useState } from "react";
-import { ArrowLeft, BookOpen, Database, LockKeyhole, ShieldCheck, Signpost, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, BookOpen, CheckCircle2, CreditCard, Database, ExternalLink, LockKeyhole, ShieldCheck, Signpost, UserRoundCheck, X } from "lucide-react";
+import {
+  loadAcademyBillingOverview,
+  loadMemberAccessSummary,
+  openAcademyBillingPortal,
+  provisionAcademyMemberAccounts,
+  startAcademyCheckout,
+  webBillingAvailable,
+  type AcademyBillingOverview,
+  type MemberAccessSummary,
+} from "../lib/backend";
+import { useModalDialog } from "../lib/useModalDialog";
 
 export type HubSection = "settings" | "access";
 
@@ -14,13 +25,15 @@ type HubProps = {
 
 export function HubSheet(props: HubProps) {
   const { section, onClose } = props;
+  const dialogRef = useRef<HTMLElement>(null);
+  useModalDialog(dialogRef, onClose);
   const title = section === "settings" ? "Workspace settings" : "Workspace access";
 
   return (
     <div className="sheet-layer hub-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="hub-sheet" role="dialog" aria-modal="true" aria-label={title}>
+      <section ref={dialogRef} className="hub-sheet" role="dialog" aria-modal="true" aria-label={title}>
         <header className="sheet-header">
-          <button className="bare-icon" onClick={onClose} aria-label="Close"><ArrowLeft size={20} /></button>
+          <button className="bare-icon" onClick={onClose} aria-label="Close" data-dialog-autofocus><ArrowLeft size={20} /></button>
           <div><p>Dirty Turf field tools</p><h2>{title}</h2></div>
           <button className="bare-icon" onClick={onClose} aria-label="Close"><X size={19} /></button>
         </header>
@@ -35,6 +48,72 @@ export function HubSheet(props: HubProps) {
 }
 
 function SettingsPanel({ onToast, dataMode, onSignOut }: { onToast: (message: string) => void; dataMode: "device" | "cloud"; onSignOut: () => Promise<void> }) {
+  const [memberAccess, setMemberAccess] = useState<MemberAccessSummary | null>(null);
+  const [checkingAccess, setCheckingAccess] = useState(dataMode === "cloud");
+  const [provisioning, setProvisioning] = useState(false);
+  const [billing, setBilling] = useState<AcademyBillingOverview | null>(null);
+  const [billingBusy, setBillingBusy] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    setMemberAccess(null);
+    setCheckingAccess(dataMode === "cloud");
+    if (dataMode !== "cloud") return () => { mounted = false; };
+    void loadMemberAccessSummary()
+      .then((response) => { if (mounted) setMemberAccess(response.summary); })
+      .catch(() => undefined)
+      .finally(() => { if (mounted) setCheckingAccess(false); });
+    return () => { mounted = false; };
+  }, [dataMode]);
+
+  useEffect(() => {
+    let mounted = true;
+    if (dataMode !== "cloud" || !webBillingAvailable()) {
+      setBilling(null);
+      return () => { mounted = false; };
+    }
+    void loadAcademyBillingOverview()
+      .then((overview) => { if (mounted) setBilling(overview); })
+      .catch(() => undefined);
+    return () => { mounted = false; };
+  }, [dataMode]);
+
+  const provisionMembers = async () => {
+    setProvisioning(true);
+    try {
+      const response = await provisionAcademyMemberAccounts();
+      setMemberAccess(response.summary);
+      onToast(response.summary.allEligibleReady
+        ? "Every current Academy member now has a provisioned account."
+        : `${response.summary.membersNotReady} member account${response.summary.membersNotReady === 1 ? "" : "s"} still need review.`);
+    } catch {
+      onToast("Member accounts could not be provisioned. Review the access service logs.");
+    } finally {
+      setProvisioning(false);
+    }
+  };
+
+  const beginCheckout = async (planId: string) => {
+    setBillingBusy(true);
+    try {
+      await startAcademyCheckout(planId);
+    } catch {
+      onToast("Secure checkout could not be opened. Try again from the Academy website.");
+      setBillingBusy(false);
+    }
+  };
+
+  const manageBilling = async () => {
+    setBillingBusy(true);
+    try {
+      await openAcademyBillingPortal();
+    } catch {
+      onToast("Billing management could not be opened.");
+      setBillingBusy(false);
+    }
+  };
+  const canChoosePlan = !billing?.subscription || ["cancelled", "expired"].includes(billing.subscription.status);
+
   return <>
     <section className="profile-summary">
       <span className="avatar">DT</span>
@@ -44,11 +123,51 @@ function SettingsPanel({ onToast, dataMode, onSignOut }: { onToast: (message: st
     <div className="setting-group">
       <h3>Data boundary</h3>
       <SettingRow icon={<Database size={18} />} title="Company records" detail="Properties, quotes, visits, and photos use Supabase" />
-      <SettingRow icon={<BookOpen size={18} />} title="Academy and community" detail="Courses, members, events, and progress stay live in HighLevel" />
-      <SettingRow icon={<Signpost size={18} />} title="Future native rebuild" detail="Import provenance and cutover gates are documented" />
+      <SettingRow icon={<BookOpen size={18} />} title="Academy and community" detail="Courses, members, events, and progress use the native workspace" />
+      <SettingRow icon={<Signpost size={18} />} title="HighLevel archive" detail="Imported records retain source IDs and migration history" />
     </div>
+    {(checkingAccess || memberAccess) && <div className="setting-group member-access-group">
+      <h3>Member access</h3>
+      {checkingAccess
+        ? <div className="setting-row"><span><UserRoundCheck size={18} /></span><span><strong>Checking account readiness</strong><small>Reconciling enrolled members with Supabase Auth</small></span></div>
+        : memberAccess && <>
+          <div className="setting-row"><span>{memberAccess.allEligibleReady ? <CheckCircle2 size={18} /> : <UserRoundCheck size={18} />}</span><span><strong>{memberAccess.provisionedMembers} of {memberAccess.eligibleMembers} current members ready</strong><small>{memberAccess.enrolledReady} of {memberAccess.enrolledMembers} course enrollments are linked. Accounts are created without sending email.</small></span></div>
+          <button className="secondary-button" disabled={memberAccess.allEligibleReady || provisioning} onClick={() => void provisionMembers()}>{provisioning ? "Provisioning accounts..." : memberAccess.allEligibleReady ? "Every current member is ready" : `Provision ${memberAccess.membersNotReady} missing account${memberAccess.membersNotReady === 1 ? "" : "s"}`}</button>
+        </>}
+    </div>}
+    {billing && (billing.subscription || billing.plans.length > 0) && <div className="setting-group billing-group">
+      <h3>Billing</h3>
+      {billing.subscription && <div className="billing-current">
+        <span><CreditCard size={18} /></span>
+        <span><strong>{billing.subscription.planName}</strong><small>{billingStatusLabel(billing.subscription.status, billing.subscription.cancelAtPeriodEnd, billing.subscription.currentPeriodEnd)}</small></span>
+        <button className="icon-plain" aria-label="Manage billing" disabled={billingBusy} onClick={() => void manageBilling()}><ExternalLink size={17} /></button>
+      </div>}
+      {canChoosePlan && billing.plans.map((plan) => <article className="billing-plan" key={plan.id}>
+        <div><strong>{plan.name}</strong><small>{plan.description}</small></div>
+        <span>{formatPlanPrice(plan.amountCents, plan.currency, plan.billingInterval)}</span>
+        <button className="secondary-button" disabled={billingBusy} onClick={() => void beginCheckout(plan.id)}>{billingBusy ? "Opening..." : "Choose plan"}</button>
+      </article>)}
+    </div>}
     <button className="secondary-button" disabled={dataMode !== "cloud"} onClick={() => void onSignOut()}>{dataMode === "cloud" ? "Sign out" : "Device demo is not signed in"}</button>
   </>;
+}
+
+function formatPlanPrice(amountCents: number, currency: string, interval: string) {
+  const amount = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: currency.toUpperCase(),
+    maximumFractionDigits: amountCents % 100 === 0 ? 0 : 2,
+  }).format(amountCents / 100);
+  return interval === "one_time" ? amount : `${amount}/${interval}`;
+}
+
+function billingStatusLabel(status: string, cancelAtPeriodEnd: boolean, periodEnd: string | null) {
+  const end = periodEnd
+    ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(periodEnd))
+    : "";
+  if (cancelAtPeriodEnd && end) return `Active through ${end}`;
+  if (status === "active" || status === "trialing") return end ? `Active · renews ${end}` : "Active";
+  return status.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
 }
 
 function AccessPanel({ onRequestMagicLink }: { onRequestMagicLink: (email: string) => Promise<void> }) {
@@ -58,12 +177,15 @@ function AccessPanel({ onRequestMagicLink }: { onRequestMagicLink: (email: strin
     event.preventDefault();
     if (!email.trim()) return;
     setSending(true);
-    await onRequestMagicLink(email.trim());
-    setSending(false);
+    try {
+      await onRequestMagicLink(email.trim());
+    } finally {
+      setSending(false);
+    }
   };
 
   return <>
-    <section className="access-intro"><span><ShieldCheck size={25} /></span><h3>Enter your company workspace</h3><p>Use the email invited by the client administrator. We will send a secure sign-in link.</p></section>
+    <section className="access-intro"><span><ShieldCheck size={25} /></span><h3>Enter your company workspace</h3><p>Use the email connected to your Academy membership. We will send a secure sign-in link.</p></section>
     <form className="access-form" onSubmit={submit}><label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="operator@company.com" autoComplete="email" required /></label><button className="primary-button wide" disabled={sending || !email.trim()}>{sending ? "Sending link..." : "Email me a sign-in link"}</button></form>
     <div className="access-note"><LockKeyhole size={16} /><p>No password is stored in the app. Access and company membership are controlled by the client-owned Supabase workspace.</p></div>
   </>;

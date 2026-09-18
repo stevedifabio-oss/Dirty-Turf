@@ -1,3 +1,5 @@
+import { Capacitor, registerPlugin } from "@capacitor/core";
+
 export type LiveMeasurementPoint = {
   x: number;
   y: number;
@@ -11,32 +13,29 @@ export type LiveMeasurementResult = {
   capturedAt: string;
 };
 
-type DirtyTurfMeasureBridge = {
-  isAvailable: () => Promise<boolean>;
+type NativeDirtyTurfMeasurePlugin = {
+  isAvailable: () => Promise<{ available: boolean }>;
   startAreaMeasurement: () => Promise<LiveMeasurementResult>;
 };
 
-declare global {
-  interface Window {
-    DirtyTurfMeasure?: DirtyTurfMeasureBridge;
-  }
-}
+const nativeMeasure = registerPlugin<NativeDirtyTurfMeasurePlugin>("DirtyTurfMeasure");
 
 export async function hasNativeLiveMeasurement() {
-  if (!window.DirtyTurfMeasure) return false;
+  if (!Capacitor.isNativePlatform()) return false;
   try {
-    return await window.DirtyTurfMeasure.isAvailable();
+    const result = await nativeMeasure.isAvailable();
+    return result.available;
   } catch {
     return false;
   }
 }
 
 export async function startNativeLiveMeasurement() {
-  if (!window.DirtyTurfMeasure) {
+  if (!Capacitor.isNativePlatform()) {
     throw new Error("Live AR measurement is available in the iPhone and Android app build.");
   }
 
-  const result = await window.DirtyTurfMeasure.startAreaMeasurement();
+  const result = await nativeMeasure.startAreaMeasurement();
   if (!Number.isFinite(result.areaSquareFeet) || result.areaSquareFeet <= 0 || result.points.length < 3) {
     throw new Error("The live measurement did not return a valid closed boundary.");
   }

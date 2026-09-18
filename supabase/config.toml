@@ -17,7 +17,7 @@ port = 54323
 [auth]
 enabled = true
 site_url = "http://localhost:5173"
-additional_redirect_urls = ["http://localhost:5173", "https://YOUR_APP_DOMAIN"]
+additional_redirect_urls = ["http://localhost:5173", "https://YOUR_APP_DOMAIN", "com.dirtyturf.academy://auth/callback"]
 
 [storage]
 enabled = true
@@ -33,6 +33,15 @@ verify_jwt = false
 verify_jwt = true
 
 [functions.create-checkout]
+verify_jwt = true
+
+[functions.create-billing-portal]
+verify_jwt = true
+
+[functions.academy-import]
+verify_jwt = true
+
+[functions.academy-invite-members]
 verify_jwt = true
 
 [functions.stripe-webhook]

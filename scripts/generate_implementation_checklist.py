@@ -26,14 +26,14 @@ GRAY = HexColor("#D6DCD0")
 INK = HexColor("#111F14")
 MUTED = HexColor("#3D5C44")
 SOFT_LINE = HexColor("#D3DFD5")
-TOTAL_PAGES = 7
+TOTAL_PAGES = 8
 
 
 class ChecklistPDF:
     def __init__(self, output: Path):
         output.parent.mkdir(parents=True, exist_ok=True)
         self.c = canvas.Canvas(str(output), pagesize=letter)
-        self.c.setTitle("Dirty Turf Functional App - Tomorrow Implementation Checklist")
+        self.c.setTitle("Dirty Turf Academy - Tomorrow Launch Checklist")
         self.c.setAuthor("Dirty Turf")
         self.page = 0
         self.y = PAGE_H - MARGIN
@@ -105,13 +105,30 @@ class ChecklistPDF:
         leading = 11 if compact else 12
         max_chars = 91 if compact else 84
         for item in items:
+            state = "todo"
+            if item.startswith("[x] "):
+                state = "done"
+                item = item[4:]
+            elif item.startswith("[!] "):
+                state = "attention"
+                item = item[4:]
+            elif item.startswith("[ ] "):
+                item = item[4:]
             lines = wrap(item, width=max_chars)
             item_h = max(22, len(lines) * leading + 8)
             if self.y - item_h < 50:
                 raise RuntimeError("Checklist content overflowed a page")
-            self.c.setStrokeColor(GREEN)
+            box_color = GREEN if state != "attention" else ORANGE
+            self.c.setStrokeColor(box_color)
             self.c.setLineWidth(1)
-            self.c.roundRect(MARGIN, self.y - 11, 10, 10, 1.5, fill=0, stroke=1)
+            if state in {"done", "attention"}:
+                self.c.setFillColor(box_color)
+                self.c.roundRect(MARGIN, self.y - 11, 10, 10, 1.5, fill=1, stroke=1)
+                self.c.setFillColor(white)
+                self.c.setFont("Helvetica-Bold", 7)
+                self.c.drawCentredString(MARGIN + 5, self.y - 8.5, "x" if state == "done" else "!")
+            else:
+                self.c.roundRect(MARGIN, self.y - 11, 10, 10, 1.5, fill=0, stroke=1)
             self.c.setFillColor(INK)
             self.c.setFont("Helvetica", size)
             line_y = self.y
@@ -196,158 +213,184 @@ class ChecklistPDF:
 def build_pdf():
     pdf = ChecklistPDF(OUTPUT)
 
-    pdf.new_page("Tomorrow launch plan", "Functional app checklist", "Academy, community, field tools, quoting, history, and integrations")
+    pdf.new_page("September 18 activation", "Functional app checklist", "Native Academy, community, field tools, member access, web release, and mobile delivery")
     pdf.section("Tomorrow's finish line", "Definition of done")
     pdf.paragraph(
-        "By end of day, an authenticated company operator can measure and quote a property, retrieve visit history, launch the live HighLevel course library and community from the app, and send a verified result into HighLevel. Native community migration remains staged until a complete client-owned archive is validated."
+        "An active Dirty Turf member can sign into the native app, open imported Academy lessons, use the community and events, measure a turf job, calculate exact infill bags and customer price, save the result, and reopen it on a second device. Production web and test-store builds are verified with client-owned accounts."
     )
     col_w = (PAGE_W - 2 * MARGIN - 12) / 2
-    y1 = pdf.card("FIELD WORKSPACE", "Supabase Auth + RLS, company records, property visits, measurements, estimates, and private photo storage.", GREEN, col_w, 82, MARGIN)
-    pdf.card("OPERATOR EXPERIENCE", "Mobile-first React app with measurement, quoting, and verified deep links to the live branded Academy and community.", LIME, col_w, 82, MARGIN + col_w + 12)
+    y1 = pdf.card("APP EXPERIENCE", "Native Academy, lessons, quizzes, community, events, member directory, field tools, and mobile navigation are built.", GREEN, col_w, 82, MARGIN)
+    pdf.card("CONTENT ARCHIVE", "One course, 21 module groups, 128 lessons, 137 assets, and 3 quizzes are captured outside Git.", LIME, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y1 - 14
-    y2 = pdf.card("CONTENT + CRM", "GoHighLevel stays live for courses, community, members, and access; Supabase receives field records and migration staging.", ORANGE, col_w, 82, MARGIN)
-    pdf.card("DELIVERY", "Netlify hosts the web app; Supabase runs database, storage, auth, realtime, and signed Edge Functions.", GREEN_DARK, col_w, 82, MARGIN + col_w + 12)
+    y2 = pdf.card("BACKEND READY", "Supabase schema, RLS, private storage, importer, magic-link accounts, Stripe billing, and source-aware entitlements are coded.", ORANGE, col_w, 82, MARGIN)
+    pdf.card("NATIVE DELIVERY", "Capacitor iOS simulator and Android debug builds pass. Real-device AR and signed store builds remain release gates.", GREEN_DARK, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y2 - 18
-    pdf.section("Launch gates")
+    pdf.section("Verified build state")
     pdf.checklist([
-        "Production operator can sign in by magic link and reaches only the correct company workspace.",
-        "A measured property saves area, cleaning plan, infill count, quote, visit date, and private photos.",
-        "Live GHL courses, community, and events open from the app after login through the verified Academy deep links.",
-        "A second-company test account cannot read the first company's properties, estimates, photos, or storage; both may join the shared Academy community.",
-        "Leaflet property tracing matches a known reference area within the agreed field tolerance across current and historical imagery.",
-        "A real HighLevel test contact enters the intended workflow and the expected notification is received.",
+        "[x] Schema contracts cover all 50 public tables and 10 migrations; TypeScript, 53 tests, the PWA asset manifest, and the production build pass.",
+        "[x] The infill calculator passes a live 20 x 18 ft test: 360 sq ft, 180 lb at 0.50 lb/sq ft, 5 forty-pound bags, 4 fifty-pound bags, and $259.20 at $0.72/sq ft.",
+        "[x] Mobile QA passes from 320 x 568 through tablet with no horizontal overflow; the signed-out Magic Link gate remains mounted after the startup watchdog.",
+        "[x] Unsigned iOS simulator compilation, Android debug assembly, Android unit tests, and Android lint succeed.",
+        "[x] The private HighLevel course archive validates and remains ignored by Git.",
+        "[!] Production Supabase migration, Stripe test-mode proof, member import/provisioning, SMTP delivery, deep-link proof, real-device AR, signed store builds, and production smoke tests still require client accounts or devices.",
     ], compact=True)
-    pdf.gate("Do not call the app functional based only on local device mode, seeded examples, or a 200 response from a mocked webhook.")
+    pdf.gate("Do not retire HighLevel or invite members until archive counts reconcile, the import dry run passes, client SMTP delivers, and active/cancelled access rules are proven.")
 
-    pdf.new_page("08:00-09:00", "Client accounts and ownership", "Create a clean client-controlled boundary before wiring the product")
-    pdf.timeline("8:00 AM", "Confirm client-owned account access", "Client + product owner")
+    pdf.new_page("08:00-09:00", "Client-owned accounts first", "The only steps that require the client to sign in, verify identity, or supply billing")
+    pdf.timeline("8:00 AM", "Finish account-owner actions", "Dirty Turf owner")
     pdf.checklist([
-        "Create or confirm a client-owned administrative identity with client-controlled recovery and multi-factor authentication. Do not use personal browser or CLI sessions.",
-        "Confirm the connected Supabase project is inside a client-owned organization; record project ref, region, client admin, and recovery owner.",
-        "Confirm the connected GitHub repository and Netlify site are client-owned; record deploy owner and rollback owner. Archive duplicate Netlify projects only after the active site is identified.",
-        "Create client-owned Apple Developer and Google Play organization accounts only if native AR builds are in tomorrow's release scope.",
-        "Rotate the exposed HighLevel credential and create client-owned least-privilege integration access for the exact location, workflow, pipeline, tags, and custom fields.",
-        "If paid membership launches now, create a client-owned Stripe account and products. Otherwise keep billing disabled and name the later owner.",
-        "Use a password manager for all credentials. Do not place service-role or HighLevel private tokens in VITE_ variables.",
+        "[ ] Confirm GitHub repository stevedifabio-oss/Dirty-Turf, the active Netlify site, and Supabase project ipbtldajgsoxixqmajec are owned by Dirty Turf LLC admins.",
+        "[ ] Supabase: configure a client-owned SMTP sender, verify its DNS records, set the Site URL to the exact production HTTPS origin, and allow that origin plus com.dirtyturf.academy://auth/callback.",
+        "[ ] Apple: add the renewal card, accept pending agreements, confirm App Store Connect access, and keep Dirty Turf LLC as the legal seller.",
+        "[ ] Google Play: finish organization identity, website, and phone verification. App publication stays blocked until Google approves the developer account.",
+        "[ ] Confirm access to dirtyturf.com DNS plus the privacy, support, and account-deletion URLs needed by both stores.",
+        "[ ] After the final HighLevel archive capture, rotate the private integration token shared in chat and store the replacement only as a server secret.",
+        "[ ] Use only client-owned email, recovery, MFA, billing, and password-manager records. Do not connect a consultant's personal account or terminal credentials.",
     ], compact=True)
-    pdf.section("Environment matrix")
+    pdf.section("Accounts required")
+    pdf.paragraph("HighLevel, Supabase, GitHub, Netlify, domain/DNS, transactional SMTP, Apple Developer/App Store Connect, Google Play Console/Google Cloud, and a client-owned Stripe account before payments are enabled.", width_chars=96, size=8.5, leading=11)
+    pdf.section("Secret boundary")
     pdf.command(
-        "# Browser-safe (Netlify)\nVITE_SUPABASE_URL=...\nVITE_SUPABASE_PUBLISHABLE_KEY=...\n\n# Server-only (Supabase secrets)\nSUPABASE_SERVICE_ROLE_KEY=...\nGHL_PRIVATE_INTEGRATION_TOKEN=...\nGHL_LOCATION_ID=...\nAPP_URL=...  STRIPE_SECRET_KEY=...  STRIPE_WEBHOOK_SECRET=..."
+        "# Browser-safe (Netlify)\nVITE_SUPABASE_URL=...\nVITE_SUPABASE_PUBLISHABLE_KEY=...\nVITE_STRIPE_ACADEMY_PAYMENT_LINK=https://buy.stripe.com/...\n\n# Server-only (Supabase secrets)\nSUPABASE_SERVICE_ROLE_KEY=...\nGHL_PRIVATE_INTEGRATION_TOKEN=...\nGHL_LOCATION_ID=...\nAPP_URL=...  APP_ALLOWED_ORIGINS=...  AUTH_REDIRECT_URLS=...\nSTRIPE_SECRET_KEY=...  STRIPE_WEBHOOK_SECRET=..."
     )
     pdf.checklist([
-        "Confirm production attribution, traffic limits, and usage terms for Esri, USGS NAIP, OpenStreetMap tiles, and the selected address geocoder.",
-        "Create a least-privilege HighLevel private integration with only the scopes required for contacts, opportunities, custom fields, and workflows.",
-        "Add production and localhost auth redirect URLs in Supabase Auth settings.",
-        "Use a clean client browser profile and client-owned CLI login. Never authenticate these services with the consultant's personal credentials.",
+        "[ ] Never put the HighLevel token or Supabase service-role key in a VITE_ variable, browser storage, app bundle, screenshot, PDF, or Git commit.",
+        "[ ] Record one client owner and one recovery owner for every account before launch.",
     ], compact=True)
-    pdf.gate("Every account is client-owned, every secret has a named client owner and rotation path, and no personal credential or billing profile is attached.")
+    pdf.gate("Every account is client-owned, every secret has a rotation path, and no personal credential or billing profile is attached to the product.")
 
-    pdf.new_page("09:00-11:00", "Supabase data foundation", "Apply the schema, secure tenancy, and prove private storage")
-    pdf.timeline("9:00 AM", "Link, migrate, and deploy", "Backend owner")
+    pdf.new_page("09:00-11:00", "Activate the Supabase backend", "Apply the reviewed schema, deploy the importer, and prove authorization before content import")
+    pdf.timeline("9:00 AM", "Migrate and deploy", "Backend owner")
     pdf.command(
-        "npm install\nnpx supabase login\nnpx supabase link --project-ref <PROJECT_REF>\nnpx supabase db push\nnpx supabase secrets set --env-file .env.supabase\nnpx supabase functions deploy health\nnpx supabase functions deploy ghl-webhook\nnpx supabase functions deploy create-checkout\nnpx supabase functions deploy stripe-webhook"
+        "npm run check\nnpx supabase link --project-ref ipbtldajgsoxixqmajec\nnpx supabase db push\nnpx supabase functions deploy academy-import\nnpx supabase functions deploy academy-invite-members\nnpx supabase functions deploy create-checkout\nnpx supabase functions deploy create-billing-portal\nnpx supabase functions deploy stripe-webhook --no-verify-jwt\nnpx supabase functions deploy health"
     )
     pdf.checklist([
-        "Confirm all migrations applied: private field records plus shared Academy membership, source import batches, provenance records, and future native content structures.",
-        "Create the first production user. Verify the signup trigger creates a profile, organization, and owner membership.",
-        "Create two test companies and two test operators. Verify each can create and read only its own properties, visits, estimates, and photos while both can access the shared Academy membership surface.",
-        "Attempt a direct REST read using company B's session for company A's record. Expect zero rows or permission denied.",
-        "Upload a photo beneath org_id/user_id/job_id. Verify it is not public and is retrievable only through an authorized signed URL.",
-        "Call the health Edge Function from the deployed URL and record the timestamp and 200 response.",
-        "Enable database backups and confirm the restore procedure and retention window appropriate for production.",
+        "[ ] Apply all ten ordered migrations through 20260918080238_academy_billing_entitlements.sql and confirm Academy, community, billing, entitlement, invite, asset, progress, and import-ledger tables exist.",
+        "[ ] In Supabase API settings, expose only the intended schema. Re-check RLS, grants, revoked anon/public access, and security-invoker views after any exposure change.",
+        "[ ] Create one Academy owner/admin and one normal active member. Verify the importer rejects the member and accepts only the owner/admin session.",
+        "[ ] Create two company organizations. Prove company B cannot read company A properties, calculations, visits, photos, or storage objects.",
+        "[ ] Confirm academy-assets is private. Test an authorized signed asset URL and an unauthorized read of the same object.",
+        "[ ] Confirm claim_academy_memberships is authenticated-only and ensure_academy_user_workspace is service-role-only. A normal member must not call the provisioning Edge Function.",
+        "[ ] Configure client SMTP and exact auth redirects before notifications. Test web and native PKCE links from cold start and while the app is open, plus logout, expiry, and second-device login.",
+        "[ ] Enable backups, document the restore owner, and record the migration version plus Edge Function versions.",
     ], compact=True)
-    pdf.section("Data acceptance record")
+    pdf.section("Backend acceptance record")
     pdf.signoff_row("Migration applied")
     pdf.signoff_row("Cross-tenant RLS denied")
-    pdf.signoff_row("Private photo access proven")
-    pdf.gate("Do not continue to launch if service-role keys appear in the browser bundle or if any cross-company record is readable.")
+    pdf.signoff_row("Private Academy and photo storage proven")
+    pdf.signoff_row("SMTP and auth redirects proven")
+    pdf.gate("Stop if a service-role key appears in the browser bundle, if any cross-company record is readable, or if a normal member can run an admin import.")
 
-    pdf.new_page("11:00-13:00", "Measurement, photos, and quoting", "Turn the prototype controls into a reliable field workflow")
-    pdf.timeline("11:00 AM", "Wire the mobile job flow", "Frontend owner")
+    pdf.new_page("11:00-13:00", "Import the HighLevel archive", "The private source package is composed and validated; reconcile it in production before any invite is sent")
+    pdf.timeline("11:00 AM", "Dry run, reconcile, then import", "Migration owner")
+    pdf.section("Private archive ready")
     pdf.checklist([
-        "Add the sign-in screen and session recovery. Route unauthenticated users to magic-link sign in and authenticated users to their workspace.",
-        "Ship client-owned iOS and Android app shells. Implement the live point workflow with ARKit raycasts on iPhone and ARCore hit tests on supported Android devices.",
-        "Return a closed 3D boundary, square feet, perimeter, point list, and timestamp through the DirtyTurfMeasure bridge. Never infer world distance from ordinary camera pixels.",
-        "Verify the integrated Leaflet trace on current Esri, USGS NAIP, Esri Wayback, and street imagery; test multiple separate turf areas and combined square feet.",
-        "Keep camera, map, and manual entry as equal measurement paths. Capture visit photos separately and show which method produced the saved area.",
-        "Persist property, visit, measurement, selected cleaning plan, infill settings, estimate lines, and estimate total through the provided Supabase RPC.",
-        "Load the property timeline by year so operators can compare prior visit photos and measurements.",
-        "Add loading, empty, permission-denied, offline, and retry states. Keep device mode clearly labeled whenever cloud configuration is absent.",
+        "[x] 1 course, 21 normalized module groups, 128 unique lessons, 137 assets, and 3 quizzes are stored in output/private/ghl-course-import.json outside Git.",
+        "[x] 60 login-eligible members plus one historical non-login author, 49 enrollments, 15 categories, 62 posts, 59 comments, and 5 events are reconciled.",
+        "[x] Lesson status is preserved: 109 published and 19 drafts. Quiz questions, answer options, explanations, and only verifiable answer keys are supported.",
+        "[x] The composed import manifest validates with SHA-256 0e1f53311b4635a7ed2969ff5bf6e2b038781eeb3126a958e3aaea82633f1aee.",
+        "[x] Source course percentages are preserved as an aggregate floor; the import does not fabricate lesson completions, reaction identities, or RSVP identities.",
     ], compact=True)
-    pdf.section("Quote reference tests")
+    pdf.section("Production import steps")
+    pdf.checklist([
+        "[ ] Create the client owner in Supabase, copy the owner organization UUID into the ignored manifest, and validate it again.",
+        "[ ] Run academy:access-audit. Require 60 unique login emails, 49 enrolled members, zero duplicates, and allEnrolledCanLogin:true.",
+        "[ ] Invoke academy-import with commit:false. Match every returned count to the private report before allowing a write.",
+        "[ ] Invoke academy-import with commit:true once. Re-run it to prove provider IDs make the operation idempotent.",
+        "[ ] Open at least three lessons, posts, comments, events, member profiles, assets, and enrollment states in both HighLevel and the native app.",
+        "[ ] Confirm ownership and long-term availability for every Filesafe, image, video, PDF, certificate, and download URL. Copy owned assets to private storage when permitted.",
+    ], compact=True)
+    pdf.section("Import sequence")
     pdf.command(
-        "684 sq ft + Premium + 10 bags  =>  $687\n800 sq ft + Premium + 12 bags  =>  $831\n100 sq ft + Quick + 2 bags      =>  $219 minimum-driven\nZero/invalid dimensions          =>  safe zero values, never NaN"
+        "npm run academy:access-audit\nacademy-import { commit:false }     -> reconcile counts\nacademy-import { commit:true }      -> idempotent import\nmember access preview/provision     -> readiness, no email"
     )
     pdf.checklist([
-        "Test 390 x 844, 430 x 932, tablet portrait, and desktop widths with real keyboard and safe-area behavior.",
-        "Compare ARKit, ARCore, and one map polygon against tape-measured reference areas; document tolerance by method and device.",
-        "Test unsupported AR hardware, denied camera permission, tracking loss, failed photo upload, rotation, back navigation, and duplicate saves.",
+        "[ ] Provision until all 60 current members report allEligibleReady:true and all 49 enrollments are linked. Accounts use Magic Links; passwords do not migrate.",
+        "[ ] Prove a source member can sign in and an unknown email cannot create an account. Test owner, admin, moderator, active, cancelled, suspended, and unassigned access.",
     ], compact=True)
-    pdf.gate("A saved quote must survive refresh and sign-in on a second device, with the same area, plan, bag count, amount, photos, and history.")
+    pdf.gate("Do not commit private manifests, member email addresses, course bodies, or community exports to Git. Keep the archive encrypted and client-owned.")
 
-    pdf.new_page("13:00-15:00", "Live GHL and migration archive", "Launch on the existing portal and preserve every record for the future rebuild")
-    pdf.timeline("1:00 PM", "Connect and inventory the live systems", "Product + integration")
-    pdf.section("Live member experience")
+    pdf.new_page("13:00-14:00", "Activate web payments", "Stripe-hosted checkout grants Supabase access; native apps remain consumption-only")
+    pdf.timeline("1:00 PM", "Configure Stripe and prove access", "Billing owner")
     pdf.checklist([
-        "Verify the Dirty Turf Academy launcher opens courses/library-v2 and the 7 Figure Turf Cleaning launcher opens the live community after login.",
-        "Verify logout/login, password reset, expired session, second-device access, mobile scrolling, downloads, video playback, and event links from the app launch surfaces.",
-        "Keep GHL authoritative for course progress, posts, comments, reactions, events, leaderboards, members, moderation, and paid access during this launch.",
-        "Confirm the two supplied offer/share links by name, price, trial, included course/group access, billing owner, and cancellation behavior before exposing either in the app.",
-        "Use a client-owned admin account to filter Contacts by Client Portal > Groups = 7 Figure Turf Cleaning and export exactly those members with the required columns.",
-        "Record course, module, lesson, post, comment, channel, member, event, progress, role, and asset counts in the migration manifest. Do not put exports or member PII in Git.",
+        "[ ] Create a client-owned Stripe account, complete business verification, add Dirty Turf administrators, require MFA, and configure client billing plus recovery ownership.",
+        "[ ] In Stripe test mode, create the Academy product and recurring or one-time Price. Do not accept a price or amount from the app browser.",
+        "[ ] Insert the Price ID into an inactive academy_billing_plans row, map included courses in academy_billing_plan_courses, verify the community-access choice, then activate the plan.",
+        "[ ] Register the stripe-webhook Edge Function for checkout.session.completed, checkout.session.async_payment_succeeded, and subscription created, updated, and deleted events.",
+        "[ ] Configure the Stripe Customer Portal and a web Payment Link. Redirect successful payment to https://YOUR_APP_DOMAIN/?checkout=success and set VITE_STRIPE_ACADEMY_PAYMENT_LINK in Netlify.",
+        "[ ] Complete an authenticated web Checkout. Verify customer, subscription/payment, access grant, course enrollment, and processed integration event rows.",
+        "[ ] Complete a Payment Link purchase with a new email. Verify Supabase silently creates the confirmed account, member, provisioned invite, and grants; then sign in through Magic Link.",
+        "[ ] Replay the same webhook and prove it is idempotent. Force one processing failure and prove the unprocessed event retries instead of being discarded.",
+        "[ ] Cancel a Stripe-only test member and confirm access is removed at the intended time. Cancel a Stripe record for an imported member and confirm the separate HighLevel import grant preserves access.",
+        "[ ] Open Billing Portal on the web. Confirm the iOS and Android bundles show no purchase button or external checkout link and only consume access bought elsewhere.",
     ], compact=True)
-    pdf.section("Future native rebuild archive")
+    pdf.section("Billing acceptance")
+    pdf.signoff_row("Test Checkout and Payment Link")
+    pdf.signoff_row("Webhook replay and recovery")
+    pdf.signoff_row("Grant and cancellation rules")
+    pdf.signoff_row("Native consumption-only review")
+    pdf.gate("Do not switch Stripe to live mode until test checkout, Magic Link access, cancellation, webhook retry, and imported-member preservation all pass.")
+
+    pdf.new_page("14:00-15:30", "Field tools and real devices", "The calculator is verified; ARKit, ARCore, map accuracy, persistence, and failure states need field proof")
+    pdf.timeline("1:00 PM", "Run the measured-yard test", "Field QA owner")
     pdf.checklist([
-        "Capture original IDs, parent IDs, source URLs, authors, timestamps, edits, order, permissions, access rules, and SHA-256 hashes for every exported record.",
-        "Inventory course bodies, videos, transcripts, downloads, drip schedules, enrollment, completion, certificates, and member-specific access exceptions.",
-        "Inventory community channels, posts, comments, reactions, attachments, pins, mentions, roles, join dates, levels, points, events, RSVPs, recordings, and moderation state.",
-        "Load captures into source_import_batches and source_import_records first. Reconcile counts and sample content before promoting any record into the native tables.",
+        "[x] Manual mode accepts length and width, calculates area correctly, and preserves decimal precision before display rounding.",
+        "[x] Application rate is a dropdown from 0.25 through 3.00 lb/sq ft. Bag price, bag coverage, cleaning plan, and property name are removed from the calculator.",
+        "[x] Total pounds equals exact area times selected rate; 40-lb and 50-lb bag counts round upward independently; customer price uses charge per sq ft.",
+        "[x] Native iOS ARKit and Android ARCore point-placement bridges are implemented, and map tracing remains a separate measurement path.",
+        "[ ] On a supported iPhone, place at least four live AR points around a tape-measured yard, undo one point, finish, and compare area plus perimeter.",
+        "[ ] Repeat on a supported Samsung/Android phone using ARCore. Record model, OS, tracking quality, measured area, and error percentage.",
+        "[ ] Trace the same yard on the map, test multiple turf polygons, and verify the combined area against the known reference.",
+        "[ ] Deny camera and location permissions; test unsupported AR hardware, tracking loss, rotation, background/resume, offline mode, and duplicate save protection.",
+        "[ ] Save a calculation with photos, refresh, sign in on a second device, and confirm exact area, rate, pounds, both bag counts, price, method, date, and history.",
     ], compact=True)
-    pdf.section("Archive acceptance")
-    pdf.signoff_row("Group member count reconciled")
-    pdf.signoff_row("Course and community counts reconciled")
-    pdf.signoff_row("Encrypted client-owned archive recorded")
-    pdf.gate("Do not begin native cutover from a partial capture or an undocumented endpoint. Keep the live HighLevel portal authoritative until the archive is approved.")
-    pdf.new_page("14:30-15:30", "HighLevel delivery proof", "Rotate the exposed credential, connect server-side, and verify the real workflow")
-    pdf.timeline("2:30 PM", "Prove the CRM path", "Integration owner")
-    pdf.section("Credential and account boundary")
-    pdf.checklist([
-        "Rotate the exposed private integration token in the client HighLevel location. Store the replacement only as a Supabase server secret.",
-        "Run npm run ghl:verify without printing the token. Record the verified location plus expected pipeline and workflow access.",
-        "Keep the HighLevel token and Supabase service-role key out of VITE variables, browser storage, client logs, screenshots, and Git.",
-    ], compact=True)
-    pdf.section("HighLevel event path")
+    pdf.section("Reference calculation")
     pdf.command(
-        "Webhook URL:\nhttps://<PROJECT_REF>.supabase.co/functions/v1/ghl-webhook\n\nRequired proof:\nSigned event -> integration_events -> contact/opportunity -> workflow -> notification"
+        "20 ft x 18 ft                         = 360 sq ft\n360 sq ft x 0.50 lb/sq ft             = 180 lb\nceil(180 / 40) / ceil(180 / 50)        = 5 / 4 bags\n360 sq ft x $0.72/sq ft                = $259.20"
     )
-    pdf.checklist([
-        "Configure HighLevel to use the current signed webhook flow. Confirm the Edge Function rejects missing or invalid X-GHL-Signature values.",
-        "Map operator, property, square footage, cleaning plan, infill bags, quote amount, estimate ID, and source URL to named HighLevel fields.",
-        "Create one clearly labeled fictional end-to-end test lead. Submit it from production and record contact ID, opportunity stage, workflow entry, tags, assigned user, and notification receipt.",
-        "Replay the same webhook ID. Confirm integration_events deduplication prevents duplicate downstream work.",
-        "Document retry ownership for 4xx, 5xx, signature failures, expired tokens, and HighLevel rate limits.",
-    ], compact=True)
-    pdf.gate("A webhook log alone is not success. The real HighLevel contact, workflow entry, assignment, and expected human notification must all be verified.")
+    pdf.gate("Live camera measurement is not approved by a simulator build. It must place real points and match a tape-measured job on both mobile platforms.")
 
-    pdf.new_page("15:30-17:30", "Production QA and launch", "Prove the complete path, deploy once, and keep a rollback path")
-    pdf.timeline("3:30 PM", "Run the release gate", "Release owner")
-    pdf.command("npm run check\nnpm audit --omit=dev\nnpx supabase functions logs ghl-webhook --project-ref <PROJECT_REF>")
+    pdf.new_page("15:30-17:00", "Web release and production QA", "Commit the reviewed code, deploy through GitHub and Netlify, then verify production independently")
+    pdf.timeline("3:30 PM", "Ship the web release", "Release owner")
+    pdf.command("npm run check\nnpm run academy:access-audit\nnpm run academy:validate -- output/private/dirty-turf-academy-import.json\nnpm run native:sync\ngit diff --check\ngit status --short")
     pdf.checklist([
-        "Run typecheck, all quote and map tests, production build, and dependency audit with zero failures. Inspect the browser bundle for server-only secret values.",
-        "Deploy a Netlify preview. Verify auth redirects, security headers, SPA routing, logo/font assets, and environment variables.",
-        "Complete the golden path on real iPhone and Android devices: sign in, measure, attach photo, quote, save, reopen history, then open a live GHL lesson, post, member directory, and event.",
-        "Verify screen-reader labels, visible focus, 44px touch targets, color contrast, keyboard completion, and reduced-motion behavior.",
-        "Use a production test account to verify tenant isolation, signed photo access, imagery attribution and geocoder limits, HighLevel delivery, and live notification receipt.",
-        "Capture the deploy ID, database migration version, Edge Function versions, smoke-test evidence, and named rollback owner.",
-        "Deploy production. Repeat the golden path against the production URL, then monitor browser errors and Edge Function failures for 30 minutes.",
+        "[ ] Run a secret scan and confirm .env.local plus output/private remain ignored. Review the complete diff before commit.",
+        "[ ] Push the release branch, open or update the pull request, require checks, merge to main, and record the commit SHA.",
+        "[ ] Set VITE_SUPABASE_URL, the Supabase publishable key, and the public buy.stripe.com Payment Link in Netlify. Keep service-role, HighLevel, and Stripe secret keys in server-side Supabase settings.",
+        "[ ] Deploy a Netlify preview first. Verify SPA routes, auth callbacks, manifest/service worker, icons, security headers, and no stale duplicate site is receiving production traffic.",
+        "[ ] Verify 320, 360, 390, and 430 px widths plus landscape, tablet, and desktop. Check calculator keyboard behavior, safe areas, bottom navigation, long lesson content, quizzes, community, and events.",
+        "[ ] Deploy production and re-run sign-in, Academy, lesson progress, quiz, post, comment, reaction, bookmark, event RSVP, calculator save, photo, history, Checkout, webhook, and Billing Portal flows.",
+        "[ ] Inspect production console and network errors. Confirm no private token, member archive, service-role key, or source export is downloadable.",
+        "[ ] Record Netlify deploy ID, Supabase migration and function versions, production URL, smoke-test account, rollback owner, and rollback steps.",
     ], compact=True)
+    pdf.section("Production acceptance")
+    pdf.signoff_row("GitHub checks and merge")
+    pdf.signoff_row("Netlify preview and production smoke")
+    pdf.signoff_row("Supabase logs clean")
+    pdf.gate("A successful build or deploy status is not production proof. Repeat the golden path on the deployed URL with an authenticated client test account.")
+
+    pdf.new_page("17:00-18:30", "Mobile stores and cutover", "Create signed test builds, invite a small cohort, and keep a reversible HighLevel handoff")
+    pdf.timeline("5:00 PM", "Build, invite, and cut over", "Product owner")
+    pdf.checklist([
+        "[ ] In Xcode, confirm bundle ID, Dirty Turf team, automatic signing, iOS 15 minimum, icons, splash, camera/location descriptions, and archive a Release build to TestFlight.",
+        "[ ] In Android Studio, confirm application ID, version code/name, signing key ownership, icons, permissions, privacy declarations, and create a signed AAB for Internal testing.",
+        "[ ] Add store name, description, category, screenshots, privacy policy, support URL, account-deletion URL, reviewer login, data-safety/privacy answers, and content-rating responses.",
+        "[ ] Test install, update, deep link, magic link, logout, expired/reused links, camera, location, photo upload, map, lesson, community, and notification behavior on physical devices.",
+        "[ ] Verify store-review builds are consumption-only: no native purchase CTA or web checkout link. Supply a reviewer account with pre-existing Academy access.",
+        "[ ] Require the access preview to show all 60 current members ready and all 49 enrollments linked. Notify a 3-5 person pilot, verify delivery and entitlements, then notify remaining members in batches of at most 25.",
+        "[ ] Freeze HighLevel content changes, take one final delta capture, re-run the import dry run, reconcile counts, and commit the approved delta import.",
+        "[ ] Keep HighLevel read-only as the rollback source until Dirty Turf approves the native archive, member access, and production behavior. Retain the encrypted export independently.",
+        "[ ] Monitor authentication, invite failures, Edge Function errors, database errors, app crashes, and member support during the first 24 hours.",
+    ], compact=True)
+    pdf.section("Final cutover order")
+    pdf.paragraph("1. Freeze GHL.  2. Capture delta.  3. Validate.  4. Dry run.  5. Commit import.  6. Provision all accounts.  7. Pilot links.  8. Notify remaining members.  9. Production smoke.  10. Client approval.", width_chars=94, size=8.4, leading=11)
     pdf.section("Final sign-off")
-    pdf.signoff_row("Product and brand")
-    pdf.signoff_row("Data security and privacy")
-    pdf.signoff_row("Field workflow")
-    pdf.signoff_row("HighLevel delivery")
-    pdf.signoff_row("Production and rollback")
-    pdf.gate("Launch only when every sign-off has an owner, timestamp, evidence link, and explicit pass. Otherwise keep the app in labeled preview mode.")
+    pdf.signoff_row("Content and member reconciliation")
+    pdf.signoff_row("Security, privacy, and ownership")
+    pdf.signoff_row("iPhone and Android field workflow")
+    pdf.signoff_row("Web production and store test builds")
+    pdf.signoff_row("Cutover and rollback approval")
+    pdf.gate("Launch only when every sign-off has an owner, timestamp, evidence link, and explicit pass. Otherwise keep HighLevel live and the native app in labeled pilot mode.")
 
     pdf.finish()
     print(OUTPUT)

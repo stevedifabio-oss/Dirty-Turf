@@ -1,6 +1,10 @@
 node_modules/
 dist/
 output/deploy/
+output/private/
+output/ios-simulator/
+output/qa/
+android/.idea/
 tmp/
 __pycache__/
 *.pyc

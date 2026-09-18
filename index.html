@@ -4,19 +4,56 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#047631" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="Dirty Turf" />
+    <meta name="apple-mobile-web-app-title" content="Dirty Turf Academy" />
     <meta
       name="description"
       content="Dirty Turf Academy combines turf cleaning courses, community, quoting tools, site history, and mobile-first field workflows for turf cleaning operators."
     />
-    <link rel="icon" href="/dirty-turf-logo.png" />
-    <link rel="apple-touch-icon" href="/dirty-turf-logo.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
     <title>Dirty Turf Academy</title>
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      (() => {
+        const showBootFailure = (detail) => {
+          if (document.querySelector(".app-shell") || document.querySelector(".launch-gate") || document.querySelector(".app-crash")) return;
+          const root = document.getElementById("root");
+          if (!root) return;
+          const main = document.createElement("main");
+          main.style.cssText = "display:grid;min-height:100vh;place-items:center;align-content:center;gap:12px;padding:32px;background:#f4faee;color:#111f14;text-align:center;font-family:system-ui,sans-serif";
+          const heading = document.createElement("h1");
+          heading.textContent = "The app could not start.";
+          heading.style.cssText = "max-width:320px;margin:0;font-size:24px";
+          const copy = document.createElement("p");
+          copy.textContent = "Reload the app to try again. Saved measurements remain on this device.";
+          copy.style.cssText = "max-width:340px;margin:0;color:#3d5c44;line-height:1.5";
+          const diagnostic = document.createElement("code");
+          diagnostic.textContent = String(detail || "Startup timed out").slice(0, 240);
+          diagnostic.style.cssText = "max-width:340px;padding:8px;color:#7b2e00;font-size:11px;overflow-wrap:anywhere";
+          const button = document.createElement("button");
+          button.textContent = "Reload app";
+          button.style.cssText = "min-height:44px;padding:0 16px;border:0;border-radius:8px;background:#047631;color:white;font-weight:800";
+          button.addEventListener("click", () => window.location.reload());
+          main.append(heading, copy, diagnostic, button);
+          root.replaceChildren(main);
+        };
+        window.addEventListener("error", (event) => {
+          const target = event.target;
+          const resource = target && (target.src || target.href);
+          window.setTimeout(() => showBootFailure(event.message || (resource ? `Resource failed: ${resource}` : "Startup error")), 0);
+        }, true);
+        window.addEventListener("unhandledrejection", (event) => {
+          window.setTimeout(() => showBootFailure(event.reason && (event.reason.message || event.reason)), 0);
+        });
+        window.setTimeout(() => showBootFailure("Application mount timed out"), 4000);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -1,92 +1,103 @@
-# HighLevel Live Integration and Native Migration Plan
+# HighLevel to Native Academy Migration
 
 ## Decision
 
-HighLevel remains the production source of truth for the Dirty Turf Academy and the `7 Figure Turf Cleaning` community. The web app owns field operations: live measurement, map tracing, property history, photos, estimates, and quoting.
+Dirty Turf will own Academy authentication, courses, lesson progress, community discussions, members, events, and private media in Supabase. HighLevel remains online only during capture, reconciliation, and rollback. The app's Academy, Community, and Events tabs now render the native experience.
 
-The Academy, Community, and Events tabs launch the branded portal at `https://academy.dirtyturf.com`. HighLevel renders normally as a top-level destination but not reliably inside a cross-origin iframe, so the app uses explicit deep links. A member without a valid portal session receives the normal HighLevel login. A trusted `sessionKey` is held in memory only, removed from the app address bar, and forwarded only to the Academy origin.
+This is a controlled migration, not a screen scrape directly into production. Every source record is written to an import ledger with its HighLevel ID, parent ID, timestamps, source URL, payload hash, and resulting native ID.
 
-The native Academy/community code and database model remain migration targets. They are not a second live feed while HighLevel is authoritative.
+## What HighLevel Officially Exposes
 
-## Verified Inventory
+- The public Memberships API documents a course **import** endpoint but no supported course catalog export/read endpoint: <https://marketplace.gohighlevel.com/docs/2023-02-21/ghl/courses/import-courses/>
+- The public Contacts API can supply CRM contacts, but all location contacts are not the same as members of the paid Academy group: <https://marketplace.gohighlevel.com/docs/ghl/contacts/contacts/>
+- HighLevel's community product includes discussions, learning, events, leaderboards, members, roles, access controls, and paid/private courses. These must be inventoried because there is no single supported public export that contains all of them: <https://help.gohighlevel.com/support/solutions/articles/155000000280>
 
-| Item | Current evidence | Extraction path |
-| --- | --- | --- |
-| HighLevel location | Dirty Turf; API access validated | Private integration, server-side only |
-| CRM contacts | 10,568 location contacts reported by API | Contacts API or admin CSV export |
-| Community | `7 Figure Turf Cleaning`; private and paid | Branded portal plus admin inventory |
-| Community activity | 58 members and 61 posts in the supplied portal screenshot | Group-filtered contact export plus content capture |
-| Community areas | Discussion, Learning, Events, Leaderboards, Members, About | Admin inventory and capture |
-| Courses | Existing content in the GHL course library | Authenticated admin content inventory |
-| Pipelines | 4 accessible | HighLevel API |
-| Workflows | 34 accessible | HighLevel API |
-| Offers | Two supplied share IDs, labels not yet verified | Confirm names, prices, access, and audience in GHL |
+Use three capture lanes:
 
-Do not treat all 10,568 CRM contacts as Academy members. Export the exact community group membership.
+1. **API:** contact records and supported CRM metadata.
+2. **Admin CSV:** the exact `7 Figure Turf Cleaning` member cohort, filtered by group/access rather than the full CRM.
+3. **Authenticated capture:** course/module/lesson bodies, media and downloads, posts, comments, reactions, progress, events, roles, access rules, and leaderboard state.
 
-## API Boundary
+Do not call undocumented HighLevel endpoints from the production app. Use the client-owned admin session for a one-time archive, then import the archive through the server-side migration function.
 
-The supported HighLevel API can read contacts, pipelines, workflows, products, and related CRM data. Current public scopes expose a course import endpoint but no supported course catalog read/export endpoint. No supported public endpoints were found for community posts, comments, reactions, channels, member progress, leaderboards, or community events.
+## Capture Package
 
-That creates three extraction lanes:
-
-1. **API:** contacts and CRM metadata.
-2. **Admin export:** community members through Contacts > Smart Lists > Client Portal > Groups = `7 Figure Turf Cleaning`, then CSV export.
-3. **Authenticated content capture:** courses, modules, lessons, resources, videos, posts, comments, reactions, channels, events, progress, roles, and leaderboard state. Capture only with client authorization and a client-owned admin session.
-
-## Tomorrow's Capture Package
-
-Store exports in client-owned encrypted storage, never in Git.
+Store every export in client-owned encrypted storage outside Git.
 
 ### Members
 
-- Filter the contact list to the exact community group.
-- Include contact ID, name, email, phone, tags, custom fields, group access, offer access, status, and creation date.
-- Export the CSV and record its SHA-256 hash in the import manifest.
-- Reconcile the export count with the portal member count before importing.
+- HighLevel contact ID and community member ID
+- Full name, email, avatar, company, location, role, status, join date, level, and points
+- Group access, offer/course entitlements, trial/cancelled/suspended state
+- Last-seen date when available
+
+Passwords are not portable. Before launch, active members are silently provisioned as passwordless Supabase users at the same verified source email. They enter through the app's secure magic-link flow; the public form never creates a new user.
 
 ### Courses
 
-- Course ID, title, description, image, instructor, status, price/access rule, and order.
-- Module ID, title, order, and drip schedule.
-- Lesson ID, title, type, body, video source, transcript, duration, resources, downloadable files, and order.
-- Enrollment, completion, progress, certificates, and access exceptions by member where available.
+- Course ID, title, description, cover, instructor, status, order, tags, and access rule
+- Module ID, title, order, and drip schedule
+- Lesson ID, title, type, body, source URL, video, transcript, duration, order, and status
+- Every PDF, image, worksheet, download, and attachment
+- Enrollment, completion, progress, certificate, and access exceptions per member when available
+
+Move owned assets to the private `academy-assets` bucket. Keep third-party hosted video as a source link only when the client has confirmed the hosting account and license will remain active.
 
 ### Community
 
-- Group ID, name, description, privacy/payment state, branding, rules, and membership questions.
-- Channels/categories with IDs, permissions, and order.
-- Posts and comments with original IDs, parent relationships, authors, timestamps, edits, pins, reactions, mentions, attachments, and source URLs.
-- Members with roles, join dates, points, levels, leaderboard state, bans/suspensions, and last-seen data where available.
-- Events with hosts, time zones, recurrence, descriptions, meeting links, visibility, RSVP state, recordings, and attachments.
+- Group settings, branding, privacy/payment state, rules, and membership questions
+- Channels/categories, order, permissions, and visibility
+- Posts/comments with IDs, authors, timestamps, edits, pins, reactions, mentions, attachments, and parent relationships
+- Events with host, timezone, recurrence, meeting link, visibility, RSVP data, recordings, and attachments
+- Roles, points, levels, leaderboard state, bans, and suspensions
 
-## Import Contract
+## Import Workflow
 
-Every captured record enters `source_import_records` before it reaches a native table. Preserve:
+1. Keep the authenticated course and community captures under ignored, client-controlled `output/private/` storage.
+2. Run `npm run academy:reconcile`. It resolves only the 60 captured member contact IDs and prints aggregate counts, never credentials or member PII.
+3. Run `npm run academy:compose`. It joins the course archive, community archive, contact reconciliation, enrollment roster, posts, comments, and events into `output/private/dirty-turf-academy-import.json`.
+4. Run `npm run academy:validate -- output/private/dirty-turf-academy-import.json`.
+5. Run `npm run academy:access-audit`. It must report 60 unique login emails, 49 enrollment records, and `allEnrolledCanLogin: true` without printing member PII.
+6. Create the client owner in Supabase, obtain the organization UUID, and add it as `ownerOrganizationId` in the private manifest.
+7. Sign into the app as that Academy owner/admin and call `academy-import` with `commit: false`. The function validates and returns counts without writing content.
+8. Compare the returned counts with the private report and source archive. The current capture expects 60 login-eligible members plus one historical author, 49 enrollments, 128 lessons, 62 posts, 59 comments, and 5 events.
+9. Set `commit: true` and call `academy-import` again. Provider IDs make the import idempotent.
+10. Call `academy-invite-members` with `action: "preview"`. The historical author must not receive an invite.
+11. Call `academy-invite-members` with `action: "provision"` in batches of no more than 50 until `summary.allEnrolledReady` is true. This creates and links accounts without sending email.
+12. Configure the client-owned Supabase SMTP sender and sender identity. Set the Site URL to the exact production HTTPS origin and allow both that origin and `com.dirtyturf.academy://auth/callback` under Authentication URL Configuration. Set the same values as `APP_URL` and `AUTH_REDIRECT_URLS` in Edge Function secrets.
+13. Test a representative provisioned member by requesting a magic link from the app. Unknown email must not create an account, and the verified member must claim the correct Academy identity and course enrollment.
+14. Call `academy-invite-members` with `action: "notify"` for a small pilot, verify delivery and deep links, then notify the remaining members in batches of no more than 25.
+15. Test owner, admin, active member, course-only entitlement, cancelled member, and unrecognized email before cutover.
 
-- Provider and external ID
-- Parent external ID
-- Original source URL
-- Source creation and update timestamps
-- Canonical payload
-- SHA-256 content hash
-- Import batch and final native record mapping
+The source roster exposes course-level percentages but not trustworthy lesson IDs. These percentages are stored on `course_enrollments` and displayed as a floor until native lesson completion advances beyond them. The migration never marks an arbitrary set of lessons complete. Likewise, aggregate reaction and RSVP counts remain in the import ledger when member identities are unavailable.
 
-An import is idempotent: rerunning the same batch must not create duplicate members, courses, lessons, posts, comments, events, or progress.
+## Native Data Model
 
-## Native Cutover Gates
+- `academy_communities`, `academy_members`, `academy_member_links`
+- `courses`, `course_modules`, `course_lessons`, `course_enrollments`
+- `academy_member_lesson_progress`, `academy_assets`
+- `community_categories`, `community_posts`, `community_comments`, reactions, bookmarks, and follows
+- `academy_events`, `academy_member_event_rsvps`
+- `academy_member_invites`
+- `source_import_batches`, `source_import_records`
 
-1. All Academy members map to one shared Academy community while each company's field records remain isolated in its own organization.
-2. Course, module, lesson, post, comment, member, event, and progress counts reconcile with the final GHL archive.
-3. A sample of rich text, videos, files, comments, reactions, timestamps, pins, roles, progress, and access rules matches the source.
-4. Native auth and entitlements are proven for active, cancelled, suspended, admin, moderator, and trial members.
-5. Dual-run changes are frozen, a final delta capture is imported, and rollback links back to the read-only GHL portal remain available.
-6. HighLevel is retired only after written content-owner approval and a retained client-owned archive.
+Company job records remain isolated by organization. Academy records are shared only with active Academy members and are protected by row-level security. Course access checks enforce open, level, and explicit enrollment rules at the course, module, lesson, metadata, and storage layers.
 
-## Security Rules
+## Cutover Gates
 
-- Never place a HighLevel private token or Supabase service-role key in a `VITE_` variable.
-- Never persist `sessionKey`, include it in analytics, or put it in logs.
-- Never commit contact exports, course assets, community archives, or member PII.
-- Rotate any password or session token exposed in screenshots before production.
-- Use client-owned accounts, billing, recovery, storage, and administrator access for every production service.
+1. Member, course, module, lesson, asset, enrollment, post, comment, and event counts match the final archive.
+2. At least three records of every content type are visually compared with HighLevel.
+3. Rich text, videos, downloads, timestamps, replies, pins, roles, progress, and access rules match.
+4. All 49 enrolled source members show ready in the access summary; notification delivery, login, logout, expired links, and magic links work on iPhone and Android.
+5. Active members can access only their assigned content; cancelled and suspended members cannot.
+6. A final delta capture is imported after HighLevel enters read-only/frozen mode.
+7. The client approves the archive and native production release before HighLevel is retired.
+
+## Security
+
+- Keep the HighLevel private token and Supabase service-role key server-side only.
+- Never put either secret in a `VITE_` variable, app bundle, browser storage, log, or Git commit.
+- Never commit member CSVs, manifests containing PII, course assets, or community archives.
+- Keep invitation redirect targets on the exact server allowlist; do not accept a caller-supplied external URL.
+- Rotate the HighLevel token previously shared in chat before production cutover.
+- Use client-owned email, billing, recovery, storage, and administrator accounts.
