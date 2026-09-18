@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, AtSign, Bell, BookOpen, CalendarDays, CheckCheck, CheckCircle2, CreditCard, Database, ExternalLink, FileLock2, GraduationCap, Heart, LifeBuoy, LockKeyhole, Megaphone, MessageCircle, ShieldCheck, Signpost, Trash2, UserRoundCheck, X } from "lucide-react";
+import { ArrowLeft, AtSign, Bell, BookOpen, CalendarDays, CheckCheck, CheckCircle2, ChevronRight, CreditCard, Database, ExternalLink, FileLock2, GraduationCap, Heart, LifeBuoy, LockKeyhole, Megaphone, MessageCircle, ShieldCheck, Signpost, Trash2, UserRoundCheck, X } from "lucide-react";
 import type { AppNotification, NotificationPreferences } from "../domain";
 import {
   defaultNotificationPreferences,
@@ -233,11 +233,11 @@ function SettingsPanel({ onToast, dataMode, onSignOut }: { onToast: (message: st
     </div>}
     <div className="setting-group account-controls">
       <h3>Privacy and account</h3>
-      <a className="setting-row setting-link" href="/privacy.html" target="_blank" rel="noreferrer">
-        <span><FileLock2 size={18} /></span><span><strong>Privacy policy</strong><small>How account, field, course, and payment data are handled</small></span><ExternalLink size={16} />
+      <a className="setting-row setting-link" href="/privacy.html">
+        <span><FileLock2 size={18} /></span><span><strong>Privacy policy</strong><small>How account, field, course, and payment data are handled</small></span><ChevronRight size={16} />
       </a>
-      <a className="setting-row setting-link" href="/support.html" target="_blank" rel="noreferrer">
-        <span><LifeBuoy size={18} /></span><span><strong>Support</strong><small>Get help with sign-in, courses, billing, or measurement</small></span><ExternalLink size={16} />
+      <a className="setting-row setting-link" href="/support.html">
+        <span><LifeBuoy size={18} /></span><span><strong>Support</strong><small>Get help with sign-in, courses, billing, or measurement</small></span><ChevronRight size={16} />
       </a>
       {deletionRequest
         ? <div className="deletion-status"><CheckCircle2 size={18} /><span><strong>Deletion requested</strong><small>{deletionStatusLabel(deletionRequest)}</small></span></div>
@@ -248,7 +248,7 @@ function SettingsPanel({ onToast, dataMode, onSignOut }: { onToast: (message: st
           </button>
           {confirmDeletion && <button className="text-button" onClick={() => setConfirmDeletion(false)}>Keep my account</button>}
         </>}
-      <a className="deletion-details" href="/delete-account.html" target="_blank" rel="noreferrer">What account deletion includes <ExternalLink size={13} /></a>
+      <a className="deletion-details" href="/delete-account.html">What account deletion includes <ChevronRight size={13} /></a>
     </div>
     <button className="secondary-button" disabled={dataMode !== "cloud"} onClick={() => void onSignOut()}>{dataMode === "cloud" ? "Sign out" : "Device demo is not signed in"}</button>
   </>;

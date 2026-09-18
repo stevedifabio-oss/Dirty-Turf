@@ -222,7 +222,7 @@ def build_pdf():
     y1 = pdf.card("BACKEND LIVE", "Fifteen migrations and nine Edge Functions are active. Notification delivery is safely paused until Mailgun secrets are added.", GREEN, col_w, 82, MARGIN)
     pdf.card("ARCHIVE VERIFIED", "60 login members, 49 enrollments, 109 published lessons, 19 drafts, community data, and assets reconcile to GHL.", LIME, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y1 - 14
-    y2 = pdf.card("APP VERIFIED", "Sixty-five tests, responsive notification QA, PWA checks, Android APK/AAB, and a clean iOS Release simulator launch all pass.", ORANGE, col_w, 82, MARGIN)
+    y2 = pdf.card("APP VERIFIED", "Sixty-five tests, responsive app QA at 320/390/768/1440, PWA checks, Android APK/AAB, and an iOS Release simulator build all pass.", ORANGE, col_w, 82, MARGIN)
     pdf.card("RELEASE CANDIDATE", "PR #2 CI and Netlify deploy status pass. Production remains gated on identity, import, billing, and physical-device proof.", GREEN_DARK, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y2 - 18
     pdf.section("Completed and removed from this checklist")
@@ -329,7 +329,7 @@ def build_pdf():
     ], compact=True)
     pdf.timeline("STEP 8", "Create signed test releases", "Store owner")
     pdf.checklist([
-        "[x] Build Android debug APK/release AAB and an iOS Release simulator app from the same verified web bundle; all six packaged entry documents match SHA-256 8b6ac3e...84d59.",
+        "[x] Build Android debug APK/release AAB and an iOS Release simulator app from the same verified web bundle; all six packaged entry documents have the same SHA-256 hash.",
         "[!] Apple App ID and App Store Connect record 6813588770 exist. Archive reaches signing, but Apple reports no registered physical device/profile. Connect the client iPhone once, complete EU trader compliance, then archive and upload to TestFlight.",
         "[!] Google Play app record 4973615558687213779 exists, the package is reserved, and Play App Signing is accepted. Confirm client upload-key ownership, sign the AAB, and publish to Internal testing.",
         "[x] Prepare and machine-check store name, platform-specific short copy, description, category, privacy/data-safety answers, URLs, reviewer notes, screenshot plan, and consumption-only billing guidance.",

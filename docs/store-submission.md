@@ -57,9 +57,8 @@ pounds per square foot to see total material and rounded-up 40-pound and
 50-pound bag counts. Operators can also calculate a customer price from their
 charge per square foot and save job history to the company workspace.
 
-An existing Dirty Turf Academy membership is required. Purchases and billing
-management are completed on the Dirty Turf website. The mobile apps do not
-offer or link to external purchases.
+An existing Dirty Turf Academy membership is required. Members sign in to
+access the training, community, and field tools included with their account.
 
 ### Keywords
 

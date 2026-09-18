@@ -65,6 +65,10 @@ for (const unsafe of ["TODO", "TBD", "example.com", "{{", "re_xxxxxxxxx", "sk_te
 }
 check(!/https?:\/\//.test(apple.description), "Apple description must not contain an external purchase link");
 check(!/https?:\/\//.test(googlePlay.fullDescription), "Google Play description must not contain an external purchase link");
+for (const phrase of ["purchase on the web", "purchases and billing", "completed on the dirty turf website"]) {
+  check(!apple.description.toLowerCase().includes(phrase), `Apple description contains purchase steering: ${phrase}`);
+  check(!googlePlay.fullDescription.toLowerCase().includes(phrase), `Google Play description contains purchase steering: ${phrase}`);
+}
 
 checkProductionUrl("Privacy URL", urls.privacy, "/privacy.html");
 checkProductionUrl("Support URL", urls.support, "/support.html");
