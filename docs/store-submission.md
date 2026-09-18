@@ -121,6 +121,8 @@ Additional answers:
 - Location: center the map on the current job location.
 - Notifications: do not claim push notifications until a production provider
   and permission flow are implemented and tested.
+- Encryption: `ITSAppUsesNonExemptEncryption` is `false`; the app uses only
+  exempt operating-system HTTPS/TLS and does not implement proprietary crypto.
 
 Capture screenshots from the final signed builds for: sign-in, Academy course,
 lesson, community feed, map tracing, manual calculator, saved calculation, and
@@ -130,9 +132,10 @@ each asset.
 ## Account-side blockers
 
 - The explicit Apple App ID and App Store Connect record are created. EU trader
-  status must still be completed by the Dirty Turf account holder. The device
-  archive also needs one client iPhone registered so Xcode can create the
-  development provisioning profile before TestFlight export.
+  status must still be completed by the Dirty Turf account holder. This Mac has
+  no usable Apple code-signing identity, so a distribution certificate/profile
+  still has to be issued to the client team before a TestFlight archive can be
+  uploaded. A physical iPhone is also required for the ARKit acceptance test.
 - The Google Play app record is created, `com.dirtyturf.academy` is reserved,
   and Play App Signing is accepted. The release AAB still needs a client-owned
   upload key before it can be signed and uploaded to Internal testing.

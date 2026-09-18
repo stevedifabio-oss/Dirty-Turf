@@ -85,6 +85,7 @@ supabase functions deploy ghl-status
 supabase functions deploy academy-import
 supabase functions deploy academy-invite-members
 supabase functions deploy academy-notifications --no-verify-jwt
+supabase functions deploy map-geocode
 supabase functions deploy create-checkout
 supabase functions deploy create-billing-portal
 supabase functions deploy stripe-webhook --no-verify-jwt
@@ -189,7 +190,7 @@ Before enabling sales:
 
 Map tracing works without a Google Cloud account. Operators can search an address, center on their location, tap multiple turf boundaries, and calculate a combined square-foot total. The imagery selector includes current Esri tiles, Esri Wayback releases, USGS/USDA NAIP captures, and an OpenStreetMap street view.
 
-The browser uses public imagery and geocoding endpoints. Before production scale, confirm each provider's attribution and usage requirements and move address search behind a client-owned geocoder or server proxy if required by the selected provider.
+Address search runs through the authenticated `map-geocode` Edge Function. It identifies the application to Nominatim, enforces one upstream request per second across the app, caches results per member for 30 days, and returns only normalized addresses and coordinates. The native shells append the Dirty Turf application identity to their WebView user agent, and map attribution remains visible. Google Geocoding is intentionally not used: Google currently prohibits displaying its geocoding results with this non-Google Esri/NAIP map stack.
 
 ## Live camera measurement
 
@@ -294,6 +295,7 @@ in `docs/production-domain-cutover.md`.
 - `supabase/functions/create-billing-portal/index.ts`: authenticated web-only Stripe customer portal sessions
 - `supabase/functions/stripe-webhook/index.ts`: Stripe-SDK signature verification, retry-safe event storage, silent buyer provisioning, and entitlement updates
 - `supabase/functions/academy-notifications/index.ts`: authenticated Mailgun dispatcher, retries, branded templates, direct links, and signed unsubscribe handling
+- `supabase/functions/map-geocode/index.ts`: authenticated address search with per-member caching, attribution, identification, and upstream rate protection
 - `src/lib/backend.ts`: cloud/device data adapter, auth, and photo upload
 - `src/lib/authRedirect.ts`: validated iOS/Android PKCE callback handling
 - `src/components/MapMeasurement.tsx`: interactive property tracing and imagery-source controls

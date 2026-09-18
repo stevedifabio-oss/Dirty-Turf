@@ -219,20 +219,20 @@ def build_pdf():
         "Every current Academy member can request a Magic Link, reach the content they already own, use the community and field tools, and reopen saved work on another device. The desktop web app, mobile web/PWA, and signed iOS and Android builds all pass their production paths."
     )
     col_w = (PAGE_W - 2 * MARGIN - 12) / 2
-    y1 = pdf.card("BACKEND LIVE", "Eighteen migrations, 53 RLS tables, and nine Edge Functions are active. Email delivery remains safely paused for Mailgun.", GREEN, col_w, 82, MARGIN)
+    y1 = pdf.card("BACKEND LIVE", "Nineteen migrations, 55 RLS tables, and ten Edge Functions are active. Email delivery remains safely paused for Mailgun.", GREEN, col_w, 82, MARGIN)
     pdf.card("ACADEMY IMPORTED", "60 login accounts, 49 linked enrollments, 128 lessons, community history, events, and private media are in Supabase.", LIME, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y1 - 14
-    y2 = pdf.card("APP VERIFIED", "Seventy tests, responsive web QA, private media, PWA checks, Android APK/AAB, and an iOS simulator build all pass.", ORANGE, col_w, 82, MARGIN)
+    y2 = pdf.card("APP VERIFIED", "Eighty-one tests, responsive web QA, private media, PWA checks, Android APK/AAB, and an iOS simulator build all pass.", ORANGE, col_w, 82, MARGIN)
     pdf.card("RELEASE CANDIDATE", "Web, iOS, and Android contain the same verified bundle. GHL stays live until the remaining client gates pass.", GREEN_DARK, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y2 - 18
     pdf.section("Completed and removed from this checklist")
     pdf.checklist([
-        "[x] Eighteen Supabase migrations, 53-table RLS audit, access/notification indexes, security hardening, and nine Edge Function deployments are complete.",
+        "[x] Nineteen Supabase migrations, 55-table RLS audit, access/notification/geocoding controls, security hardening, and ten Edge Function deployments are complete.",
         "[x] The GHL archive was composed into 28 bounded batches; dry run, commit, and idempotent repeat all passed in production.",
         "[x] Sixty unique member accounts were silently provisioned and all 49 enrollments are linked. No customer email was sent.",
         "[x] One course, 21 modules, 128 lessons, 137 course asset rows, 62 posts, 59 comments, 5 events, 7 real post images, and 4 external resources are live.",
         "[x] Google Play identity/phone/website verification, Apple and Play app records, Apple renewal billing, package reservation, and Play App Signing enrollment are complete.",
-        "[x] Desktop, PWA, calculator, map math, native wrappers, importer, billing, legal/deletion flows, private signed media, store metadata, permissions, icons, Android builds, and iOS simulator build pass.",
+        "[x] Desktop, PWA, calculator, map math, protected address search, native wrappers, importer, billing, legal/deletion flows, private signed media, store metadata, permissions, icons, Android builds, and iOS simulator build pass.",
         "[x] In-app notifications, unread state, replies, mentions, post/comment likes, granular email preferences, branded Mailgun templates, retries, deep links, and signed unsubscribe are built.",
     ], compact=True)
     pdf.section("Five remaining client gates")
@@ -322,15 +322,17 @@ def build_pdf():
     pdf.checklist([
         "[ ] On a supported iPhone, place at least four live AR points around a tape-measured yard, undo one point, finish, and record area, perimeter, device, OS, and error percentage.",
         "[ ] Repeat on a supported Samsung/Android phone with ARCore. Compare both results to the same tape-measured reference.",
-        "[ ] Trace the same yard on the map, test multiple turf polygons, and compare combined area to the known reference.",
+        "[ ] Trace the same yard on the map, test multiple turf polygons and member-only address search, and compare combined area to the known reference.",
         "[ ] Test camera/location denial, unsupported hardware, tracking loss, rotation, background/resume, poor network, offline behavior, and duplicate-save protection.",
         "[ ] Save a calculation with photos and reopen it on a second device. Verify area, rate, pounds, 40-lb and 50-lb bags, price, method, date, and history.",
     ], compact=True)
     pdf.timeline("STEP 8", "Create signed test releases", "Store owner")
     pdf.checklist([
-        "[x] Build Android debug APK, unsigned release AAB, and an iOS simulator app from the same verified web bundle; all six entry documents match SHA-256 a66bf220f19bdf5b....",
-        "[!] Apple App ID and App Store Connect record 6813588770 exist. Archive reaches signing, but Apple reports no registered physical device/profile. Connect the client iPhone once, complete EU trader compliance, then archive and upload to TestFlight.",
+        "[x] Build Android debug APK, unsigned release AAB, and an iOS Release simulator app from the same verified web bundle; all six entry documents match SHA-256 e96422e18f6e810c....",
+        "[x] Declare that the iOS app uses only exempt standard encryption; the app does not add custom cryptography.",
+        "[!] Apple App ID and App Store Connect record 6813588770 exist. The Mac has no usable distribution certificate/profile. Issue the client-owned signing assets, complete EU trader compliance, then archive and upload to TestFlight. A physical iPhone is separately required for AR acceptance.",
         "[!] Google Play app record 4973615558687213779 exists, the package is reserved, and Play App Signing is accepted. Create or recover the client upload key, configure the four local signing variables, sign the AAB, and publish to Internal testing.",
+        "[x] Google Cloud is not required for measurement: live camera measurement uses ARKit/ARCore and map tracing uses Esri/NAIP/OSM. Address search now runs through a protected, cached, rate-limited service.",
         "[x] Prepare and machine-check store name, platform-specific short copy, description, category, privacy/data-safety answers, URLs, reviewer notes, screenshot plan, and consumption-only billing guidance.",
         "[ ] Enter the prepared metadata, screenshots, reviewer login, content rating, privacy answers, and deletion URL in both store records.",
         "[ ] Test install, update, deep link, Magic Link, logout, expired/reused links, camera, location, photos, map, lessons, community, and notifications on store builds.",

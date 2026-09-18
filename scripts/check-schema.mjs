@@ -27,6 +27,7 @@ const notificationPathSql = migration("20260918161500_optimize_notification_path
 const foreignKeyPathSql = migration("20260918172137_cover_remaining_foreign_keys.sql");
 const academyStorageManagerSql = migration("20260918173500_allow_academy_managers_to_read_storage.sql");
 const academyStoragePathSql = migration("20260918174000_fix_academy_storage_admin_paths.sql");
+const mapGeocodeSql = migration("20260918191038_map_geocoding_guardrails.sql");
 
 requireFragments(academySql, "schema", [
   "create table public.academy_communities",
@@ -181,6 +182,15 @@ requireFragments(academyStoragePathSql, "Academy storage policy paths", [
   "create policy \"academy_storage_admin_delete\" on storage.objects",
 ]);
 
+requireFragments(mapGeocodeSql, "map geocoding guardrails", [
+  "create table public.map_geocode_cache",
+  "create table public.map_geocode_request_slots",
+  "alter table public.map_geocode_cache enable row level security",
+  "alter table public.map_geocode_request_slots enable row level security",
+  "revoke all on table public.map_geocode_cache from public, anon, authenticated",
+  "grant select, insert, update, delete on table public.map_geocode_cache to service_role",
+]);
+
 requireFragments(allSql, "security hardening", [
   "revoke all on all tables in schema public from anon;",
   "revoke execute on all functions in schema public from public, anon;",
@@ -192,6 +202,7 @@ for (const [file, fragments] of [
   ["supabase/functions/ghl-webhook/index.ts", ["x-ghl-signature", "MAX_WEBHOOK_BYTES"]],
   ["supabase/functions/ghl-status/index.ts", ["handlePreflight(request, \"GET, OPTIONS\")", "Administrator access required"]],
   ["supabase/functions/academy-notifications/index.ts", ["x-notification-secret", "claim_academy_email_deliveries", "NOTIFICATION_SIGNING_SECRET", "List-Unsubscribe=One-Click", "MAILGUN_API_KEY"]],
+  ["supabase/functions/map-geocode/index.ts", ["get_academy_access_state", "map_geocode_request_slots", "DirtyTurfAcademy/1.0", "nominatim.openstreetmap.org", "Retry-After"]],
 ]) {
   const source = await readFile(path.join(root, file), "utf8");
   requireFragments(source, file, fragments);
@@ -201,6 +212,10 @@ const supabaseConfig = await readFile(path.join(root, "supabase", "config.toml")
 requireFragments(supabaseConfig, "notification function configuration", [
   "[functions.academy-notifications]",
   "verify_jwt = false",
+]);
+requireFragments(supabaseConfig, "map geocoder function configuration", [
+  "[functions.map-geocode]",
+  "verify_jwt = true",
 ]);
 
 const publicTables = new Set(matches(allSql, /create\s+table\s+(?:if\s+not\s+exists\s+)?public\.([a-z0-9_]+)/gi));

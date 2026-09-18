@@ -23,6 +23,7 @@ import {
   type GeoPoint,
   type WaybackRelease,
 } from "../lib/mapMeasurement";
+import { searchPropertyAddress } from "../lib/backend";
 
 type MapMeasurementProps = {
   address: string;
@@ -175,31 +176,21 @@ export function MapMeasurement({ address, area, onAddressChange, onAreaChange }:
     setStatus("Searching...");
 
     try {
-      const params = new URLSearchParams({
-        countrycodes: "us",
-        format: "jsonv2",
-        limit: "5",
-        q: trimmedQuery,
-      });
-      const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
-        headers: { Accept: "application/json" },
-      });
-      if (!response.ok) throw new Error("Address search failed.");
-      const results = await response.json() as Array<{ display_name: string; lat: string; lon: string }>;
+      const results = await searchPropertyAddress(trimmedQuery);
       const match = results[0];
       if (!match) {
         setStatus("Address not found");
         return;
       }
 
-      const latitude = Number(match.lat);
-      const longitude = Number(match.lon);
-      mapRef.current?.setView([latitude, longitude], 21);
-      setQuery(match.display_name);
-      onAddressChange(match.display_name);
+      mapRef.current?.setView([match.latitude, match.longitude], 21);
+      setQuery(match.formattedAddress);
+      onAddressChange(match.formattedAddress);
       setStatus("Property centered");
-    } catch {
-      setStatus("Search unavailable");
+    } catch (error) {
+      setStatus(error instanceof Error && error.message === "Sign in to search for an address."
+        ? error.message
+        : "Search unavailable");
     } finally {
       setSearching(false);
     }
@@ -347,6 +338,7 @@ export function MapMeasurement({ address, area, onAddressChange, onAreaChange }:
       <button type="button" onClick={searchAddress} aria-label="Search address" disabled={searching}><Search size={17} /></button>
       <button type="button" onClick={locateProperty} aria-label="Use current location"><LocateFixed size={17} /></button>
     </div>
+    <small className="map-geocode-attribution">Address search © OpenStreetMap contributors</small>
 
     <div className="map-source-row">
       <label>

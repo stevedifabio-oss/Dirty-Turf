@@ -5,6 +5,7 @@ const config: CapacitorConfig = {
   appName: "Dirty Turf Academy",
   webDir: "dist",
   backgroundColor: "#f4faee",
+  appendUserAgent: "DirtyTurfAcademy/1.0 (+https://app.dirtyturf.com; contact: hello@dirtyturf.com)",
   ios: {
     contentInset: "always",
     preferredContentMode: "mobile",

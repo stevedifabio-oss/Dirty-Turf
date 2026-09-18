@@ -23,13 +23,15 @@ preview is evidence for compilation and layout, not production acceptance.
    without sending email, and all 49 enrollments are login-ready.
 6. Prove Stripe in test mode, including webhook replay and cancellation grant
    precedence.
-7. Publish the PR preview and run the complete smoke, responsive, and
+7. Deploy `map-geocode`, verify member-only address search, attribution,
+   per-user cache, and the one-request-per-second upstream guard.
+8. Publish the PR preview and run the complete smoke, responsive, and
    authenticated golden paths.
-8. Merge to `main`, wait for the exact production deploy, and repeat the smoke
+9. Merge to `main`, wait for the exact production deploy, and repeat the smoke
    and authenticated paths.
-9. Build signed TestFlight and Play Internal releases. Run physical iPhone and
+10. Build signed TestFlight and Play Internal releases. Run physical iPhone and
    Android measurement tests.
-10. Pilot 3-5 members, capture the final GHL delta, then notify the remaining
+11. Pilot 3-5 members, capture the final GHL delta, then notify the remaining
    members in batches of 25 or fewer.
 
 ## Automated preflight
@@ -86,6 +88,8 @@ check.
   switch suppresses all community mail while in-app alerts remain visible.
 - Manual length x width, map polygons, and native live points produce the same
   infill formula and rounded-up 40-lb/50-lb bags.
+- Address search is member-only, keeps its attribution visible, reuses the
+  per-member cache, and returns a friendly busy state under concurrent load.
 - A saved calculation reopens on a second authorized device.
 - Web billing opens Stripe-hosted Checkout and Customer Portal.
 - Native iOS/Android expose no purchase or external checkout control.
@@ -102,16 +106,16 @@ member emails, private tokens, or reviewer credentials in this repository.
 | Git commit SHA | Record the immutable merge SHA at release |
 | GitHub PR and successful run | `stevedifabio-oss/Dirty-Turf#2`; require the latest head to pass immediately before merge |
 | Netlify deploy ID and URL | Preview is ready at `https://deploy-preview-2--bright-brigadeiros-df8b48.netlify.app`; record the production deploy after merge |
-| Supabase migrations | 18 applied / 53 public RLS-protected tables; recheck at production release |
-| Supabase Edge Function versions | Nine active: `academy-import` v5; health/invite/checkout/portal/Stripe webhook v3; GHL status/webhook and Academy notifications v1 |
+| Supabase migrations | 19 applied / 55 public RLS-protected tables; recheck at production release |
+| Supabase Edge Function versions | Ten active: `academy-import` v5; `map-geocode` v2; health/invite/checkout/portal/Stripe webhook v3; GHL status/webhook and Academy notifications v1 |
 | Source archive SHA-256 | `e919ba8701b532ca3c8e4b63fa6612a87f621bd27c7ce33e9c6e8397c9d4a4f7` |
-| Local automated gate | 70 tests, typecheck, production build, PWA, schema, store metadata, and secret scan pass |
-| Native candidate proof | Android debug APK/release AAB and iOS simulator build pass; all six embedded entry documents match SHA-256 `a66bf220f19bdf5bf3f00be90a6f1695d14c24e2ec8da6419f5695102c10fcc5` |
+| Local automated gate | 81 tests, typecheck, production build, PWA, schema, store metadata, and secret scan pass |
+| Native candidate proof | Android debug APK/unsigned release AAB and iOS Release simulator build pass; all six embedded entry documents match SHA-256 `e96422e18f6e810cf177afd8e48f33bb5c8ac2b6700b12f1f836b5406c9d4302` |
 | Smoke-test account owner | Client vault only |
 | iPhone model / OS / AR error | Pending physical test |
 | Android model / OS / AR error | Pending physical test |
-| TestFlight build | Pending: archive reached signing; Apple reports no registered physical device/profile for `com.dirtyturf.academy` |
-| Play Internal build | App record `4973615558687213779` exists and Play App Signing is accepted; pending client-owned upload key and signed AAB |
+| TestFlight build | App record `6813588770` and Release simulator build pass; pending a usable Apple distribution certificate/profile, App Store Connect metadata, DSA status, screenshots, and upload |
+| Play Internal build | App record `4973615558687213779` exists and Play App Signing is accepted; pending client-owned upload key, signed AAB, Play declarations/listing, and upload |
 | Rollback owner | Pending client assignment |
 | Final sign-off owner / timestamp | Pending client approval |
 

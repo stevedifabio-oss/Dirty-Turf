@@ -95,6 +95,11 @@ check(iosProject.includes("CURRENT_PROJECT_VERSION = 1;"), "iOS build number doe
 check(iosInfo.includes(`<string>${identity.name}</string>`), "iOS display name does not match store metadata");
 check(iosInfo.includes("NSCameraUsageDescription"), "iOS camera usage description is missing");
 check(iosInfo.includes("NSLocationWhenInUseUsageDescription"), "iOS location usage description is missing");
+check(
+  iosInfo.includes("<key>ITSAppUsesNonExemptEncryption</key>") &&
+    /<key>ITSAppUsesNonExemptEncryption<\/key>\s*<false\/>/.test(iosInfo),
+  "iOS exempt-encryption declaration is missing or incorrect",
+);
 check(iosInfo.includes(`<string>${identity.bundleId}</string>`), "iOS Magic Link URL scheme is missing");
 
 for (const permission of [

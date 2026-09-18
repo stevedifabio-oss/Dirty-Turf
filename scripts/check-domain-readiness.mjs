@@ -1,4 +1,4 @@
-import { resolveCname, resolveTxt } from "node:dns/promises";
+import { resolve4, resolve6, resolveCname, resolveTxt } from "node:dns/promises";
 
 const options = parseArgs(process.argv.slice(2));
 const checks = [];
@@ -11,12 +11,38 @@ await runCheck("ownership TXT", async () => {
   return values;
 });
 
-await runCheck("app CNAME", async () => {
-  const values = (await resolveCname(options.domain)).map(normalizeHostname);
-  if (!values.includes(normalizeHostname(options.expectedCname))) {
-    throw new Error(`${options.domain} does not point to ${options.expectedCname}`);
+await runCheck("app DNS and Netlify routing", async () => {
+  const cnames = await resolveOptional(() => resolveCname(options.domain));
+  const normalizedCnames = cnames.map(normalizeHostname);
+  if (normalizedCnames.includes(normalizeHostname(options.expectedCname))) {
+    return { mode: "direct CNAME", cnames: normalizedCnames };
   }
-  return values;
+
+  const [ipv4, ipv6] = await Promise.all([
+    resolveOptional(() => resolve4(options.domain)),
+    resolveOptional(() => resolve6(options.domain)),
+  ]);
+  if (ipv4.length === 0 && ipv6.length === 0) {
+    throw new Error(`${options.domain} has no CNAME, A, or AAAA records`);
+  }
+
+  const response = await fetch(`https://${options.domain}/`, {
+    method: "HEAD",
+    redirect: "follow",
+    signal: AbortSignal.timeout(options.timeoutMs),
+  });
+  const netlifyRequestId = response.headers.get("x-nf-request-id");
+  const cacheStatus = response.headers.get("cache-status") ?? "";
+  if (!netlifyRequestId && !/Netlify Edge/i.test(cacheStatus)) {
+    throw new Error(`${options.domain} resolves through a proxy but Netlify routing could not be verified`);
+  }
+  return {
+    mode: "proxied DNS",
+    ipv4,
+    ipv6,
+    netlifyRequestId,
+    cacheStatus,
+  };
 });
 
 await runCheck("HTTPS and TLS", async () => {
@@ -98,6 +124,15 @@ function positiveInteger(value, label) {
 
 function normalizeHostname(value) {
   return value.trim().toLowerCase().replace(/\.$/, "");
+}
+
+async function resolveOptional(operation) {
+  try {
+    return await operation();
+  } catch (error) {
+    if (["ENODATA", "ENOTFOUND"].includes(error?.code)) return [];
+    throw error;
+  }
 }
 
 function message(error) {

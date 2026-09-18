@@ -5,6 +5,7 @@ import { NATIVE_AUTH_REDIRECT, parseNativeAuthRedirect } from "./authRedirect";
 import { communityMediaStoragePaths, normalizeCommunityMediaItems } from "./communityMedia";
 import { cleanCommunityPostBody } from "./communityPost";
 import { clampProgress, combinedCourseProgress } from "./courseProgress";
+import { propertyGeocodeResults, type PropertyGeocodeResult } from "./mapGeocode";
 import { memberMagicLinkOptions, normalizeLoginEmail } from "./memberAuth";
 
 const JOBS_KEY = "dirty-turf-jobs-v3";
@@ -118,6 +119,15 @@ export async function requestMagicLink(email: string) {
     email: normalizeLoginEmail(email),
     options: memberMagicLinkOptions(Capacitor.isNativePlatform() ? NATIVE_AUTH_REDIRECT : window.location.origin),
   });
+}
+
+export async function searchPropertyAddress(query: string): Promise<PropertyGeocodeResult[]> {
+  if (!supabase) throw new Error("Sign in to search for an address.");
+  const { data, error } = await supabase.functions.invoke("map-geocode", {
+    body: { query },
+  });
+  if (error) throw error;
+  return propertyGeocodeResults(data);
 }
 
 export async function getWorkspaceAccessState(): Promise<WorkspaceAccessState> {
