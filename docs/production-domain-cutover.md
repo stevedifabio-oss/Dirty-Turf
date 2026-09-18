@@ -15,59 +15,49 @@ custom callback rather than the web origin.
 ## Current verified state
 
 - Supabase allows `https://app.dirtyturf.com/**` as an Auth redirect.
-- Supabase Site URL remains the working Netlify pilot origin until DNS and TLS
-  are healthy.
-- Supabase Edge Functions already allow both the production and pilot web
-  origins. Invitation redirects allow the pilot origin and the native callback;
-  `APP_URL` intentionally remains the pilot origin until TLS is healthy.
-- Netlify has the custom subdomain staged but requires external DNS ownership
-  verification.
-- Public DNS has no `app.dirtyturf.com` record yet.
-- `dirtyturf.com` is authoritative on `peaches.ns.cloudflare.com` and
-  `yisroel.ns.cloudflare.com`. The currently signed-in Cloudflare account does
-  not expose that zone.
-
-## DNS handoff
-
-In the Cloudflare account that owns `dirtyturf.com`, create these records:
-
-1. TXT host `subdomain-owner-verification` with the current Netlify value
-   `a274de0c635882497aea3cc2e0df6f49`.
-2. After Netlify accepts ownership, CNAME host `app` pointing to
-   `bright-brigadeiros-df8b48.netlify.app`.
-
-Use DNS-only mode for the CNAME while Netlify provisions the certificate. If
-Netlify regenerates the ownership challenge, use the value currently displayed
-under Domain management rather than the value recorded here.
+- The Supabase Auth Site URL and Edge Function `APP_URL` are set to
+  `https://app.dirtyturf.com`.
+- Netlify ownership, Cloudflare routing, TLS, and HTTP-to-HTTPS redirect pass.
+- `app.dirtyturf.com` is the Netlify production origin. Production deploy
+  `6aad92da88497700081bd70a` contains merge commit `3b51728afb910e6e08e2cfbc99e541a2eefdb805`.
+- The production smoke gate passes the app shell, privacy, support, deletion,
+  manifest, service worker, SPA fallback, HTTP redirect, and security headers.
+- Supabase Auth custom SMTP is saved with the existing Mailgun sender
+  `hello@mail.dirtyturf.com` through `smtp.mailgun.org:465`.
+- Public DNS confirms Mailgun MX and SPF records for `mail.dirtyturf.com` and a
+  DMARC record for `_dmarc.mail.dirtyturf.com`. Mailgun still needs to show DKIM
+  healthy before the member pilot.
+- Supabase Edge Functions allow both the production and pilot web origins.
+- The Edge Function secret audit currently shows only `APP_URL`,
+  `APP_ALLOWED_ORIGINS`, and `AUTH_REDIRECT_URLS`. Mailgun API and notification
+  signing/dispatch secrets still need to be added before community email can
+  be sent.
+- The legacy GHL Academy remains available until representative member login,
+  billing, real-phone measurement, and rollback acceptance pass.
 
 ## Activation sequence
 
-1. Publish the ownership TXT record and confirm it resolves publicly.
-2. Finish adding `app.dirtyturf.com` in Netlify Domain management.
-3. Publish the `app` CNAME and wait for Netlify to issue TLS.
-   Run `npm run release:domain` until all four DNS/TLS checks pass.
-4. Require `https://app.dirtyturf.com/`, `/privacy.html`, `/support.html`, and
-   `/delete-account.html` to return the expected app or legal page over HTTPS.
-   Run `npm run release:smoke -- https://app.dirtyturf.com --expected-origin
-   https://app.dirtyturf.com --expect-security-headers` and retain the JSON
-   result with the release evidence.
-5. Change the Supabase Auth Site URL from the Netlify pilot origin to
-   `https://app.dirtyturf.com`.
-6. Keep these Supabase redirect URLs during the pilot:
+1. The unauthenticated production smoke is complete. Retain
+   `output/private/production-smoke.json` with the private release evidence and
+   repeat it after any app-shell, header, legal-page, or domain change.
+2. The Supabase Auth Site URL and Edge Function `APP_URL` are set to
+   `https://app.dirtyturf.com`. Reconfirm both after any project clone or
+   environment reset.
+3. Keep these Supabase redirect URLs during the pilot:
    - `https://app.dirtyturf.com/**`
    - `https://bright-brigadeiros-df8b48.netlify.app/**`
    - `http://localhost:5173/**`
    - `http://127.0.0.1:5173/**`
    - `com.dirtyturf.academy://auth/callback`
-7. Set Edge Function configuration to:
+4. Confirm Edge Function configuration:
    - `APP_URL=https://app.dirtyturf.com`
    - `APP_ALLOWED_ORIGINS=https://app.dirtyturf.com,https://bright-brigadeiros-df8b48.netlify.app`
    - `AUTH_REDIRECT_URLS=https://bright-brigadeiros-df8b48.netlify.app,com.dirtyturf.academy://auth/callback`
-8. Configure the verified Mailgun sender in Supabase SMTP and disable Mailgun
-   click tracking for Auth messages.
-9. Test one provisioned member on production web, iPhone, and Android before
+5. Confirm Mailgun DKIM is healthy, disable click tracking for Auth messages,
+   and complete one internal delivery test.
+6. Test one provisioned member on production web, iPhone, and Android before
    any broad member notification.
-10. Remove the Netlify pilot origin from the Edge Function allowlists only
+7. Remove the Netlify pilot origin from the Edge Function allowlists only
     after production authentication and rollback evidence pass.
 
 ## Rollback

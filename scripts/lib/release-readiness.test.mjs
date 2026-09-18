@@ -55,6 +55,12 @@ describe("release readiness", () => {
     }).failures).toEqual([]);
 
     expect(inspectPublicPages({
+      privacy: "Supabase, Netlify, Mailgun, and Stripe",
+      support: "Use a Magic Link. Live point-to-point camera measurement is supported.",
+      deletion: '<a href="/cdn-cgi/l/email-protection#abc0c2c9"><span data-cfemail="abc0c2c9">[email protected]</span></a> Request account deletion',
+    }).failures).toEqual([]);
+
+    expect(inspectPublicPages({
       privacy: "Supabase, Resend, and Stripe",
       support: "Password support",
       deletion: "Contact us",
