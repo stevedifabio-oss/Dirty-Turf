@@ -317,7 +317,7 @@ def build_pdf():
     ], compact=True)
     pdf.timeline("STEP 8", "Create signed test releases", "Store owner")
     pdf.checklist([
-        "[ ] Apple: accept pending agreements, confirm Dirty Turf LLC seller details and team signing, create the App Store Connect record, archive Release, and upload to TestFlight.",
+        "[ ] Apple: the Free Apps Agreement is active. Complete EU trader compliance, confirm seller/team signing, create the App Store Connect record, archive Release, and upload to TestFlight. Paid Apps terms are not a blocker unless in-app purchases are added.",
         "[ ] Google Play: create the app record, confirm package/version/signing ownership, build a signed AAB, and publish to Internal testing.",
         "[ ] Add store name, description, category, screenshots, privacy policy, support URL, deletion URL, reviewer login, data-safety/privacy answers, and content rating.",
         "[ ] Test install, update, deep link, Magic Link, logout, expired/reused links, camera, location, photos, map, lessons, community, and notifications on store builds.",
