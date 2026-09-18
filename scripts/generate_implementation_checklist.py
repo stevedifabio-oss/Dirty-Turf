@@ -232,7 +232,7 @@ def build_pdf():
         "[x] Google Play developer identity, website, and phone verification are complete.",
         "[x] Apple App ID/App Store Connect and Google Play app records exist for com.dirtyturf.academy; the Play package is reserved and Play App Signing is accepted.",
         "[x] The Apple renewal card is added. The branded iOS Release build installs and opens in the iPhone 17 simulator; Android debug APK and release AAB builds pass.",
-        "[x] Desktop web, mobile/PWA, calculator, exact map-area math, native wrappers, importer, billing logic, legal pages, and account-deletion workflow are built.",
+        "[x] Desktop web, mobile/PWA, calculator, map-area math, native wrappers, importer, billing logic, legal pages, and deletion workflow are built. Store metadata, permissions, and the opaque 1024px icon are machine-checked.",
         "[x] The source access audit proves 60 unique login emails, 49 linked enrollments, zero duplicate login emails, and all enrolled members login-ready.",
         "[x] In-app notifications, unread state, replies, mentions, post/comment likes, granular email preferences, branded Mailgun templates, retries, deep links, and signed unsubscribe are built.",
     ], compact=True)
@@ -256,7 +256,7 @@ def build_pdf():
     pdf.timeline("STEP 2", "Lock production identity", "Release owner")
     pdf.checklist([
         "[x] Lock the permanent web origin as https://app.dirtyturf.com and add it to the Supabase Auth redirect allowlist.",
-        "[!] Netlify is waiting for the ownership TXT in the Cloudflare account that owns dirtyturf.com. Publish it, then point the app CNAME at Netlify and wait for TLS.",
+        "[!] Netlify is waiting for TXT subdomain-owner-verification = a274de0c635882497aea3cc2e0df6f49 in the Cloudflare account that owns dirtyturf.com. Then point app to bright-brigadeiros-df8b48.netlify.app and wait for TLS.",
         "[ ] Once HTTPS passes, set app.dirtyturf.com as the Supabase Site URL, APP_URL, allowed origin, and web Magic Link target; preserve the native callback.",
         "[ ] Create one permanent Dirty Turf owner in Supabase Auth and one normal test member. Confirm the auth trigger creates the owner profile, organization, and owner membership.",
         "[ ] Record the owner organization UUID; this is the only missing value required by the private Academy import manifest.",
@@ -307,7 +307,7 @@ def build_pdf():
     pdf.timeline("STEP 6", "Merge and prove production", "Release owner")
     pdf.checklist([
         "[x] Publish the exact tested tree to GitHub PR #2, review the complete diff, and pass the repository credential-pattern scan.",
-        "[x] GitHub CI and the Netlify deploy-preview status pass on PR #2's current head; recheck both immediately before merge.",
+        "[x] GitHub CI run 22 passes on head 3c4e20c; Netlify deploy 6aad689cb3d14a0007492db5 completed in 17 seconds. Recheck both immediately before merge.",
         "[x] Team-authenticated preview smoke confirms the login shell, production canonical metadata, Mailgun disclosure, and public legal routes with no console errors.",
         "[ ] Finish app.dirtyturf.com ownership, CNAME, and TLS. Run npm run release:domain, then the production release:smoke gate; keep secrets server-side.",
         "[x] Verify the local release candidate at 320, 390, and 1440 pixels with no horizontal overflow or console errors; smoke all six public routes.",
@@ -332,7 +332,7 @@ def build_pdf():
         "[x] Build Android debug APK/release AAB and an iOS Release simulator app from the same verified web bundle; all six packaged entry documents match SHA-256 8b6ac3e...84d59.",
         "[!] Apple App ID and App Store Connect record 6813588770 exist. Archive reaches signing, but Apple reports no registered physical device/profile. Connect the client iPhone once, complete EU trader compliance, then archive and upload to TestFlight.",
         "[!] Google Play app record 4973615558687213779 exists, the package is reserved, and Play App Signing is accepted. Confirm client upload-key ownership, sign the AAB, and publish to Internal testing.",
-        "[x] Prepare store name, description, category, privacy/data-safety answers, URLs, reviewer notes, screenshot plan, and consumption-only billing guidance.",
+        "[x] Prepare and machine-check store name, platform-specific short copy, description, category, privacy/data-safety answers, URLs, reviewer notes, screenshot plan, and consumption-only billing guidance.",
         "[ ] Enter the prepared metadata, screenshots, reviewer login, content rating, privacy answers, and deletion URL in both store records.",
         "[ ] Test install, update, deep link, Magic Link, logout, expired/reused links, camera, location, photos, map, lessons, community, and notifications on store builds.",
         "[ ] Confirm both store builds are consumption-only and give reviewers a pre-existing Academy test account.",

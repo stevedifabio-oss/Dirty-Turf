@@ -64,8 +64,9 @@ the release AAB and signs it only when the complete environment is supplied;
 the key and passwords never belong in Git or `.env` files.
 
 `npm run check` includes a credential-pattern scan, migration/RLS contract
-checks, TypeScript, unit tests, the production build, public legal-page checks,
-and the PWA offline manifest check.
+checks, store metadata/native permission validation, TypeScript, unit tests,
+the production build, public legal-page checks, and the PWA offline manifest
+check.
 
 ## Golden path
 

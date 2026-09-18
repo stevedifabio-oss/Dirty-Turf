@@ -21,12 +21,25 @@ add a purchase link to either native listing or reviewer notes.
 | Ads | No |
 | Business model | Consumption-only native client for a web-purchased Academy membership |
 
+The machine-readable submission values live in `store/metadata.json`. Run
+`npm run store:check` before entering any value in a store console; the check
+enforces platform character limits, native identity and version parity,
+required permissions, legal routes, and the 1024-pixel opaque iOS icon.
+
 ## Store copy
 
-### Subtitle / short description
+### Apple subtitle
 
-Turf training, community, measurement, and infill tools for professional
-cleaners.
+Turf training and field tools
+
+### Google Play short description
+
+Academy, community, measurement, and infill tools for turf cleaning pros.
+
+### Apple promotional text
+
+Train with Dirty Turf Academy, connect with operators, and measure jobs with
+practical turf tools in one member app.
 
 ### Full description
 
@@ -50,7 +63,7 @@ offer or link to external purchases.
 
 ### Keywords
 
-`turf cleaning, artificial turf, infill, field service, academy, measurement`
+`turf cleaning,artificial turf,infill,field service,academy,measurement`
 
 ## Public URLs
 

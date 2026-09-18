@@ -53,6 +53,10 @@ Run the complete local check:
 npm run check
 ```
 
+This also validates store character limits, bundle/package identity, native
+camera and location declarations, legal URLs, and the App Store icon against
+`store/metadata.json`.
+
 Build, copy, and verify the same web entry document in both native projects:
 
 ```bash
