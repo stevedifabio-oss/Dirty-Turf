@@ -25,7 +25,6 @@ import {
   Search,
   Send,
   Settings2,
-  Sparkles,
   Smartphone,
   Users,
   Wrench,
@@ -282,7 +281,29 @@ function App() {
 
   return (
     <main className="app-shell">
-      <section className="phone-frame" aria-label="Dirty Turf Academy mobile app">
+      <aside className="desktop-sidebar" aria-label="Workspace navigation">
+        <div className="desktop-brand">
+          <img src="/dirty-turf-logo.png" alt="Dirty Turf" />
+          <div><strong>Dirty Turf</strong><span>Academy & field tools</span></div>
+        </div>
+        <button className="desktop-new-calculation" onClick={() => openQuote("manual")}><Plus size={18} /> New calculation</button>
+        <nav className="desktop-nav" aria-label="App sections">
+          <DesktopNavItem icon={<Home size={19} />} label="Dashboard" active={activeView === "home"} onClick={() => changeView("home")} />
+          <DesktopNavItem icon={<BookOpen size={19} />} label="Academy" active={activeView === "learn"} onClick={() => changeView("learn")} />
+          <DesktopNavItem icon={<Users size={19} />} label="Community" active={activeView === "community"} onClick={() => changeView("community")} />
+          <DesktopNavItem icon={<CalendarDays size={19} />} label="Events" active={activeView === "events"} onClick={() => changeView("events")} />
+          <DesktopNavItem icon={<Wrench size={19} />} label="Field tools" active={activeView === "tools"} onClick={() => changeView("tools")} />
+        </nav>
+        <div className="desktop-sidebar-footer">
+          <button className={`desktop-workspace-status ${dataMode}`} onClick={() => setHubSection(dataMode === "cloud" ? "settings" : "access")}>
+            <span />
+            <div><strong>{dataMode === "cloud" ? "Workspace synced" : "Device preview"}</strong><small>{dataMode === "cloud" ? "Cloud data is current" : "Review without an account"}</small></div>
+          </button>
+          <button className="desktop-settings" onClick={() => setHubSection("settings")}><Settings2 size={18} /> Workspace settings</button>
+        </div>
+      </aside>
+
+      <section className="phone-frame workspace-frame" aria-label="Dirty Turf Academy workspace">
         <header className="topbar">
           <div className="brand-lockup">
             <img src="/dirty-turf-logo.png" alt="Dirty Turf" />
@@ -314,19 +335,6 @@ function App() {
         {hubSection && <Suspense fallback={<div className="sheet-loading" role="status">Loading workspace...</div>}><HubSheet section={hubSection} onClose={() => setHubSection(null)} onToast={setToast} onRequestMagicLink={sendMagicLink} onSignOut={handleSignOut} dataMode={dataMode} /></Suspense>}
         {toast && <div className="toast" role="status"><CheckCircle2 size={18} />{toast}</div>}
       </section>
-
-      <aside className="strategy-panel">
-        <p className="kicker">Product direction</p>
-        <h2>The Dirty Turf standard, in every operator's pocket.</h2>
-        <p className="strategy-intro">Learn the process, measure the turf, calculate infill, and keep the complete service record with the company.</p>
-        <div className="product-loop" aria-label="Product workflow">
-          <LoopStep icon={<BookOpen size={19} />} title="Learn" detail="Native Academy courses" />
-          <LoopStep icon={<Ruler size={19} />} title="Measure" detail="Camera, map, or manual" />
-          <LoopStep icon={<Calculator size={19} />} title="Calculate" detail="Infill weight, bags, and customer price" />
-          <LoopStep icon={<Users size={19} />} title="Share" detail="Operator feedback" />
-        </div>
-        <div className="release-note"><Sparkles size={20} /><div><strong>{dataMode === "cloud" ? "Cloud workspace connected" : "Backend-ready device mode"}</strong><p>Supabase sync, private photo storage, live AR bridges, and current or historical property imagery are ready for the client connections.</p></div></div>
-      </aside>
     </main>
   );
 }
@@ -407,7 +415,7 @@ function LaunchAccessGate({
 function HomeView({ jobs, openQuote, changeView }: { jobs: Job[]; openQuote: (mode: MeasurementMode) => void; changeView: (view: View) => void }) {
   const latest = jobs[0];
   return (
-    <div className="view-content">
+    <div className="view-content home-view">
       <section className="field-hero">
         <div className="field-text"><p>Dirty Turf operator</p><h2>Measure it right. Quote the clean it actually needs.</h2><button className="hero-action" onClick={() => openQuote("camera")}><Camera size={17} /> Start measurement</button></div>
         <div className="field-scanner" aria-hidden="true"><div className="scanner-grid" /><div className="scanner-chip">{latest ? `${formatNumber(latest.area)} sq ft` : "Ready to measure"}</div><div className="scanner-pin one" /><div className="scanner-pin two" /><div className="scanner-pin three" /></div>
@@ -559,7 +567,7 @@ function JobRow({ job }: { job: Job }) {
   return <article className="job-row"><div className="job-method">{job.method === "map" ? <Map size={17} /> : job.method === "camera" ? <Camera size={17} /> : <Ruler size={17} />}</div><div><h4>{job.address}</h4><p>{formatNumber(job.area)} sq ft · {job.infill} 40-lb bags · {formatCurrency(job.quote)}</p></div><span>{job.status}</span></article>;
 }
 
-function LoopStep({ icon, title, detail }: { icon: React.ReactNode; title: string; detail: string }) { return <div className="loop-step"><span>{icon}</span><div><strong>{title}</strong><small>{detail}</small></div><ChevronRight size={16} /></div>; }
+function DesktopNavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) { return <button className={active ? "desktop-nav-item active" : "desktop-nav-item"} onClick={onClick}>{icon}<span>{label}</span></button>; }
 function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) { return <button className={active ? "nav-item active" : "nav-item"} onClick={onClick}>{icon}<span>{label}</span></button>; }
 
 function numberValue(value: string) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : 0; }

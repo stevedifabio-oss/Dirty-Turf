@@ -1,10 +1,10 @@
 # Dirty Turf Academy
 
-Mobile-first operator academy, community, turf measurement, and infill tools for turf cleaning companies.
+Responsive operator academy, community, turf measurement, and infill tools for turf cleaning companies, delivered as a desktop web app, mobile web/PWA, and native iOS and Android apps.
 
 ## Current state
 
-The interface is fully usable in device-preview mode with browser persistence. The repository also contains the backend contract needed to switch to authenticated company workspaces:
+The same React workspace adapts to wide desktop screens, touch-first mobile browsers, and the Capacitor iOS/Android shells. It is fully usable in device-preview mode with browser persistence. The repository also contains the backend contract needed to switch to authenticated company workspaces:
 
 - Supabase Auth and organization onboarding
 - Multi-tenant Postgres schema with row-level security
@@ -14,6 +14,7 @@ The interface is fully usable in device-preview mode with browser persistence. T
 - Course/module/lesson publishing, completion, level locks, resources, and HighLevel external IDs
 - Live events, RSVPs, reminders, member profiles, leaderboard points, notifications, applications, roles, plans, subscriptions, and referrals
 - Native iOS and Android shells with branded app icons and launch screens
+- Desktop navigation and multi-column workspaces with mobile bottom navigation and full-width touch sheets
 - Live point-to-point camera measurement implemented with ARKit and ARCore
 - Keyless Leaflet property tracing with Esri current imagery, Esri Wayback releases, USGS NAIP captures, and OpenStreetMap address search
 - Infill calculations from measured area and a selected lb/sq-ft rate, including rounded-up 40-lb and 50-lb bag counts

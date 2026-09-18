@@ -216,13 +216,13 @@ def build_pdf():
     pdf.new_page("September 18 release plan", "Remaining launch checklist", "Only the work still required to make the Academy app production-ready")
     pdf.section("The finish line", "Definition of done")
     pdf.paragraph(
-        "Every current Academy member can request a Magic Link, reach the content they already own, use the community and field tools, and reopen saved work on another device. Web payments grant access correctly, production is verified, and signed iOS and Android test builds pass on real phones."
+        "Every current Academy member can request a Magic Link, reach the content they already own, use the community and field tools, and reopen saved work on another device. The desktop web app, mobile web/PWA, and signed iOS and Android builds all pass their production paths."
     )
     col_w = (PAGE_W - 2 * MARGIN - 12) / 2
     y1 = pdf.card("BACKEND LIVE", "Eleven migrations, 50 RLS-protected public tables, six Edge Functions, and the health endpoint are active in Supabase.", GREEN, col_w, 82, MARGIN)
     pdf.card("ARCHIVE VERIFIED", "60 login members, 49 enrollments, 109 published lessons, 19 drafts, community data, and assets reconcile to GHL.", LIME, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y1 - 14
-    y2 = pdf.card("APP VERIFIED", "TypeScript, 53 tests, production build, PWA validation, Android release bundle, and iOS Release simulator checks pass.", ORANGE, col_w, 82, MARGIN)
+    y2 = pdf.card("APP VERIFIED", "Desktop, mobile, and tablet layouts pass responsive QA. Tests, PWA, Android release bundle, and iOS Release simulator checks pass.", ORANGE, col_w, 82, MARGIN)
     pdf.card("RELEASE OPEN", "GitHub PR #2 contains the complete release tree. Netlify preview, merge, and production proof still remain.", GREEN_DARK, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y2 - 18
     pdf.section("Completed and removed from this checklist")
@@ -231,7 +231,7 @@ def build_pdf():
         "[x] GHL course, lesson, member, enrollment, community, event, and asset capture is complete and exact-count verified.",
         "[x] Google Play developer identity, website, and phone verification are complete.",
         "[x] The Apple Developer renewal card is added. The simulator build is complete.",
-        "[x] The calculator, mobile layout, Magic Link UI, native wrappers, importer, billing logic, and release tests are built.",
+        "[x] Desktop web workspace, mobile/PWA layout, calculator, Magic Link UI, native wrappers, importer, billing logic, and release tests are built.",
     ], compact=True)
     pdf.section("Six remaining gates")
     pdf.paragraph("1. Email and owner identity.  2. Academy import and member access.  3. Stripe test proof.  4. GitHub and Netlify production release.  5. Real-device AR and signed store builds.  6. Controlled GHL cutover.", width_chars=94, size=8.6, leading=11)
@@ -300,7 +300,7 @@ def build_pdf():
     pdf.checklist([
         "[ ] Wait for GitHub PR #2 checks and the Netlify preview. Review the complete diff and run a secret scan before merge.",
         "[ ] Set the exact production domain, Supabase public variables, and public Stripe Payment Link in Netlify. Keep every secret server-side.",
-        "[ ] Verify preview auth, deep links, calculator, Academy, lessons, community, events, assets, progress, PWA, headers, mobile widths, and console/network logs.",
+        "[ ] Verify preview auth, deep links, calculator, Academy, lessons, community, events, assets, progress, PWA, headers, desktop/mobile widths, and console/network logs.",
         "[ ] Merge PR #2 to main, wait for Netlify production, and repeat the authenticated golden path on the deployed URL.",
         "[ ] Record commit SHA, deploy ID, migration/function versions, smoke-test account, rollback owner, and rollback steps.",
     ], compact=True)
