@@ -7,20 +7,22 @@ preview is evidence for compilation and layout, not production acceptance.
 
 ## Release order
 
-1. Lock the final HTTPS origin and publish the Resend DNS records.
-2. Verify custom SMTP and both web and native Magic Link redirects.
-3. Create the permanent owner and normal test member.
-4. Run the source access audit, import dry run, one commit, and an idempotent
+1. Point `app.dirtyturf.com` at Netlify, finish ownership verification, and
+   wait for a valid TLS certificate.
+2. Configure the existing verified Mailgun domain as Supabase custom SMTP.
+3. Verify custom SMTP and both web and native Magic Link redirects.
+4. Create the permanent owner and normal test member.
+5. Run the source access audit, import dry run, one commit, and an idempotent
    repeat. Provision all current members without sending email.
-5. Prove Stripe in test mode, including webhook replay and cancellation grant
+6. Prove Stripe in test mode, including webhook replay and cancellation grant
    precedence.
-6. Publish the PR preview and run the complete smoke, responsive, and
+7. Publish the PR preview and run the complete smoke, responsive, and
    authenticated golden paths.
-7. Merge to `main`, wait for the exact production deploy, and repeat the smoke
+8. Merge to `main`, wait for the exact production deploy, and repeat the smoke
    and authenticated paths.
-8. Build signed TestFlight and Play Internal releases. Run physical iPhone and
+9. Build signed TestFlight and Play Internal releases. Run physical iPhone and
    Android measurement tests.
-9. Pilot 3-5 members, capture the final GHL delta, then notify the remaining
+10. Pilot 3-5 members, capture the final GHL delta, then notify the remaining
    members in batches of 25 or fewer.
 
 ## Automated preflight

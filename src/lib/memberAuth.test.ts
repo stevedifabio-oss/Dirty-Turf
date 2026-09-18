@@ -7,8 +7,8 @@ describe("member authentication", () => {
   });
 
   it("never creates an account from the public magic-link form", () => {
-    expect(memberMagicLinkOptions("https://academy.dirtyturf.com")).toEqual({
-      emailRedirectTo: "https://academy.dirtyturf.com",
+    expect(memberMagicLinkOptions("https://app.dirtyturf.com")).toEqual({
+      emailRedirectTo: "https://app.dirtyturf.com",
       shouldCreateUser: false,
     });
   });

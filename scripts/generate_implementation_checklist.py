@@ -238,28 +238,28 @@ def build_pdf():
     pdf.paragraph("1. Email and owner identity.  2. Academy import and member access.  3. Stripe test proof.  4. GitHub and Netlify production release.  5. Real-device AR and signed store builds.  6. Controlled GHL cutover.", width_chars=94, size=8.6, leading=11)
     pdf.gate("Keep HighLevel live until member login, content access, production smoke tests, real-device measurement, and rollback evidence all pass.")
 
-    pdf.new_page("Gate 1", "Email and production identity", "Verify the sender, set exact URLs, and create the two accounts needed for migration proof")
-    pdf.timeline("STEP 1", "Verify the Resend sender", "Dirty Turf owner")
+    pdf.new_page("Gate 1", "Mailgun and production identity", "Activate app.dirtyturf.com, verify Auth mail, and create the two accounts needed for migration proof")
+    pdf.timeline("STEP 1", "Configure the existing Mailgun sender", "Dirty Turf owner")
     pdf.checklist([
-        "[x] Resend sending domain updates.dirtyturf.com is created and its DKIM/SPF records are ready.",
-        "[ ] Sign in to the Cloudflare account that owns dirtyturf.com. The current Cloudflare login has no domains. Publish every Resend TXT/CNAME record as DNS-only.",
-        "[ ] Wait for Resend to show the domain as verified. Send one authenticated test email from a Dirty Turf address to a separate inbox and confirm it reaches the inbox, not spam.",
-        "[ ] Configure Supabase Auth custom SMTP with Resend. Use the verified Dirty Turf sender, not onboarding@resend.dev.",
+        "[!] Dirty Turf already uses Mailgun. Add its existing verified domain, SMTP host, username, and password to Supabase; do not create another mail provider account.",
+        "[ ] In Mailgun, confirm the selected sending domain is active with SPF, DKIM, and DMARC healthy. Use a sender address covered by that verified domain.",
+        "[ ] Configure Supabase Auth custom SMTP with Mailgun. Use smtp.mailgun.org and port 587 unless the account shows an EU-region host.",
+        "[ ] Disable Mailgun click tracking for authentication mail so Magic Link URLs are not rewritten.",
         "[ ] Send a Supabase Magic Link to the owner and test member. Confirm both cold-start web redirect and com.dirtyturf.academy://auth/callback on a physical phone.",
-        "[ ] Rotate the Resend API key pasted in chat after SMTP works. Save the replacement only in Resend/Supabase account settings, never in Git, Netlify public variables, or app code.",
+        "[ ] Revoke the unused Resend API key shared in chat after Mailgun delivery passes. Keep Mailgun SMTP credentials only in Supabase's encrypted settings.",
     ], compact=True)
     pdf.timeline("STEP 2", "Lock production identity", "Release owner")
     pdf.checklist([
-        "[ ] Confirm the exact production HTTPS domain. Set it as the Supabase Site URL, Netlify custom domain, APP_URL, allowed origin, and auth redirect.",
-        "[x] Keep the native callback in Supabase redirect allowlists and Edge Function AUTH_REDIRECT_URLS.",
+        "[x] Lock the permanent web origin as https://app.dirtyturf.com and add it to the Supabase Auth redirect allowlist.",
+        "[!] Netlify is waiting for the ownership TXT in the Cloudflare account that owns dirtyturf.com. Publish it, then point the app CNAME at Netlify and wait for TLS.",
+        "[ ] Once HTTPS passes, set app.dirtyturf.com as the Supabase Site URL, APP_URL, allowed origin, and web Magic Link target; preserve the native callback.",
         "[ ] Create one permanent Dirty Turf owner in Supabase Auth and one normal test member. Confirm the auth trigger creates the owner profile, organization, and owner membership.",
         "[ ] Record the owner organization UUID; this is the only missing value required by the private Academy import manifest.",
-        "[x] Build public privacy, support, and deletion-instructions pages plus the signed-in two-step deletion-request flow.",
-        "[ ] Point those pages at the final production domain and confirm they are publicly reachable after deployment.",
-        "[ ] Record a client owner and recovery owner with MFA for Supabase, Resend, GitHub, Netlify, Stripe, Apple, Google Play, GHL, and DNS.",
+        "[!] Privacy, support, deletion instructions, and the signed-in deletion workflow are built; confirm all three public routes on app.dirtyturf.com after TLS.",
+        "[ ] Record a client owner and recovery owner with MFA for Supabase, Mailgun, GitHub, Netlify, Stripe, Apple, Google Play, GHL, and DNS.",
     ], compact=True)
     pdf.section("Secret boundary")
-    pdf.command("BROWSER-SAFE: VITE_SUPABASE_URL, publishable key, public Payment Link\nSERVER-ONLY: service-role key, GHL token, Resend key, Stripe secret + webhook secret")
+    pdf.command("BROWSER-SAFE: VITE_SUPABASE_URL, publishable key, public Payment Link\nSERVER-ONLY: service-role key, GHL token, Mailgun SMTP password, Stripe secrets")
     pdf.gate("Do not invite members until a real Supabase Magic Link delivers from the verified Dirty Turf sender and both web and native redirects work.")
 
     pdf.new_page("Gate 2", "Import and guarantee member access", "Load the verified archive, provision every account silently, then pilot Magic Links")
@@ -303,7 +303,7 @@ def build_pdf():
         "[x] Publish the exact tested tree to GitHub PR #2, review the complete diff, and pass the repository credential-pattern scan.",
         "[x] GitHub CI run 15 and the Netlify deploy-preview status pass for remote commit 5d8c1e30.",
         "[!] Netlify team SSO intentionally returns 401 to anonymous preview smoke tests; complete the authenticated preview path with a team login and real test member.",
-        "[ ] Set the exact production domain, Supabase public variables, and public Stripe Payment Link in Netlify. Keep every secret server-side.",
+        "[ ] Finish app.dirtyturf.com ownership, CNAME, and TLS. Confirm Supabase public variables and the public Stripe Payment Link in Netlify; keep secrets server-side.",
         "[x] Verify the local release candidate at 320, 390, and 1440 pixels with no horizontal overflow or console errors; smoke all six public routes.",
         "[ ] Verify preview auth, deep links, Academy, community, events, private assets, progress, headers, and network logs with the real test member.",
         "[ ] Merge PR #2 to main, wait for Netlify production, and repeat the authenticated golden path on the deployed URL.",
@@ -355,7 +355,7 @@ def build_pdf():
     pdf.signoff_row("TestFlight / Play Internal acceptance")
     pdf.signoff_row("GHL delta, backup, and rollback")
     pdf.section("Simple next actions")
-    pdf.paragraph("1. Verify Resend DNS.  2. Create owner and test member.  3. Import and provision.  4. Prove Stripe.  5. Merge and smoke production.  6. Test real phones.  7. Upload signed builds.  8. Pilot members.  9. Cut over.", width_chars=94, size=8.4, leading=11)
+    pdf.paragraph("1. Publish Netlify DNS.  2. Configure Mailgun.  3. Create owner and test member.  4. Import and provision.  5. Prove Stripe.  6. Merge and smoke production.  7. Test real phones.  8. Upload signed builds.  9. Pilot and cut over.", width_chars=94, size=8.4, leading=11)
     pdf.gate("Launch only after every sign-off passes. Until then, keep HighLevel available and label the new app as a controlled pilot.")
 
     pdf.finish()

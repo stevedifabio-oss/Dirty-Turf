@@ -24,7 +24,7 @@ describe("native auth redirects", () => {
 
   it("ignores malformed and unrelated links", () => {
     expect(parseNativeAuthRedirect("not a url")).toBeNull();
-    expect(parseNativeAuthRedirect("https://academy.dirtyturf.com/auth/callback?code=nope")).toBeNull();
+    expect(parseNativeAuthRedirect("https://app.dirtyturf.com/auth/callback?code=nope")).toBeNull();
     expect(parseNativeAuthRedirect("com.dirtyturf.academy://other/callback?code=nope")).toBeNull();
   });
 });

@@ -91,9 +91,9 @@ Set server-only secrets in Supabase. Never put these in `VITE_` variables:
 supabase secrets set \
   GHL_PRIVATE_INTEGRATION_TOKEN=... \
   GHL_LOCATION_ID=... \
-  APP_URL=https://YOUR_APP_DOMAIN \
-  APP_ALLOWED_ORIGINS=https://YOUR_APP_DOMAIN \
-  AUTH_REDIRECT_URLS=com.dirtyturf.academy://auth/callback \
+  APP_URL=https://app.dirtyturf.com \
+  APP_ALLOWED_ORIGINS=https://app.dirtyturf.com,https://bright-brigadeiros-df8b48.netlify.app \
+  AUTH_REDIRECT_URLS=https://bright-brigadeiros-df8b48.netlify.app,com.dirtyturf.academy://auth/callback \
   STRIPE_SECRET_KEY=... \
   STRIPE_WEBHOOK_SECRET=...
 ```
@@ -109,12 +109,14 @@ VITE_SUPABASE_PUBLISHABLE_KEY=YOUR_PUBLIC_PUBLISHABLE_KEY
 VITE_STRIPE_ACADEMY_PAYMENT_LINK=https://buy.stripe.com/YOUR_PAYMENT_LINK
 ```
 
-In **Supabase > Authentication > URL Configuration**, set the Site URL to the
-exact production HTTPS origin and add both that origin and
-`com.dirtyturf.academy://auth/callback` as allowed redirect URLs. In
-**Authentication > SMTP Settings**, configure a client-owned sender before any
-member invitations are sent. Web links return to the production origin; iOS
-and Android links return directly to the installed app through the registered
+The permanent web origin is `https://app.dirtyturf.com`. In **Supabase >
+Authentication > URL Configuration**, allow that origin, the Netlify pilot
+origin, localhost, and `com.dirtyturf.academy://auth/callback`. Keep the Site
+URL on the working Netlify origin until the custom domain resolves over HTTPS,
+then switch it to `https://app.dirtyturf.com`. In **Authentication > SMTP
+Settings**, configure the client-owned Mailgun sender before any member
+invitations are sent. Web links return to the production origin; iOS and
+Android links return directly to the installed app through the registered
 custom URL scheme. The app handles PKCE redirects from cold start and while it
 is already open.
 
@@ -150,7 +152,7 @@ Before enabling sales:
    subscription created, updated, and deleted events.
 4. Configure the Stripe Customer Portal and make a web Payment Link for public
    acquisition. Set its after-payment redirect to
-   `https://YOUR_APP_DOMAIN/?checkout=success`, then expose that public URL as
+   `https://app.dirtyturf.com/?checkout=success`, then expose that public URL as
    `VITE_STRIPE_ACADEMY_PAYMENT_LINK` in the Netlify web build. Its Price ID is
    the trusted plan mapping; no amount is accepted from the browser.
 5. Complete one Stripe test-mode purchase, request the buyer's Magic Link, and
@@ -243,6 +245,9 @@ account-creation step. On first authenticated load, the app also claims any
 matching active imported membership by the verified auth email.
 
 HighLevel remains available during reconciliation and rollback. Native cutover happens only after a client-owned Supabase organization ID is added, the server dry run and count comparison pass, member invitations are previewed, and representative accounts are tested. See `docs/highlevel-live-and-native-migration.md` for the controlled sequence.
+
+The custom-domain activation sequence and current DNS handoff are documented
+in `docs/production-domain-cutover.md`.
 
 ## Key files
 

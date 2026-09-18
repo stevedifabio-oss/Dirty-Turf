@@ -31,7 +31,7 @@ describe("production service worker", () => {
       self: {
         addEventListener: (type, listener) => listeners.set(type, listener),
         clients: { claim: async () => undefined },
-        location: { origin: "https://academy.dirtyturf.com" },
+        location: { origin: "https://app.dirtyturf.com" },
         skipWaiting: () => undefined,
       },
     });

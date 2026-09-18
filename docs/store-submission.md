@@ -1,8 +1,8 @@
 # Dirty Turf Academy store submission
 
 This file is the prepared source of truth for the App Store Connect and Google
-Play records. Replace `FINAL_APP_ORIGIN` only after the production domain is
-locked. Do not add a purchase link to either native listing or reviewer notes.
+Play records. The permanent web origin is `https://app.dirtyturf.com`. Do not
+add a purchase link to either native listing or reviewer notes.
 
 ## App identity
 
@@ -52,11 +52,11 @@ offer or link to external purchases.
 
 ## Public URLs
 
-Set these after the final domain is live:
+Use these after the custom domain is live and TLS is valid:
 
-- Privacy policy: `https://FINAL_APP_ORIGIN/privacy.html`
-- Support: `https://FINAL_APP_ORIGIN/support.html`
-- Account deletion: `https://FINAL_APP_ORIGIN/delete-account.html`
+- Privacy policy: `https://app.dirtyturf.com/privacy.html`
+- Support: `https://app.dirtyturf.com/support.html`
+- Account deletion: `https://app.dirtyturf.com/delete-account.html`
 
 The pages already exist in `public/` and use relative internal links, so no
 code change is required when the custom domain is assigned.
@@ -120,4 +120,3 @@ each asset.
 - Google Play has no app record yet.
 - Reviewer credentials cannot be created until the owner organization, Academy
   import, custom SMTP, and Magic Link pilot are complete.
-
