@@ -53,10 +53,10 @@ Run the complete local check:
 npm run check
 ```
 
-Build and copy the web app into both native projects:
+Build, copy, and verify the same web entry document in both native projects:
 
 ```bash
-npm run native:sync
+npm run native:verify
 ```
 
 Opening and compiling the native projects requires full Xcode on macOS and
@@ -197,8 +197,9 @@ Steve's point-to-point camera workflow needs real world-space raycasts, not a ph
 
 The browser preview deliberately does not estimate distance from ordinary camera pixels. Visit photos remain a separate property-history action.
 
-The native source is implemented but must still be compiled and calibrated on
-real supported iPhone and Android devices. A web preview cannot prove ARKit or
+The current native source compiles as an Android debug APK/release AAB and an
+iOS Release simulator app. It still must be calibrated on real supported
+iPhone and Android devices; compilation and a web preview cannot prove ARKit or
 ARCore accuracy.
 
 ## Infill calculator

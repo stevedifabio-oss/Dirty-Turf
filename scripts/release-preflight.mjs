@@ -8,7 +8,7 @@ const steps = [
   [npm, ["run", "check"]],
 ];
 
-if (!options.skipNative) steps.push([npm, ["run", "native:copy"]]);
+if (!options.skipNative) steps.push([npm, ["run", "native:verify"]]);
 if (options.deployUrl) {
   steps.push([process.execPath, [
     "scripts/release-smoke.mjs",

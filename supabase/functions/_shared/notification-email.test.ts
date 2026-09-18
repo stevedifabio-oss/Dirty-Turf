@@ -51,7 +51,8 @@ describe("Academy notification email", () => {
       preference: "new_posts",
       expiresAt,
     });
-    expect(await verifyUnsubscribeToken(`${token.slice(0, -1)}x`, secret)).toBeNull();
+    const tamperedToken = `${token.slice(0, -1)}${token.endsWith("x") ? "y" : "x"}`;
+    expect(await verifyUnsubscribeToken(tamperedToken, secret)).toBeNull();
     expect(await verifyUnsubscribeToken(token, secret, expiresAt + 1)).toBeNull();
   });
 });

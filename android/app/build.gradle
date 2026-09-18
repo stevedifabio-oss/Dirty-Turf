@@ -2,6 +2,15 @@ apply plugin: 'com.android.application'
 apply plugin: 'org.jetbrains.kotlin.android'
 apply plugin: 'org.jetbrains.kotlin.plugin.compose'
 
+def releaseSigningValues = [
+    keystorePath: System.getenv('ANDROID_KEYSTORE_PATH'),
+    keystorePassword: System.getenv('ANDROID_KEYSTORE_PASSWORD'),
+    keyAlias: System.getenv('ANDROID_KEY_ALIAS'),
+    keyPassword: System.getenv('ANDROID_KEY_PASSWORD'),
+]
+def releaseSigningConfigured = releaseSigningValues.values().every { it }
+def releaseSigningPartiallyConfigured = releaseSigningValues.values().any { it } && !releaseSigningConfigured
+
 android {
     namespace = "com.dirtyturf.academy"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -18,8 +27,21 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            release {
+                storeFile file(releaseSigningValues.keystorePath)
+                storePassword releaseSigningValues.keystorePassword
+                keyAlias releaseSigningValues.keyAlias
+                keyPassword releaseSigningValues.keyPassword
+            }
+        }
+    }
     buildTypes {
         release {
+            if (releaseSigningConfigured) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
@@ -31,6 +53,16 @@ android {
     buildFeatures {
         compose true
     }
+}
+
+tasks.register('releaseSigningStatus') {
+    doLast {
+        println releaseSigningConfigured ? 'Android release signing: configured' : 'Android release signing: not configured (unsigned release artifact)'
+    }
+}
+
+if (releaseSigningPartiallyConfigured) {
+    throw new GradleException('Android release signing is only partially configured. Set all four ANDROID_KEYSTORE_* / ANDROID_KEY_* environment variables.')
 }
 
 kotlin {

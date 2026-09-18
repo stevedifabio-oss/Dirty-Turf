@@ -10,8 +10,10 @@ add a purchase link to either native listing or reviewer notes.
 | --- | --- |
 | App name | Dirty Turf Academy |
 | Apple bundle ID | `com.dirtyturf.academy` |
+| App Store Connect Apple ID | `6813588770` |
 | Apple SKU | `dirty-turf-academy-ios` |
 | Android package | `com.dirtyturf.academy` |
+| Google Play app ID | `4973615558687213779` |
 | Primary language | English (U.S.) |
 | Primary category | Education |
 | Secondary category | Business |
@@ -115,8 +117,29 @@ each asset.
 
 ## Account-side blockers
 
-- Apple has no app record yet. EU trader status must be completed by the Dirty
-  Turf account holder before EU distribution or app updates.
-- Google Play has no app record yet.
+- The explicit Apple App ID and App Store Connect record are created. EU trader
+  status must still be completed by the Dirty Turf account holder. The device
+  archive also needs one client iPhone registered so Xcode can create the
+  development provisioning profile before TestFlight export.
+- The Google Play app record is created, `com.dirtyturf.academy` is reserved,
+  and Play App Signing is accepted. The release AAB still needs a client-owned
+  upload key before it can be signed and uploaded to Internal testing.
 - Reviewer credentials cannot be created until the owner organization, Academy
   import, custom SMTP, and Magic Link pilot are complete.
+
+## Android release signing
+
+The Gradle release build reads the client-owned upload key only from the local
+environment. Keep the key file and all four values outside Git:
+
+```bash
+export ANDROID_KEYSTORE_PATH=/absolute/path/to/dirty-turf-upload.jks
+export ANDROID_KEYSTORE_PASSWORD='stored-in-client-vault'
+export ANDROID_KEY_ALIAS='stored-in-client-vault'
+export ANDROID_KEY_PASSWORD='stored-in-client-vault'
+npm run native:android:signing-status
+npm run native:android:release
+```
+
+The build fails on a partial configuration. With no signing variables it still
+produces an explicitly unsigned local artifact for compilation QA.

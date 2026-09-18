@@ -35,7 +35,7 @@ preview is evidence for compilation and layout, not production acceptance.
 npm ci
 npm run academy:access-audit
 npm run check
-npm run native:sync
+npm run native:verify
 npm run release:smoke -- https://DEPLOY_URL --expected-origin https://app.dirtyturf.com --expect-security-headers
 ```
 
@@ -50,6 +50,18 @@ npm run release:preflight -- --check-domain
 `npm run release:domain` reports the Netlify ownership TXT, CNAME, HTTPS/TLS,
 and HTTP-to-HTTPS status separately, so an incomplete DNS handoff is visible
 without being confused with an application failure.
+
+`npm run native:verify` builds the web app, copies it into both native wrappers,
+and proves that the web, Android, and iOS entry documents have the same SHA-256.
+After native compilation, `npm run native:verify:artifacts` also checks the
+packaged Android APK and AAB. Pass a built `.app` with
+`node scripts/check-native-bundles.mjs --ios-app /path/to/App.app` to include
+the iOS product in the same proof.
+
+`npm run native:android:signing-status` reports whether all four client-owned
+upload-key variables are present. `npm run native:android:release` then builds
+the release AAB and signs it only when the complete environment is supplied;
+the key and passwords never belong in Git or `.env` files.
 
 `npm run check` includes a credential-pattern scan, migration/RLS contract
 checks, TypeScript, unit tests, the production build, public legal-page checks,
@@ -87,15 +99,15 @@ member emails, private tokens, or reviewer credentials in this repository.
 | GitHub PR and successful run | `stevedifabio-oss/Dirty-Turf#2`; require the latest head to pass immediately before merge |
 | Netlify deploy ID and URL | Preview is ready at `https://deploy-preview-2--bright-brigadeiros-df8b48.netlify.app`; record the production deploy after merge |
 | Supabase migrations | 15 applied / 53 public RLS-protected tables; recheck at production release |
-| Supabase Edge Function versions | Nine deployed; record immutable versions at production release |
+| Supabase Edge Function versions | Nine active: health/academy import/invite/checkout/portal/webhook at v3; GHL status/webhook and Academy notifications at v1; recheck at production release |
 | Source archive SHA-256 | `0e1f53311b4635a7ed2969ff5bf6e2b038781eeb3126a958e3aaea82633f1aee` |
 | Local automated gate | Record current test count, typecheck, build, PWA, schema, and secret scan result |
-| Native candidate proof | Android debug/release AAB and iOS Release simulator launch passed; embedded app-shell hashes match |
+| Native candidate proof | Android debug APK/release AAB and iOS Release simulator launch passed; all six embedded entry documents match SHA-256 `8b6ac3e46dc62337beb2bf5c38a06193a5e989b59e9d755960d3bbfcddf84d59` |
 | Smoke-test account owner | Client vault only |
 | iPhone model / OS / AR error | Pending physical test |
 | Android model / OS / AR error | Pending physical test |
-| TestFlight build | Pending signed build |
-| Play Internal build | Pending signed build |
+| TestFlight build | Pending: archive reached signing; Apple reports no registered physical device/profile for `com.dirtyturf.academy` |
+| Play Internal build | App record `4973615558687213779` exists and Play App Signing is accepted; pending client-owned upload key and signed AAB |
 | Rollback owner | Pending client assignment |
 | Final sign-off owner / timestamp | Pending client approval |
 

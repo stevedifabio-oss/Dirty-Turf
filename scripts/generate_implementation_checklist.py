@@ -222,7 +222,7 @@ def build_pdf():
     y1 = pdf.card("BACKEND LIVE", "Fifteen migrations and nine Edge Functions are active. Notification delivery is safely paused until Mailgun secrets are added.", GREEN, col_w, 82, MARGIN)
     pdf.card("ARCHIVE VERIFIED", "60 login members, 49 enrollments, 109 published lessons, 19 drafts, community data, and assets reconcile to GHL.", LIME, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y1 - 14
-    y2 = pdf.card("APP VERIFIED", "Sixty-five tests, responsive notification QA, PWA checks, Android AAB, and a clean iOS Release simulator launch all pass.", ORANGE, col_w, 82, MARGIN)
+    y2 = pdf.card("APP VERIFIED", "Sixty-five tests, responsive notification QA, PWA checks, Android APK/AAB, and a clean iOS Release simulator launch all pass.", ORANGE, col_w, 82, MARGIN)
     pdf.card("RELEASE CANDIDATE", "PR #2 CI and Netlify deploy status pass. Production remains gated on identity, import, billing, and physical-device proof.", GREEN_DARK, col_w, 82, MARGIN + col_w + 12)
     pdf.y = y2 - 18
     pdf.section("Completed and removed from this checklist")
@@ -230,7 +230,8 @@ def build_pdf():
         "[x] Fifteen Supabase migrations, 53-table RLS audit, access/notification indexes, security hardening, and nine Edge Function deployments are complete.",
         "[x] GHL course, lesson, member, enrollment, community, event, and asset capture is complete and exact-count verified.",
         "[x] Google Play developer identity, website, and phone verification are complete.",
-        "[x] The Apple renewal card is added. The branded iOS Release build installs and opens in the iPhone 17 simulator; Android debug and release builds pass.",
+        "[x] Apple App ID/App Store Connect and Google Play app records exist for com.dirtyturf.academy; the Play package is reserved and Play App Signing is accepted.",
+        "[x] The Apple renewal card is added. The branded iOS Release build installs and opens in the iPhone 17 simulator; Android debug APK and release AAB builds pass.",
         "[x] Desktop web, mobile/PWA, calculator, exact map-area math, native wrappers, importer, billing logic, legal pages, and account-deletion workflow are built.",
         "[x] The source access audit proves 60 unique login emails, 49 linked enrollments, zero duplicate login emails, and all enrolled members login-ready.",
         "[x] In-app notifications, unread state, replies, mentions, post/comment likes, granular email preferences, branded Mailgun templates, retries, deep links, and signed unsubscribe are built.",
@@ -328,9 +329,9 @@ def build_pdf():
     ], compact=True)
     pdf.timeline("STEP 8", "Create signed test releases", "Store owner")
     pdf.checklist([
-        "[x] Build Android debug/release artifacts and an iOS Release simulator app from the same verified web bundle; confirm exact embedded index hashes.",
-        "[ ] Apple: complete EU trader compliance, confirm seller/team signing, create the App Store Connect record, archive Release, and upload to TestFlight. Paid Apps terms are not a blocker unless in-app purchases are added.",
-        "[ ] Google Play: create the app record, confirm package/version/signing ownership, build a signed AAB, and publish to Internal testing.",
+        "[x] Build Android debug APK/release AAB and an iOS Release simulator app from the same verified web bundle; all six packaged entry documents match SHA-256 8b6ac3e...84d59.",
+        "[!] Apple App ID and App Store Connect record 6813588770 exist. Archive reaches signing, but Apple reports no registered physical device/profile. Connect the client iPhone once, complete EU trader compliance, then archive and upload to TestFlight.",
+        "[!] Google Play app record 4973615558687213779 exists, the package is reserved, and Play App Signing is accepted. Confirm client upload-key ownership, sign the AAB, and publish to Internal testing.",
         "[x] Prepare store name, description, category, privacy/data-safety answers, URLs, reviewer notes, screenshot plan, and consumption-only billing guidance.",
         "[ ] Enter the prepared metadata, screenshots, reviewer login, content rating, privacy answers, and deletion URL in both store records.",
         "[ ] Test install, update, deep link, Magic Link, logout, expired/reused links, camera, location, photos, map, lessons, community, and notifications on store builds.",
