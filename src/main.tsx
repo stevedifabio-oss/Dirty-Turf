@@ -224,10 +224,10 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!toast) return;
+    if (!toast || ["loading", "signed_out", "no_access"].includes(workspaceAccess.status)) return;
     const timer = window.setTimeout(() => setToast(""), 2600);
     return () => window.clearTimeout(timer);
-  }, [toast]);
+  }, [toast, workspaceAccess.status]);
 
   useEffect(() => () => {
     if (photoUrl) URL.revokeObjectURL(photoUrl);
@@ -289,8 +289,9 @@ function App() {
       const { error } = await requestMagicLink(email);
       if (error) throw error;
       setToast("If this email has Academy access, a secure sign-in link is on the way.");
-    } catch {
+    } catch (error) {
       setToast("The sign-in link could not be requested. Check the connection and try again.");
+      throw error;
     }
   };
   const handleSignOut = async () => {
@@ -348,6 +349,7 @@ function App() {
   if (workspaceAccess.status === "loading" || workspaceAccess.status === "signed_out" || workspaceAccess.status === "no_access") {
     return <LaunchAccessGate
       status={workspaceAccess.status}
+      authMessage={toast}
       onRequestMagicLink={sendMagicLink}
       onPasswordSignIn={handlePasswordSignIn}
       onSignOut={handleSignOut}
@@ -355,13 +357,13 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
+    <main className={activeView === "community" ? "app-shell community-focus" : "app-shell"}>
       <aside className="desktop-sidebar" aria-label="Workspace navigation">
         <div className="desktop-brand">
           <img src="/dirty-turf-logo.png" alt="Dirty Turf" />
           <div><strong>Dirty Turf</strong><span>Academy & field tools</span></div>
         </div>
-        <button className="desktop-new-calculation" onClick={() => openQuote("manual")}><Plus size={18} /> New calculation</button>
+        <button className="desktop-new-calculation" onClick={() => openQuote("manual")} aria-label="New calculation" title="New calculation"><Plus size={18} /><span>New calculation</span></button>
         <nav className="desktop-nav" aria-label="App sections">
           <DesktopNavItem icon={<Home size={19} />} label="Dashboard" active={activeView === "home"} onClick={() => changeView("home")} />
           <DesktopNavItem icon={<BookOpen size={19} />} label="Academy" active={activeView === "learn"} onClick={() => changeView("learn")} />
@@ -370,11 +372,11 @@ function App() {
           <DesktopNavItem icon={<Wrench size={19} />} label="Field tools" active={activeView === "tools"} onClick={() => changeView("tools")} />
         </nav>
         <div className="desktop-sidebar-footer">
-          <button className={`desktop-workspace-status ${dataMode}`} onClick={() => setHubSection(dataMode === "cloud" ? "settings" : "access")}>
+          <button className={`desktop-workspace-status ${dataMode}`} onClick={() => setHubSection(dataMode === "cloud" ? "settings" : "access")} aria-label={dataMode === "cloud" ? "Workspace synced" : "Device preview"} title={dataMode === "cloud" ? "Workspace synced" : "Device preview"}>
             <span />
             <div><strong>{dataMode === "cloud" ? "Workspace synced" : "Device preview"}</strong><small>{dataMode === "cloud" ? "Cloud data is current" : "Review without an account"}</small></div>
           </button>
-          <button className="desktop-settings" onClick={() => setHubSection("settings")}><Settings2 size={18} /> Workspace settings</button>
+          <button className="desktop-settings" onClick={() => setHubSection("settings")} aria-label="Workspace settings" title="Workspace settings"><Settings2 size={18} /><span>Workspace settings</span></button>
         </div>
       </aside>
 
@@ -416,11 +418,13 @@ function App() {
 
 function LaunchAccessGate({
   status,
+  authMessage,
   onRequestMagicLink,
   onPasswordSignIn,
   onSignOut,
 }: {
   status: "loading" | "signed_out" | "no_access";
+  authMessage?: string;
   onRequestMagicLink: (email: string) => Promise<void>;
   onPasswordSignIn: (email: string, password: string) => Promise<void>;
   onSignOut: () => Promise<void>;
@@ -498,6 +502,7 @@ function LaunchAccessGate({
         <button className="secondary-button wide" disabled={busy} onClick={() => void onSignOut()}>Use a different email</button>
       </>}
       {message && <p className="launch-message" role="status">{message}</p>}
+      {authMessage && <p className="launch-message" role="alert">{authMessage}</p>}
       <p className="launch-support">Need help? <a href="mailto:hello@dirtyturf.com">hello@dirtyturf.com</a></p>
       <nav className="launch-legal" aria-label="Privacy and support"><a href="/privacy.html">Privacy</a><a href="/support.html">Support</a><a href="/delete-account.html">Delete account</a></nav>
     </section>
@@ -675,7 +680,7 @@ function JobRow({ job }: { job: Job }) {
   return <article className="job-row"><div className="job-method">{job.method === "map" ? <Map size={17} /> : job.method === "camera" ? <Camera size={17} /> : <Ruler size={17} />}</div><div><h4>{job.address}</h4><p>{formatNumber(job.area)} sq ft · {job.infill} 40-lb bags · {formatCurrency(job.quote)}</p></div><span>{job.status}</span></article>;
 }
 
-function DesktopNavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) { return <button className={active ? "desktop-nav-item active" : "desktop-nav-item"} onClick={onClick}>{icon}<span>{label}</span></button>; }
+function DesktopNavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) { return <button className={active ? "desktop-nav-item active" : "desktop-nav-item"} onClick={onClick} aria-label={label} title={label}>{icon}<span>{label}</span></button>; }
 function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) { return <button className={active ? "nav-item active" : "nav-item"} onClick={onClick}>{icon}<span>{label}</span></button>; }
 
 function numberValue(value: string) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : 0; }

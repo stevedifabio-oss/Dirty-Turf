@@ -1,7 +1,7 @@
 import { Capacitor } from "@capacitor/core";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { AcademyEvent, AppNotification, CommunityComment, CommunityPost, Course, Job, LessonQuiz, Member, NotificationPreferences } from "../domain";
-import { NATIVE_AUTH_REDIRECT, parseNativeAuthRedirect } from "./authRedirect";
+import { NATIVE_AUTH_EMAIL_REDIRECT, parseNativeAuthRedirect } from "./authRedirect";
 import { communityMediaStoragePaths, normalizeCommunityMediaItems } from "./communityMedia";
 import { cleanCommunityPostBody } from "./communityPost";
 import { clampProgress, combinedCourseProgress } from "./courseProgress";
@@ -25,7 +25,13 @@ const browserWindow = window as DirtyTurfWindow;
 
 export const supabase = supabaseUrl && supabasePublishableKey
   ? browserWindow.__dirtyTurfSupabase ??= createClient(supabaseUrl, supabasePublishableKey, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "pkce" },
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        flowType: "pkce",
+        experimental: { appendPkceFlowIdToRedirects: true },
+      },
     })
   : null;
 
@@ -117,7 +123,7 @@ export async function requestMagicLink(email: string) {
   if (!supabase) throw new Error("Supabase is not configured.");
   return supabase.auth.signInWithOtp({
     email: normalizeLoginEmail(email),
-    options: memberMagicLinkOptions(Capacitor.isNativePlatform() ? NATIVE_AUTH_REDIRECT : window.location.origin),
+    options: memberMagicLinkOptions(Capacitor.isNativePlatform() ? NATIVE_AUTH_EMAIL_REDIRECT : window.location.origin),
   });
 }
 
@@ -238,23 +244,35 @@ export async function initializeNativeAuth(onError: (message: string) => void = 
   if (!supabase || !Capacitor.isNativePlatform()) return () => undefined;
   const { App } = await import("@capacitor/app");
   const handledUrls = new Set<string>();
+  const pendingUrls = new Set<string>();
 
   const handleUrl = async (rawUrl?: string) => {
-    if (!rawUrl || handledUrls.has(rawUrl)) return;
+    if (!rawUrl || handledUrls.has(rawUrl) || pendingUrls.has(rawUrl)) return;
     const redirect = parseNativeAuthRedirect(rawUrl);
     if (!redirect) return;
-    handledUrls.add(rawUrl);
+    pendingUrls.add(rawUrl);
     if (redirect.error) {
+      pendingUrls.delete(rawUrl);
       onError(redirect.error);
       return;
     }
 
-    const { error } = redirect.code
-      ? await supabase.auth.exchangeCodeForSession(redirect.code)
-      : redirect.accessToken && redirect.refreshToken
-        ? await supabase.auth.setSession({ access_token: redirect.accessToken, refresh_token: redirect.refreshToken })
-        : { error: new Error("The sign-in link is incomplete.") };
-    if (error) onError(error.message || "The sign-in link could not be completed.");
+    try {
+      const { error } = redirect.code
+        ? await supabase.auth.exchangeCodeForSession(
+            redirect.code,
+            redirect.flowId ? { flowId: redirect.flowId } : undefined,
+          )
+        : redirect.accessToken && redirect.refreshToken
+          ? await supabase.auth.setSession({ access_token: redirect.accessToken, refresh_token: redirect.refreshToken })
+          : { error: new Error("The sign-in link is incomplete.") };
+      if (error) onError(error.message || "The sign-in link could not be completed.");
+      else handledUrls.add(rawUrl);
+    } catch (error) {
+      onError(error instanceof Error ? error.message : "The sign-in link could not be completed.");
+    } finally {
+      pendingUrls.delete(rawUrl);
+    }
   };
 
   const listener = await App.addListener("appUrlOpen", ({ url }) => { void handleUrl(url); });
