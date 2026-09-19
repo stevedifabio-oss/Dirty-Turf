@@ -81,6 +81,8 @@ check.
 
 - Unknown email receives the neutral response but cannot create an account.
 - Provisioned member receives one Magic Link and reaches the assigned course.
+- Android email opens the HTTPS handoff, its Open App action launches the Play
+  build, and the PKCE exchange finishes without returning to Welcome.
 - Expired and reused links fail without creating another account.
 - Academy, lesson progress, community, comments, events, and RSVPs persist.
 - The notification bell receives comments, replies, mentions, likes, new

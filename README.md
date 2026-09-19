@@ -124,14 +124,16 @@ VITE_STRIPE_ACADEMY_PAYMENT_LINK=https://buy.stripe.com/YOUR_PAYMENT_LINK
 
 The permanent web origin is `https://app.dirtyturf.com`. In **Supabase >
 Authentication > URL Configuration**, allow that origin, the Netlify pilot
-origin, localhost, and `com.dirtyturf.academy://auth/callback`. The custom
+origin, localhost, `https://app.dirtyturf.com/mobile-auth-callback.html`, and
+`com.dirtyturf.academy://auth/callback`. The custom
 domain now resolves through Cloudflare to Netlify with valid TLS. The Supabase
 Auth Site URL and Edge Function `APP_URL` are both set to
 `https://app.dirtyturf.com`, and Auth custom SMTP is configured with the
-client-owned Mailgun sender. Web links return to the production origin; iOS and
-Android links return directly to the installed app through the registered
-custom URL scheme. The app handles PKCE redirects from cold start and while it
-is already open.
+client-owned Mailgun sender. Web links return to the production origin. iOS and
+Android email links first reach the HTTPS callback page, whose explicit Open
+App action crosses browser restrictions into the registered custom URL scheme.
+The app handles the PKCE code and flow ID from cold start and while it is
+already open.
 
 Community email uses the same verified Mailgun domain through the
 `academy-notifications` Edge Function. It is separate from Supabase Auth SMTP:

@@ -43,6 +43,15 @@ h1 { max-width: 720px; margin: 0; font-size: clamp(2.15rem, 5vw, 4rem); line-hei
 .site-footer { background: var(--deep); color: #d8e6d9; }
 .footer-inner { display: flex; min-height: 104px; align-items: center; justify-content: space-between; gap: 20px; font-size: .78rem; }
 .footer-inner a { color: white; }
+.auth-callback-shell { display: grid; min-height: 100dvh; place-items: center; padding-top: 32px; padding-bottom: 32px; }
+.auth-callback-card { width: min(100%, 560px); padding: clamp(28px, 7vw, 54px); border: 1px solid var(--line); border-radius: 12px; background: white; box-shadow: 0 22px 60px rgba(8,43,25,.12); text-align: center; }
+.auth-callback-card > img { width: 112px; height: auto; margin-bottom: 24px; }
+.auth-callback-card h1 { font-size: clamp(2rem, 8vw, 3.5rem); }
+.auth-callback-card .lede { margin-right: auto; margin-left: auto; }
+.auth-callback-card [data-state="error"] { color: #9c2f16; }
+.auth-callback-button { width: 100%; margin-top: 24px; }
+.auth-callback-help { margin: 18px 0 0; color: var(--muted); font-size: .82rem; line-height: 1.55; }
+.auth-callback-support { display: inline-block; margin-top: 18px; font-size: .82rem; font-weight: 750; }
 
 @media (max-width: 700px) {
   .header-inner { min-height: 66px; }

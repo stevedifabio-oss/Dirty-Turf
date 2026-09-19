@@ -16,3 +16,6 @@ __pycache__/
 supabase/.temp/
 .DS_Store
 *.log
+
+# Local Netlify folder
+.netlify

@@ -5,12 +5,14 @@
 - Permanent web app: `https://app.dirtyturf.com`
 - Current pilot: `https://bright-brigadeiros-df8b48.netlify.app`
 - Legacy GHL Academy: `https://academy.dirtyturf.com`
-- Native callback: `com.dirtyturf.academy://auth/callback`
+- Native email bridge: `https://app.dirtyturf.com/mobile-auth-callback.html`
+- Installed-app callback: `com.dirtyturf.academy://auth/callback`
 
 Keep the GHL Academy live until the native import, representative member
 logins, billing, production smoke tests, and rollback checks pass. The web app
-and native apps share Supabase, but native Magic Links continue to use the
-custom callback rather than the web origin.
+and native apps share Supabase. Native Magic Links return to the HTTPS bridge,
+then an explicit Open App action launches the registered custom callback. This
+avoids email and embedded-browser blocks on automatic custom-scheme redirects.
 
 ## Current verified state
 
@@ -48,6 +50,7 @@ custom callback rather than the web origin.
    - `https://bright-brigadeiros-df8b48.netlify.app/**`
    - `http://localhost:5173/**`
    - `http://127.0.0.1:5173/**`
+   - `https://app.dirtyturf.com/mobile-auth-callback.html`
    - `com.dirtyturf.academy://auth/callback`
 4. Confirm Edge Function configuration:
    - `APP_URL=https://app.dirtyturf.com`

@@ -19,6 +19,8 @@ const pages = [
   ["/privacy.html", "Privacy policy", "text/html"],
   ["/support.html", "Academy support", "text/html"],
   ["/delete-account.html", "Delete your account", "text/html"],
+  ["/mobile-auth-callback.html", "Open Dirty Turf Academy", "text/html"],
+  ["/mobile-auth-callback.js", "buildNativeAuthUrl", "javascript"],
   ["/manifest.webmanifest", "Dirty Turf Academy", "application/manifest+json"],
   ["/sw.js", "CACHE_NAME", "javascript"],
 ];
