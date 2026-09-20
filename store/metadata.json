@@ -13,7 +13,8 @@
   },
   "release": {
     "versionName": "1.0",
-    "versionCode": 2,
+    "androidVersionCode": 2,
+    "iosBuildNumber": 3,
     "copyright": "2026 Dirty Turf LLC"
   },
   "urls": {

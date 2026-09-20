@@ -97,6 +97,9 @@ export type AdminReport = {
   reason: string;
   status: "open" | "reviewing" | "resolved" | "dismissed";
   createdAt: string;
+  targetTitle: string;
+  targetDetail: string;
+  targetRole: AdminMember["role"] | null;
 };
 
 export type CertificateTemplate = {
@@ -139,12 +142,11 @@ type AdminContext = {
   communityId: string;
   organizationId: string;
   communityName: string;
-  memberId: string;
 };
 
 export async function loadAdminSnapshot(): Promise<AdminSnapshot> {
   const context = await requireAdminContext();
-  const [courseResult, moduleResult, lessonResult, memberResult, inviteResult, enrollmentResult, progressResult, eventResult, rsvpResult, categoryResult, postResult, reportResult, templateResult, certificateResult, quizResult] = await Promise.all([
+  const [courseResult, moduleResult, lessonResult, memberResult, inviteResult, enrollmentResult, progressResult, eventResult, rsvpResult, categoryResult, postResult, commentResult, reportResult, templateResult, certificateResult, quizResult] = await Promise.all([
     supabase!.from("courses").select("id,title,description,category,instructor_name,access_type,required_level,price_cents,sort_order,status").eq("academy_community_id", context.communityId).order("sort_order"),
     supabase!.from("course_modules").select("id,course_id,title,group_title,sort_order,drip_after_days").order("sort_order"),
     supabase!.from("course_lessons").select("id,module_id,title,lesson_type,body,video_url,transcript,resources,duration_seconds,sort_order,status").order("sort_order"),
@@ -156,12 +158,13 @@ export async function loadAdminSnapshot(): Promise<AdminSnapshot> {
     supabase!.from("academy_member_event_rsvps").select("event_id"),
     supabase!.from("community_categories").select("id,name,color,sort_order,member_can_post").eq("academy_community_id", context.communityId).order("sort_order"),
     supabase!.from("community_posts").select("id,title,body,status,is_pinned,academy_author_id,category_id,created_at").eq("academy_community_id", context.communityId).order("created_at", { ascending: false }).limit(200),
+    supabase!.from("community_comments").select("id,body,academy_author_id").eq("academy_community_id", context.communityId).limit(500),
     supabase!.from("content_reports").select("id,content_type,content_id,reason,status,created_at").eq("organization_id", context.organizationId).order("created_at", { ascending: false }),
     supabase!.from("academy_certificate_templates").select("id,name,title,description,signatory_name,signatory_title,active").eq("academy_community_id", context.communityId).order("created_at"),
     supabase!.from("academy_certificates").select("id,academy_member_id,course_id,recipient_name,course_title,verification_code,status,issued_at").eq("academy_community_id", context.communityId).order("issued_at", { ascending: false }),
     supabase!.from("academy_quiz_attempts").select("id", { count: "exact", head: true }).eq("academy_community_id", context.communityId),
   ]);
-  throwFirstError([courseResult, moduleResult, lessonResult, memberResult, inviteResult, enrollmentResult, progressResult, eventResult, rsvpResult, categoryResult, postResult, reportResult, templateResult, certificateResult, quizResult]);
+  throwFirstError([courseResult, moduleResult, lessonResult, memberResult, inviteResult, enrollmentResult, progressResult, eventResult, rsvpResult, categoryResult, postResult, commentResult, reportResult, templateResult, certificateResult, quizResult]);
 
   const courseRows = courseResult.data ?? [];
   const courseIds = new Set(courseRows.map((row) => row.id));
@@ -240,6 +243,9 @@ export async function loadAdminSnapshot(): Promise<AdminSnapshot> {
     };
   });
   const memberName = new Map(members.map((member) => [member.id, member.displayName || "Academy member"]));
+  const memberById = new Map(members.map((member) => [member.id, member]));
+  const postById = new Map((postResult.data ?? []).map((post) => [post.id, post]));
+  const commentById = new Map((commentResult.data ?? []).map((comment) => [comment.id, comment]));
   const categoryName = new Map((categoryResult.data ?? []).map((category) => [category.id, category.name]));
   const rsvpCounts = new Map<string, number>();
   for (const row of rsvpResult.data ?? []) rsvpCounts.set(row.event_id, (rsvpCounts.get(row.event_id) ?? 0) + 1);
@@ -266,7 +272,22 @@ export async function loadAdminSnapshot(): Promise<AdminSnapshot> {
     })),
     categories: (categoryResult.data ?? []).map((row) => ({ id: row.id, name: row.name, color: row.color, sortOrder: Number(row.sort_order), memberCanPost: Boolean(row.member_can_post) })),
     posts: (postResult.data ?? []).map((row) => ({ id: row.id, title: row.title, body: row.body, status: row.status, isPinned: Boolean(row.is_pinned), authorName: memberName.get(row.academy_author_id) ?? "Academy member", categoryName: categoryName.get(row.category_id) ?? "General", createdAt: row.created_at })),
-    reports: (reportResult.data ?? []).map((row) => ({ id: row.id, contentType: row.content_type, contentId: row.content_id, reason: row.reason, status: row.status, createdAt: row.created_at })),
+    reports: (reportResult.data ?? []).map((row) => {
+      const post = row.content_type === "post" ? postById.get(row.content_id) : undefined;
+      const comment = row.content_type === "comment" ? commentById.get(row.content_id) : undefined;
+      const member = row.content_type === "member" ? memberById.get(row.content_id) : undefined;
+      return {
+        id: row.id,
+        contentType: row.content_type,
+        contentId: row.content_id,
+        reason: row.reason,
+        status: row.status,
+        createdAt: row.created_at,
+        targetTitle: post?.title ?? (comment ? `Comment by ${memberName.get(comment.academy_author_id) ?? "Academy member"}` : member?.displayName ?? "Reported content"),
+        targetDetail: post?.body ?? comment?.body ?? (member ? `${member.role} · ${member.companyName || member.location || "Academy member"}` : "The reported item is no longer available."),
+        targetRole: member?.role ?? null,
+      };
+    }),
     templates: (templateResult.data ?? []).map((row) => ({ id: row.id, name: row.name, title: row.title, description: row.description, signatoryName: row.signatory_name, signatoryTitle: row.signatory_title, active: Boolean(row.active) })),
     certificates: (certificateResult.data ?? []).map((row) => ({ id: row.id, memberId: row.academy_member_id, courseId: row.course_id, recipientName: row.recipient_name, courseTitle: row.course_title, verificationCode: row.verification_code, status: row.status, issuedAt: row.issued_at })),
     quizAttemptCount: quizResult.count ?? 0,
@@ -330,10 +351,16 @@ export async function saveAdminCategory(input: Partial<AdminCategory> & Pick<Adm
 }
 
 export async function moderateAdminPost(postId: string, changes: { status?: AdminStatus; isPinned?: boolean }) {
-  const values: Record<string, unknown> = {};
-  if (changes.status) values.status = changes.status;
-  if (changes.isPinned !== undefined) values.is_pinned = changes.isPinned;
-  const { error } = await supabase!.from("community_posts").update(values).eq("id", postId);
+  const { error } = await supabase!.rpc("admin_moderate_community_post", {
+    p_post_id: postId,
+    p_status: changes.status ?? null,
+    p_is_pinned: changes.isPinned ?? null,
+  });
+  if (error) throw error;
+}
+
+export async function removeAdminComment(commentId: string) {
+  const { error } = await supabase!.rpc("admin_remove_community_comment", { p_comment_id: commentId });
   if (error) throw error;
 }
 
@@ -345,26 +372,27 @@ export async function updateAdminReport(reportId: string, status: AdminReport["s
 
 export async function createAdminMember(input: { displayName: string; email: string; role: AdminMember["role"] }) {
   const context = await requireAdminContext();
-  const { data: member, error: memberError } = await supabase!.from("academy_members").insert({ academy_community_id: context.communityId, display_name: input.displayName.trim(), role: input.role, status: "active" }).select("id").single();
-  if (memberError) throw memberError;
-  const { error: inviteError } = await supabase!.from("academy_member_invites").insert({ academy_community_id: context.communityId, academy_member_id: member.id, email: input.email.trim().toLowerCase(), source_provider: "native" });
-  if (inviteError) {
-    await supabase!.from("academy_members").delete().eq("id", member.id);
-    throw inviteError;
-  }
-  return member.id;
+  const { data, error } = await supabase!.rpc("admin_create_academy_member", {
+    p_academy_community_id: context.communityId,
+    p_display_name: input.displayName.trim(),
+    p_email: input.email.trim().toLowerCase(),
+    p_role: input.role,
+  });
+  if (error) throw error;
+  return String(data);
 }
 
 export async function updateAdminMember(memberId: string, changes: Partial<Pick<AdminMember, "role" | "status" | "level" | "points" | "displayName" | "companyName" | "location">>) {
-  const values: Record<string, unknown> = {};
-  if (changes.role) values.role = changes.role;
-  if (changes.status) values.status = changes.status;
-  if (changes.level !== undefined) values.level = Math.max(1, changes.level);
-  if (changes.points !== undefined) values.points = Math.max(0, changes.points);
-  if (changes.displayName !== undefined) values.display_name = changes.displayName.trim();
-  if (changes.companyName !== undefined) values.company_name = changes.companyName.trim();
-  if (changes.location !== undefined) values.location = changes.location.trim();
-  const { error } = await supabase!.from("academy_members").update(values).eq("id", memberId);
+  const { error } = await supabase!.rpc("admin_update_academy_member", {
+    p_member_id: memberId,
+    p_role: changes.role ?? null,
+    p_status: changes.status ?? null,
+    p_level: changes.level ?? null,
+    p_points: changes.points ?? null,
+    p_display_name: changes.displayName ?? null,
+    p_company_name: changes.companyName ?? null,
+    p_location: changes.location ?? null,
+  });
   if (error) throw error;
 }
 
@@ -382,12 +410,17 @@ export async function setAdminMemberCourseAccess(memberId: string, courseId: str
 
 export async function saveCertificateTemplate(input: Partial<CertificateTemplate> & Pick<CertificateTemplate, "name">) {
   const context = await requireAdminContext();
-  const { data: user } = await supabase!.auth.getUser();
-  const values = { academy_community_id: context.communityId, name: input.name.trim(), title: input.title?.trim() || "Certificate of Completion", description: input.description?.trim() || "has successfully completed the course", signatory_name: input.signatoryName?.trim() || "Steve DiFabio", signatory_title: input.signatoryTitle?.trim() || "Dirty Turf Academy", active: input.active ?? true, created_by: user.user?.id ?? null };
-  const query = input.id ? supabase!.from("academy_certificate_templates").update(values).eq("id", input.id) : supabase!.from("academy_certificate_templates").insert(values);
-  const { data, error } = await query.select("id").single();
+  const { data, error } = await supabase!.rpc("admin_save_certificate_template", {
+    p_template_id: input.id ?? null,
+    p_academy_community_id: context.communityId,
+    p_name: input.name.trim(),
+    p_title: input.title?.trim() || "Certificate of Completion",
+    p_description: input.description?.trim() || "has successfully completed the course",
+    p_signatory_name: input.signatoryName?.trim() || "Steve DiFabio",
+    p_signatory_title: input.signatoryTitle?.trim() || "Dirty Turf Academy",
+  });
   if (error) throw error;
-  return data.id;
+  return String(data);
 }
 
 export async function issueAdminCertificate(memberId: string, courseId: string) {
@@ -408,7 +441,17 @@ export async function uploadAdminLessonAsset(file: File, courseId: string, lesso
   const { error: uploadError } = await supabase!.storage.from("academy-assets").upload(path, file, { contentType: file.type || undefined, upsert: false });
   if (uploadError) throw uploadError;
   const assetType = file.type.startsWith("video/") ? "video" : file.type.startsWith("audio/") ? "audio" : file.type.startsWith("image/") ? "image" : file.type === "application/pdf" ? "pdf" : "document";
-  const { error: assetError } = await supabase!.from("academy_assets").insert({ academy_community_id: context.communityId, course_id: courseId, lesson_id: lessonId, title: file.name, asset_type: assetType, storage_bucket: "academy-assets", storage_path: path, mime_type: file.type || null, byte_size: file.size, source_provider: "native" });
+  const { error: assetError } = await supabase!.rpc("admin_attach_academy_lesson_asset", {
+    p_academy_community_id: context.communityId,
+    p_course_id: courseId,
+    p_lesson_id: lessonId,
+    p_title: file.name,
+    p_asset_type: assetType,
+    p_storage_bucket: "academy-assets",
+    p_storage_path: path,
+    p_mime_type: file.type || "",
+    p_byte_size: file.size,
+  });
   if (assetError) {
     await supabase!.storage.from("academy-assets").remove([path]);
     throw assetError;
@@ -421,13 +464,11 @@ async function requireAdminContext(): Promise<AdminContext> {
   const { data: access, error: accessError } = await supabase.rpc("get_academy_access_state");
   if (accessError) throw accessError;
   if (!isRecord(access) || access.canManage !== true) throw new Error("Academy administrator access required.");
-  const { data: userData, error: userError } = await supabase.auth.getUser();
-  if (userError || !userData.user) throw userError || new Error("Sign in again.");
-  const { data: member, error: memberError } = await supabase.from("academy_members").select("id,academy_community_id").eq("user_id", userData.user.id).eq("status", "active").limit(1).single();
-  if (memberError) throw memberError;
-  const { data: community, error: communityError } = await supabase.from("academy_communities").select("id,name,owner_organization_id").eq("id", member.academy_community_id).single();
+  const communityId = typeof access.communityId === "string" ? access.communityId : "";
+  if (!communityId) throw new Error("Academy administrator community is not configured.");
+  const { data: community, error: communityError } = await supabase.from("academy_communities").select("id,name,owner_organization_id").eq("id", communityId).single();
   if (communityError || !community?.owner_organization_id) throw communityError || new Error("Academy organization is not configured.");
-  return { memberId: member.id, communityId: community.id, organizationId: community.owner_organization_id, communityName: community.name };
+  return { communityId: community.id, organizationId: community.owner_organization_id, communityName: community.name };
 }
 
 function throwFirstError(results: Array<{ error: unknown }>) {

@@ -4,6 +4,7 @@ output/deploy/
 output/private/
 output/ios-simulator/
 output/ios/
+.gstack/
 output/DerivedData/
 output/qa/
 output/release/

@@ -130,6 +130,10 @@ export type AcademyCertificate = {
   status: "active" | "revoked";
   issuedAt: string;
   expiresAt?: string;
+  certificateTitle: string;
+  certificateDescription: string;
+  signatoryName: string;
+  signatoryTitle: string;
 };
 
 export type AcademyEvent = {

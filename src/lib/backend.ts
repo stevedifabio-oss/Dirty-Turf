@@ -707,7 +707,7 @@ export async function loadCourses(seed: Course[]): Promise<Course[]> {
         completed: Boolean(progress.get(lesson.id)?.completed_at),
         body: normalizeLessonBody(lesson.body),
         bodyHtml: normalizeLessonHtml(lesson.body, signedLessonAssets.get(lesson.id)),
-        videoUrl: lesson.video_url ?? undefined,
+        videoUrl: lesson.video_url ? signedLessonAssets.get(lesson.id)?.get(lesson.video_url) ?? lesson.video_url : undefined,
         transcript: lesson.transcript ?? undefined,
         resources: normalizeResources(lesson.resources, signedLessonAssets.get(lesson.id)),
         quiz: normalizeQuiz(lesson.body),
@@ -796,20 +796,42 @@ export async function loadAcademyCertificates(): Promise<AcademyCertificate[]> {
   if (!context) return [];
   const { data, error } = await supabase!
     .from("academy_certificates")
-    .select("id,course_id,recipient_name,course_title,verification_code,status,issued_at,expires_at")
+    .select("id,course_id,recipient_name,course_title,verification_code,status,issued_at,expires_at,metadata")
     .eq("academy_member_id", context.memberId)
     .order("issued_at", { ascending: false });
   if (error) throw error;
-  return (data ?? []).map((row) => ({
-    id: row.id,
-    courseId: row.course_id,
-    recipientName: row.recipient_name,
-    courseTitle: row.course_title,
-    verificationCode: row.verification_code,
-    status: row.status,
-    issuedAt: row.issued_at,
-    expiresAt: row.expires_at ?? undefined,
-  }));
+  return (data ?? []).map((row) => {
+    const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? row.metadata as Record<string, unknown> : {};
+    return {
+      id: row.id,
+      courseId: row.course_id,
+      recipientName: row.recipient_name,
+      courseTitle: row.course_title,
+      verificationCode: row.verification_code,
+      status: row.status,
+      issuedAt: row.issued_at,
+      expiresAt: row.expires_at ?? undefined,
+      certificateTitle: typeof metadata.certificateTitle === "string" ? metadata.certificateTitle : "Certificate of Completion",
+      certificateDescription: typeof metadata.certificateDescription === "string" ? metadata.certificateDescription : "has successfully completed the course",
+      signatoryName: typeof metadata.signatoryName === "string" ? metadata.signatoryName : "Steve DiFabio",
+      signatoryTitle: typeof metadata.signatoryTitle === "string" ? metadata.signatoryTitle : "Dirty Turf Academy",
+    };
+  });
+}
+
+export async function verifyAcademyCertificate(verificationCode: string) {
+  if (!supabase) throw new Error("Certificate verification is unavailable.");
+  const { data, error } = await supabase.rpc("verify_academy_certificate", { p_verification_code: verificationCode });
+  if (error) throw error;
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const value = data as Record<string, unknown>;
+  return {
+    valid: value.valid === true,
+    recipientName: typeof value.recipientName === "string" ? value.recipientName : "Academy member",
+    courseTitle: typeof value.courseTitle === "string" ? value.courseTitle : "Academy course",
+    issuedAt: typeof value.issuedAt === "string" ? value.issuedAt : "",
+    status: typeof value.status === "string" ? value.status : "unknown",
+  };
 }
 
 export async function requestAcademyCertificate(courseId: string) {
@@ -1170,7 +1192,11 @@ function normalizeQuiz(value: unknown): LessonQuiz | undefined {
 
     const explanation = richTextValue(question.explanation);
     const normalizedExplanation = normalizeAnswerText(explanation.text);
-    const correctOptionIndex = normalizedExplanation
+    const storedCorrectIndex = typeof question.correctOptionIndex === "number" && Number.isInteger(question.correctOptionIndex)
+      && question.correctOptionIndex >= 0 && question.correctOptionIndex < options.length
+      ? question.correctOptionIndex
+      : undefined;
+    const legacyExplanationIndex = normalizedExplanation
       ? options.findIndex((option) => normalizeAnswerText(option.text) === normalizedExplanation)
       : -1;
     return [{
@@ -1179,7 +1205,7 @@ function normalizeQuiz(value: unknown): LessonQuiz | undefined {
       options,
       explanation: explanation.text || undefined,
       explanationHtml: explanation.html || undefined,
-      correctOptionIndex: correctOptionIndex >= 0 ? correctOptionIndex : undefined,
+      correctOptionIndex: storedCorrectIndex ?? (legacyExplanationIndex >= 0 ? legacyExplanationIndex : undefined),
     }];
   });
   if (!questions.length) return undefined;

@@ -72,6 +72,7 @@ import {
   togglePostBookmark,
   togglePostReaction,
   toggleAcademyMemberBlock,
+  verifyAcademyCertificate,
   type DataMode,
   type WorkspaceAccessState,
   webBillingAvailable,
@@ -99,6 +100,8 @@ const AdminStudio = lazy(() =>
 );
 
 type View = "home" | "learn" | "community" | "events" | "admin";
+
+type PublicCertificateResult = Awaited<ReturnType<typeof verifyAcademyCertificate>>;
 
 const initialJobs: Job[] = [
   { id: 1, address: "Mesa backyard", area: 684, infill: 5, infillPounds: 171, bags50: 4, infillRate: 0.25, serviceRate: 0.72, quote: 492.48, status: "Calculated", method: "camera", createdAt: "Today", photos: 4 },
@@ -134,6 +137,20 @@ function initialViewFromUrl(): View {
 function initialHubSectionFromUrl(): HubSection | null {
   const requested = new URLSearchParams(window.location.search).get("panel");
   return requested === "settings" || requested === "access" || requested === "notifications" ? requested : null;
+}
+
+function CertificateVerificationPage({ code }: { code: string }) {
+  const [result, setResult] = useState<PublicCertificateResult | undefined>();
+  useEffect(() => {
+    let active = true;
+    void verifyAcademyCertificate(code).then((value) => { if (active) setResult(value); }).catch(() => { if (active) setResult(null); });
+    return () => { active = false; };
+  }, [code]);
+  return <main className="certificate-verification-page"><section>
+    <img src="/dirty-turf-logo.png" alt="Dirty Turf Academy" />
+    {result === undefined ? <><ShieldCheck size={34} /><h1>Verifying certificate…</h1><p>Checking the Academy’s secure certificate record.</p></> : result ? <><CheckCircle2 size={38} className={result.valid ? "valid" : "invalid"} /><h1>{result.valid ? "Certificate verified" : "Certificate is not active"}</h1><p><strong>{result.recipientName}</strong> completed <strong>{result.courseTitle}</strong>.</p><span>Issued {result.issuedAt ? new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(new Date(result.issuedAt)) : "date unavailable"} · Status: {result.status}</span></> : <><LockKeyhole size={38} className="invalid" /><h1>Certificate not found</h1><p>This verification code does not match a Dirty Turf Academy certificate.</p></>}
+    <a href="/">Open Dirty Turf Academy</a>
+  </section></main>;
 }
 
 function App() {
@@ -187,7 +204,7 @@ function App() {
           setCertificates([]);
           return;
         }
-        const [loadedJobs, loadedCourses, loadedPosts, loadedComments, loadedEvents, loadedMembers, loadedNotifications, loadedCertificates] = await Promise.all([
+        const results = await Promise.allSettled([
           loadJobs(initialJobs),
           loadCourses(seedCourses),
           loadPosts(initialPosts),
@@ -196,16 +213,18 @@ function App() {
           loadMembers(initialMembers),
           loadNotifications(initialNotifications),
           loadAcademyCertificates(),
-        ]);
+        ] as const);
         if (!mounted || activeRefresh !== refreshId) return;
-        setJobs(loadedJobs);
-        setCourses(loadedCourses);
-        setPosts(loadedPosts);
-        setComments(loadedComments);
-        setEvents(loadedEvents);
-        setMembers(loadedMembers);
-        setNotifications(loadedNotifications);
-        setCertificates(loadedCertificates);
+        const [jobsResult, coursesResult, postsResult, commentsResult, eventsResult, membersResult, notificationsResult, certificatesResult] = results;
+        if (jobsResult.status === "fulfilled") setJobs(jobsResult.value);
+        if (coursesResult.status === "fulfilled") setCourses(coursesResult.value);
+        if (postsResult.status === "fulfilled") setPosts(postsResult.value);
+        if (commentsResult.status === "fulfilled") setComments(commentsResult.value);
+        if (eventsResult.status === "fulfilled") setEvents(eventsResult.value);
+        if (membersResult.status === "fulfilled") setMembers(membersResult.value);
+        if (notificationsResult.status === "fulfilled") setNotifications(notificationsResult.value);
+        if (certificatesResult.status === "fulfilled") setCertificates(certificatesResult.value);
+        if (results.some((result) => result.status === "rejected")) setToast("Some Academy content could not load. Your access is still active; try refreshing.");
       } catch {
         if (mounted && activeRefresh === refreshId) {
           setWorkspaceAccess(supabase ? { status: "no_access" } : { status: "preview" });
@@ -703,7 +722,8 @@ function formatPhotoDate(value: string) { const date = new Date(value); return N
 const rootElement = document.getElementById("root")!;
 const appWindow = window as Window & { __dirtyTurfRoot?: ReturnType<typeof createRoot> };
 appWindow.__dirtyTurfRoot ??= createRoot(rootElement);
-appWindow.__dirtyTurfRoot.render(<AppErrorBoundary><App /></AppErrorBoundary>);
+const publicCertificateCode = new URLSearchParams(window.location.search).get("certificate");
+appWindow.__dirtyTurfRoot.render(<AppErrorBoundary>{publicCertificateCode ? <CertificateVerificationPage code={publicCertificateCode} /> : <App />}</AppErrorBoundary>);
 
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {

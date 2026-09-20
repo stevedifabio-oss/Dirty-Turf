@@ -196,6 +196,7 @@ function QuizLesson({ quiz, onSubmit }: { quiz: LessonQuiz; onSubmit: (scorePerc
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ passed: boolean; requiredScore: number } | null>(null);
+  const [submitError, setSubmitError] = useState("");
   const answerKeyCount = quiz.questions.filter((question) => question.correctOptionIndex !== undefined).length;
   const correctCount = quiz.questions.filter((question, index) => question.correctOptionIndex !== undefined && answers[index] === question.correctOptionIndex).length;
   const allAnswered = quiz.questions.every((_, index) => answers[index] !== undefined);
@@ -210,14 +211,18 @@ function QuizLesson({ quiz, onSubmit }: { quiz: LessonQuiz; onSubmit: (scorePerc
     setAnswers({});
     setSubmitted(false);
     setResult(null);
+    setSubmitError("");
   };
 
   const submit = async () => {
     setSubmitting(true);
+    setSubmitError("");
     try {
       const outcome = await onSubmit(score ?? 0, quiz.questions.map((_, index) => answers[index]));
       setResult(outcome);
       setSubmitted(true);
+    } catch (error) {
+      setSubmitError(error instanceof Error && error.message ? error.message : "Your answers could not be saved. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -249,6 +254,7 @@ function QuizLesson({ quiz, onSubmit }: { quiz: LessonQuiz; onSubmit: (scorePerc
           {submitted && (question.explanation || question.explanationHtml) && <div className="quiz-explanation"><strong>{hasAnswerKey ? "Answer" : "Review note"}</strong><SafeRichText html={question.explanationHtml} fallback={question.explanation} /></div>}
         </fieldset>;
       })}
+      {submitError && <p className="quiz-submit-error" role="alert">{submitError}</p>}
       {!submitted ? <button type="button" className="primary-button wide quiz-submit" disabled={!allAnswered || submitting} onClick={() => void submit()}><CheckCircle2 size={18} /> {submitting ? "Saving attempt..." : "Submit answers"}</button> : <div className={result?.passed ? "quiz-result passed" : "quiz-result"} aria-live="polite">
         <div><span>{result?.passed ? `Passed · ${score ?? 0}%` : score === null ? "Responses reviewed" : `${score}% · ${result?.requiredScore ?? quiz.passingPercent ?? 0}% required`}</span><small>{answerKeyCount < quiz.questions.length ? `${answerKeyCount} of ${quiz.questions.length} captured questions include a verifiable answer key.` : `${correctCount} of ${answerKeyCount} correct.`}</small></div>
         <button type="button" className="icon-button" onClick={retry} aria-label="Retry quiz"><RotateCcw size={18} /></button>
@@ -261,12 +267,14 @@ function CertificateCard({ certificate }: { certificate: AcademyCertificate }) {
   return <section className="academy-certificate" aria-label={`Certificate for ${certificate.courseTitle}`}>
     <div className="certificate-seal"><BadgeCheck size={28} /></div>
     <p>Dirty Turf Academy</p>
-    <h3>Certificate of Completion</h3>
+    <h3>{certificate.certificateTitle}</h3>
     <span>This certifies that</span>
     <strong>{certificate.recipientName}</strong>
-    <span>successfully completed</span>
+    <span>{certificate.certificateDescription}</span>
     <h4>{certificate.courseTitle}</h4>
-    <small>Issued {new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(new Date(certificate.issuedAt))} · Verify {certificate.verificationCode}</small>
+    <div className="certificate-signature"><strong>{certificate.signatoryName}</strong><span>{certificate.signatoryTitle}</span></div>
+    <small>Issued {new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(new Date(certificate.issuedAt))} · {certificate.verificationCode}</small>
+    <a className="certificate-verify-link" href={`https://app.dirtyturf.com/?certificate=${encodeURIComponent(certificate.verificationCode)}`} target="_blank" rel="noreferrer">Verify certificate</a>
     <button className="secondary-button" onClick={() => window.print()}><Printer size={16} /> Print or save PDF</button>
   </section>;
 }
