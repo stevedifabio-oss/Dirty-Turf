@@ -1,6 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { AcademyEvent, AppNotification, CommunityComment, CommunityPost, Course, Job, LessonQuiz, Member, NotificationPreferences } from "../domain";
+import type { AcademyCertificate, AcademyEvent, AppNotification, CommunityComment, CommunityPost, Course, Job, LessonQuiz, Member, NotificationPreferences } from "../domain";
 import { NATIVE_AUTH_EMAIL_REDIRECT, parseNativeAuthRedirect } from "./authRedirect";
 import { communityMediaStoragePaths, normalizeCommunityMediaItems } from "./communityMedia";
 import { cleanCommunityPostBody } from "./communityPost";
@@ -513,7 +513,7 @@ export async function loadPosts(seed: CommunityPost[]): Promise<CommunityPost[]>
 
   const { data, error } = await supabase!
     .from("community_feed")
-    .select("id,academy_community_id,title,body,author_name,reply_count,created_at,category_name,is_pinned,media,like_count")
+    .select("id,academy_community_id,title,body,author_name,reply_count,created_at,category_name,is_pinned,media,like_count,academy_author_id")
     .eq("academy_community_id", context.communityId)
     .order("created_at", { ascending: false })
     .limit(50);
@@ -547,6 +547,7 @@ export async function loadPosts(seed: CommunityPost[]): Promise<CommunityPost[]>
       cloudId: row.id,
       name: row.title,
       author: row.author_name,
+      authorCloudId: row.academy_author_id ?? undefined,
       body: cleanCommunityPostBody(row.body, row.title) || row.title,
       replies: Number(row.reply_count),
       age: relativeDate(row.created_at),
@@ -586,7 +587,7 @@ export async function loadComments(seed: CommunityComment[]): Promise<CommunityC
 
   const { data, error } = await supabase!
     .from("academy_comment_feed")
-    .select("id,post_id,parent_id,author_name,body,created_at,like_count,is_answer")
+    .select("id,post_id,parent_id,author_name,body,created_at,like_count,is_answer,academy_author_id")
     .eq("academy_community_id", context.communityId)
     .order("created_at", { ascending: true })
     .limit(500);
@@ -610,6 +611,7 @@ export async function loadComments(seed: CommunityComment[]): Promise<CommunityC
     parentId: row.parent_id ? stableNumericId(row.parent_id) : undefined,
     parentCloudId: row.parent_id ?? undefined,
     author: row.author_name,
+    authorCloudId: row.academy_author_id ?? undefined,
     body: row.body,
     age: relativeDate(row.created_at),
     likes: Number(row.like_count),
@@ -771,6 +773,52 @@ export async function saveLessonCompletion(lessonCloudId: string, completed: boo
     p_completed: completed,
   });
   if (error) throw error;
+}
+
+export async function recordAcademyQuizAttempt(lessonCloudId: string, scorePercent: number, answers: number[]) {
+  const context = await getAcademyContext();
+  if (!context) throw new Error("Academy membership is required.");
+  const { data, error } = await supabase!.rpc("record_academy_quiz_attempt", {
+    p_lesson_id: lessonCloudId,
+    p_score_percent: scorePercent,
+    p_answers: answers,
+  });
+  if (error) throw error;
+  const result = data && typeof data === "object" ? data as Record<string, unknown> : {};
+  return {
+    passed: result.passed === true,
+    requiredScore: Number(result.requiredScore ?? 0),
+  };
+}
+
+export async function loadAcademyCertificates(): Promise<AcademyCertificate[]> {
+  const context = await getAcademyContext();
+  if (!context) return [];
+  const { data, error } = await supabase!
+    .from("academy_certificates")
+    .select("id,course_id,recipient_name,course_title,verification_code,status,issued_at,expires_at")
+    .eq("academy_member_id", context.memberId)
+    .order("issued_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    courseId: row.course_id,
+    recipientName: row.recipient_name,
+    courseTitle: row.course_title,
+    verificationCode: row.verification_code,
+    status: row.status,
+    issuedAt: row.issued_at,
+    expiresAt: row.expires_at ?? undefined,
+  }));
+}
+
+export async function requestAcademyCertificate(courseId: string) {
+  const context = await getAcademyContext();
+  if (!context) throw new Error("Academy membership is required.");
+  const { data, error } = await supabase!.rpc("issue_my_academy_certificate", { p_course_id: courseId });
+  if (error) throw error;
+  if (!data) throw new Error("Complete every published lesson before requesting the certificate.");
+  return String(data);
 }
 
 export async function loadMembers(seed: Member[]): Promise<Member[]> {
@@ -941,6 +989,26 @@ export async function togglePostBookmark(cloudPostId: string) {
   const context = await getAcademyContext();
   if (!context) return null;
   const { data, error } = await supabase!.rpc("toggle_academy_post_bookmark", { p_post_id: cloudPostId });
+  if (error) throw error;
+  return Boolean(data);
+}
+
+export async function reportAcademyContent(contentType: "post" | "comment" | "member", contentId: string, reason: string) {
+  const context = await getAcademyContext();
+  if (!context) throw new Error("Academy membership is required.");
+  const { data, error } = await supabase!.rpc("report_academy_content", {
+    p_content_type: contentType,
+    p_content_id: contentId,
+    p_reason: reason,
+  });
+  if (error) throw error;
+  return String(data);
+}
+
+export async function toggleAcademyMemberBlock(memberId: string) {
+  const context = await getAcademyContext();
+  if (!context) throw new Error("Academy membership is required.");
+  const { data, error } = await supabase!.rpc("toggle_academy_member_block", { p_member_id: memberId });
   if (error) throw error;
   return Boolean(data);
 }

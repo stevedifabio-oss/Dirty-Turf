@@ -91,7 +91,7 @@ check(androidGradle.includes(`versionCode ${release.versionCode}`), "Android ver
 check(androidGradle.includes(`versionName "${release.versionName}"`), "Android version name does not match store metadata");
 check(iosProject.includes(`PRODUCT_BUNDLE_IDENTIFIER = ${identity.bundleId};`), "iOS bundle ID does not match store metadata");
 check(iosProject.includes(`MARKETING_VERSION = ${release.versionName};`), "iOS marketing version does not match store metadata");
-check(iosProject.includes("CURRENT_PROJECT_VERSION = 1;"), "iOS build number does not match store metadata");
+check(iosProject.includes(`CURRENT_PROJECT_VERSION = ${release.versionCode};`), "iOS build number does not match store metadata");
 check(iosInfo.includes(`<string>${identity.name}</string>`), "iOS display name does not match store metadata");
 check(iosInfo.includes("NSCameraUsageDescription"), "iOS camera usage description is missing");
 check(iosInfo.includes("NSLocationWhenInUseUsageDescription"), "iOS location usage description is missing");

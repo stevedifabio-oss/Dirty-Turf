@@ -28,6 +28,7 @@ const foreignKeyPathSql = migration("20260918172137_cover_remaining_foreign_keys
 const academyStorageManagerSql = migration("20260918173500_allow_academy_managers_to_read_storage.sql");
 const academyStoragePathSql = migration("20260918174000_fix_academy_storage_admin_paths.sql");
 const mapGeocodeSql = migration("20260918191038_map_geocoding_guardrails.sql");
+const academyAdminSql = migration("20260920113000_academy_admin_and_certificates.sql");
 
 requireFragments(academySql, "schema", [
   "create table public.academy_communities",
@@ -189,6 +190,24 @@ requireFragments(mapGeocodeSql, "map geocoding guardrails", [
   "alter table public.map_geocode_request_slots enable row level security",
   "revoke all on table public.map_geocode_cache from public, anon, authenticated",
   "grant select, insert, update, delete on table public.map_geocode_cache to service_role",
+]);
+
+requireFragments(academyAdminSql, "Academy administration and certificates", [
+  "create table public.academy_quiz_attempts",
+  "create table public.academy_certificate_templates",
+  "create table public.academy_certificates",
+  "create table public.academy_member_blocks",
+  "Only Academy administrators can post in this category",
+  "revoke insert on public.academy_quiz_attempts from authenticated",
+  "Quiz score does not match the submitted answers",
+  "Pass the quiz before completing this lesson",
+  "create or replace function public.report_academy_content",
+  "create or replace function public.toggle_academy_member_block",
+  "create or replace function public.admin_set_member_course_access",
+  "create or replace function public.admin_issue_academy_certificate",
+  "create or replace function public.verify_academy_certificate",
+  "revoke all on function private.issue_academy_certificate",
+  "grant execute on function public.report_academy_content",
 ]);
 
 requireFragments(allSql, "security hardening", [

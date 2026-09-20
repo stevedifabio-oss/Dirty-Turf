@@ -33,17 +33,18 @@ import {
   Search,
   Send,
   Settings2,
+  ShieldCheck,
   Smartphone,
   Users,
-  Wrench,
   X,
 } from "lucide-react";
-import type { AcademyEvent, AppNotification, CommunityComment, CommunityPost, Course, Job, MeasurementMode, QuoteDraft, QuoteTotals, Member } from "./domain";
+import type { AcademyCertificate, AcademyEvent, AppNotification, CommunityComment, CommunityPost, Course, Job, MeasurementMode, QuoteDraft, QuoteTotals, Member } from "./domain";
 import {
   claimAcademyMemberships,
   getDataMode,
   getWorkspaceAccessState,
   initializeNativeAuth,
+  loadAcademyCertificates,
   loadComments,
   loadCourses,
   loadEvents,
@@ -53,7 +54,10 @@ import {
   loadPosts,
   markAllNotificationsRead,
   markNotificationRead,
+  recordAcademyQuizAttempt,
+  requestAcademyCertificate,
   requestMagicLink,
+  reportAcademyContent,
   openAcademyBillingPortal,
   saveComment,
   saveJob,
@@ -67,6 +71,7 @@ import {
   toggleCommentReaction,
   togglePostBookmark,
   togglePostReaction,
+  toggleAcademyMemberBlock,
   type DataMode,
   type WorkspaceAccessState,
   webBillingAvailable,
@@ -89,8 +94,11 @@ const MapMeasurement = lazy(() =>
 const HubSheet = lazy(() =>
   import("./components/Network").then((module) => ({ default: module.HubSheet })),
 );
+const AdminStudio = lazy(() =>
+  import("./components/AdminStudio").then((module) => ({ default: module.AdminStudio })),
+);
 
-type View = "home" | "learn" | "community" | "events" | "tools";
+type View = "home" | "learn" | "community" | "events" | "admin";
 
 const initialJobs: Job[] = [
   { id: 1, address: "Mesa backyard", area: 684, infill: 5, infillPounds: 171, bags50: 4, infillRate: 0.25, serviceRate: 0.72, quote: 492.48, status: "Calculated", method: "camera", createdAt: "Today", photos: 4 },
@@ -112,13 +120,14 @@ const defaultDraft: QuoteDraft = {
 const navTitles: Record<View, string> = {
   home: "Dashboard",
   learn: "Academy",
-  community: "Community",
-  events: "Live calendar",
-  tools: "Operator tools",
+  community: "Academy",
+  events: "Academy",
+  admin: "Admin Studio",
 };
 
 function initialViewFromUrl(): View {
   const requested = new URLSearchParams(window.location.search).get("view");
+  if (requested === "tools") return "home";
   return requested && requested in navTitles ? requested as View : "home";
 }
 
@@ -144,11 +153,14 @@ function App() {
   const [events, setEvents] = useState<AcademyEvent[]>(initialEvents);
   const [members, setMembers] = useState<Member[]>(initialMembers);
   const [notifications, setNotifications] = useState<AppNotification[]>(initialNotifications);
+  const [certificates, setCertificates] = useState<AcademyCertificate[]>([]);
   const [requestedPostCloudId, setRequestedPostCloudId] = useState(() => new URLSearchParams(window.location.search).get("post") ?? undefined);
   const [dataMode, setDataMode] = useState<DataMode>("device");
   const [workspaceAccess, setWorkspaceAccess] = useState<
     WorkspaceAccessState | { status: "loading" }
   >({ status: "loading" });
+  const [workspaceRefreshToken, setWorkspaceRefreshToken] = useState(0);
+  const canManage = workspaceAccess.status === "member" && workspaceAccess.canManage;
 
   useEffect(() => {
     let mounted = true;
@@ -172,9 +184,10 @@ function App() {
           setEvents([]);
           setMembers([]);
           setNotifications([]);
+          setCertificates([]);
           return;
         }
-        const [loadedJobs, loadedCourses, loadedPosts, loadedComments, loadedEvents, loadedMembers, loadedNotifications] = await Promise.all([
+        const [loadedJobs, loadedCourses, loadedPosts, loadedComments, loadedEvents, loadedMembers, loadedNotifications, loadedCertificates] = await Promise.all([
           loadJobs(initialJobs),
           loadCourses(seedCourses),
           loadPosts(initialPosts),
@@ -182,6 +195,7 @@ function App() {
           loadEvents(initialEvents),
           loadMembers(initialMembers),
           loadNotifications(initialNotifications),
+          loadAcademyCertificates(),
         ]);
         if (!mounted || activeRefresh !== refreshId) return;
         setJobs(loadedJobs);
@@ -191,6 +205,7 @@ function App() {
         setEvents(loadedEvents);
         setMembers(loadedMembers);
         setNotifications(loadedNotifications);
+        setCertificates(loadedCertificates);
       } catch {
         if (mounted && activeRefresh === refreshId) {
           setWorkspaceAccess(supabase ? { status: "no_access" } : { status: "preview" });
@@ -221,7 +236,7 @@ function App() {
       disposeNativeAuth();
       disposeNotifications();
     };
-  }, []);
+  }, [workspaceRefreshToken]);
 
   useEffect(() => {
     if (!toast || ["loading", "signed_out", "no_access"].includes(workspaceAccess.status)) return;
@@ -229,9 +244,20 @@ function App() {
     return () => window.clearTimeout(timer);
   }, [toast, workspaceAccess.status]);
 
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("view", activeView);
+    if (activeView !== "community") url.searchParams.delete("post");
+    window.history.replaceState(window.history.state, "", url);
+  }, [activeView]);
+
   useEffect(() => () => {
     if (photoUrl) URL.revokeObjectURL(photoUrl);
   }, [photoUrl]);
+
+  useEffect(() => {
+    if (activeView === "admin" && workspaceAccess.status !== "loading" && !canManage) setActiveView("learn");
+  }, [activeView, canManage, workspaceAccess.status]);
 
   const quote = calculateQuote(draft);
 
@@ -357,24 +383,20 @@ function App() {
   }
 
   return (
-    <main className={activeView === "community" ? "app-shell community-focus" : "app-shell"}>
+    <main className="app-shell">
       <aside className="desktop-sidebar" aria-label="Workspace navigation">
         <div className="desktop-brand">
           <img src="/dirty-turf-logo.png" alt="Dirty Turf" />
-          <div><strong>Dirty Turf</strong><span>Academy & field tools</span></div>
         </div>
         <button className="desktop-new-calculation" onClick={() => openQuote("manual")} aria-label="New calculation" title="New calculation"><Plus size={18} /><span>New calculation</span></button>
         <nav className="desktop-nav" aria-label="App sections">
           <DesktopNavItem icon={<Home size={19} />} label="Dashboard" active={activeView === "home"} onClick={() => changeView("home")} />
-          <DesktopNavItem icon={<BookOpen size={19} />} label="Academy" active={activeView === "learn"} onClick={() => changeView("learn")} />
-          <DesktopNavItem icon={<Users size={19} />} label="Community" active={activeView === "community"} onClick={() => changeView("community")} />
-          <DesktopNavItem icon={<CalendarDays size={19} />} label="Events" active={activeView === "events"} onClick={() => changeView("events")} />
-          <DesktopNavItem icon={<Wrench size={19} />} label="Field tools" active={activeView === "tools"} onClick={() => changeView("tools")} />
+          <DesktopNavItem icon={<BookOpen size={19} />} label="Academy" active={["learn", "community", "events"].includes(activeView)} onClick={() => changeView("learn")} />
+          {canManage && <DesktopNavItem icon={<ShieldCheck size={19} />} label="Admin Studio" active={activeView === "admin"} onClick={() => changeView("admin")} />}
         </nav>
         <div className="desktop-sidebar-footer">
           <button className={`desktop-workspace-status ${dataMode}`} onClick={() => setHubSection(dataMode === "cloud" ? "settings" : "access")} aria-label={dataMode === "cloud" ? "Workspace synced" : "Device preview"} title={dataMode === "cloud" ? "Workspace synced" : "Device preview"}>
             <span />
-            <div><strong>{dataMode === "cloud" ? "Workspace synced" : "Device preview"}</strong><small>{dataMode === "cloud" ? "Cloud data is current" : "Review without an account"}</small></div>
           </button>
           <button className="desktop-settings" onClick={() => setHubSection("settings")} aria-label="Workspace settings" title="Workspace settings"><Settings2 size={18} /><span>Workspace settings</span></button>
         </div>
@@ -389,23 +411,21 @@ function App() {
           <div className="topbar-actions">
             <button className="icon-button notification-button" aria-label={`Open notifications${unreadNotifications ? `, ${unreadNotifications} unread` : ""}`} onClick={() => setHubSection("notifications")}><Bell size={18} />{unreadNotifications > 0 && <span>{Math.min(unreadNotifications, 99)}</span>}</button>
             <button className={searchOpen ? "icon-button active" : "icon-button"} aria-label={searchOpen ? "Close search" : "Search"} onClick={() => setSearchOpen((open) => !open)}>{searchOpen ? <X size={19} /> : <Search size={19} />}</button>
-            <button className="profile-button" aria-label="Open workspace menu" onClick={() => setHubSection("settings")}>DT</button>
           </div>
         </header>
 
         {searchOpen && <SearchPanel query={query} setQuery={setQuery} jobs={jobs} onOpenJob={() => openQuote("manual")} onNavigate={changeView} />}
-        {!searchOpen && activeView === "home" && <HomeView jobs={jobs} openQuote={openQuote} changeView={changeView} />}
-        {!searchOpen && activeView === "tools" && <ToolsView draft={draft} quote={quote} openQuote={openQuote} setToast={setToast} />}
-        {!searchOpen && activeView === "learn" && <AcademyView courses={courses} dataMode={dataMode} onCoursesChange={setCourses} onLessonCompletion={saveLessonCompletion} onToast={setToast} onDiscuss={() => changeView("community")} />}
-        {!searchOpen && activeView === "community" && <CommunityView posts={posts} comments={comments} members={members} events={events} requestedPostCloudId={requestedPostCloudId} onRequestedPostOpened={() => setRequestedPostCloudId(undefined)} onPostsChange={setPosts} onCommentsChange={setComments} onCreatePost={savePost} onCreateComment={saveComment} onToggleLike={(post) => post.cloudId ? togglePostReaction(post.cloudId) : Promise.resolve(null)} onToggleCommentLike={(comment) => comment.cloudId ? toggleCommentReaction(comment.cloudId) : Promise.resolve(null)} onToggleBookmark={(post) => post.cloudId ? togglePostBookmark(post.cloudId) : Promise.resolve(null)} onNavigate={changeView} onToast={setToast} />}
+        {!searchOpen && activeView !== "home" && <AcademyTabs activeView={activeView} canManage={canManage} onNavigate={changeView} />}
+        {!searchOpen && activeView === "home" && <HomeView jobs={jobs} openQuote={openQuote} setToast={setToast} />}
+        {!searchOpen && activeView === "learn" && <AcademyView courses={courses} certificates={certificates} dataMode={dataMode} onCoursesChange={setCourses} onLessonCompletion={saveLessonCompletion} onQuizAttempt={recordAcademyQuizAttempt} onRequestCertificate={async (courseId) => { await requestAcademyCertificate(courseId); setCertificates(await loadAcademyCertificates()); }} onToast={setToast} onDiscuss={() => changeView("community")} />}
+        {!searchOpen && activeView === "community" && <CommunityView posts={posts} comments={comments} members={members} events={events} requestedPostCloudId={requestedPostCloudId} onRequestedPostOpened={() => setRequestedPostCloudId(undefined)} onPostsChange={setPosts} onCommentsChange={setComments} onCreatePost={savePost} onCreateComment={saveComment} onToggleLike={(post) => post.cloudId ? togglePostReaction(post.cloudId) : Promise.resolve(null)} onToggleCommentLike={(comment) => comment.cloudId ? toggleCommentReaction(comment.cloudId) : Promise.resolve(null)} onToggleBookmark={(post) => post.cloudId ? togglePostBookmark(post.cloudId) : Promise.resolve(null)} onReport={(post, reason) => post.cloudId ? reportAcademyContent("post", post.cloudId, reason).then(() => undefined) : Promise.resolve()} onBlockMember={toggleAcademyMemberBlock} onNavigate={changeView} onToast={setToast} />}
         {!searchOpen && activeView === "events" && <EventsView events={events} onEventsChange={setEvents} onToggleRsvp={(event) => event.cloudId ? toggleAcademyEventRsvp(event.cloudId) : Promise.resolve(null)} onToast={setToast} />}
+        {!searchOpen && activeView === "admin" && canManage && <Suspense fallback={<div className="admin-loading" role="status">Loading Admin Studio...</div>}><AdminStudio onToast={setToast} onContentChange={() => setWorkspaceRefreshToken((token) => token + 1)} /></Suspense>}
 
         <footer className="bottom-nav" aria-label="App sections">
-          <NavItem icon={<Home size={20} />} label="Home" active={activeView === "home"} onClick={() => changeView("home")} />
-          <NavItem icon={<BookOpen size={20} />} label="Learn" active={activeView === "learn"} onClick={() => changeView("learn")} />
-          <NavItem icon={<Users size={20} />} label="Community" active={activeView === "community"} onClick={() => changeView("community")} />
-          <NavItem icon={<CalendarDays size={20} />} label="Events" active={activeView === "events"} onClick={() => changeView("events")} />
-          <NavItem icon={<Wrench size={20} />} label="Tools" active={activeView === "tools"} onClick={() => changeView("tools")} />
+          <NavItem icon={<BookOpen size={20} />} label="Academy" active={activeView !== "home"} onClick={() => changeView("learn")} />
+          <NavItem icon={<Home size={23} />} label="Dashboard" active={activeView === "home"} emphasis onClick={() => changeView("home")} />
+          <NavItem icon={<Settings2 size={20} />} label="Settings" active={hubSection === "settings"} current={false} onClick={() => setHubSection("settings")} />
         </footer>
 
         {quoteOpen && <QuoteSheet draft={draft} setDraft={setDraft} quote={quote} photoUrl={photoUrl} setPhotoUrl={setPhotoUrl} setPhotoFile={setPhotoFile} onClose={() => setQuoteOpen(false)} onSave={saveQuote} onError={setToast} />}
@@ -509,9 +529,20 @@ function LaunchAccessGate({
   </main>;
 }
 
-function HomeView({ jobs, openQuote, changeView }: { jobs: Job[]; openQuote: (mode: MeasurementMode) => void; changeView: (view: View) => void }) {
+function AcademyTabs({ activeView, canManage, onNavigate }: { activeView: Exclude<View, "home">; canManage: boolean; onNavigate: (view: View) => void }) {
+  return <nav className={canManage ? "academy-tabs manage" : "academy-tabs"} aria-label="Academy sections">
+    <button className={activeView === "learn" ? "active" : ""} aria-current={activeView === "learn" ? "page" : undefined} onClick={() => onNavigate("learn")}><BookOpen size={16} /> Courses</button>
+    <button className={activeView === "community" ? "active" : ""} aria-current={activeView === "community" ? "page" : undefined} onClick={() => onNavigate("community")}><Users size={16} /> Community</button>
+    <button className={activeView === "events" ? "active" : ""} aria-current={activeView === "events" ? "page" : undefined} onClick={() => onNavigate("events")}><CalendarDays size={16} /> Events</button>
+    {canManage && <button className={activeView === "admin" ? "active" : ""} aria-current={activeView === "admin" ? "page" : undefined} onClick={() => onNavigate("admin")}><ShieldCheck size={16} /> Admin</button>}
+  </nav>;
+}
+
+function HomeView({ jobs, openQuote, setToast }: { jobs: Job[]; openQuote: (mode: MeasurementMode) => void; setToast: (message: string) => void }) {
   const latest = jobs[0];
   const historyPhotos = jobs.flatMap((job) => (job.photoItems ?? []).map((photo) => ({ ...photo, label: job.address }))).slice(0, 6);
+  const [checks, setChecks] = useState([false, false, false, false]);
+  const checklist = ["Photograph problem areas", "Check seams and edges", "Confirm water access", "Log infill condition"];
   return (
     <div className="view-content home-view">
       <section className="field-hero">
@@ -522,8 +553,7 @@ function HomeView({ jobs, openQuote, changeView }: { jobs: Job[]; openQuote: (mo
       <nav className="quick-actions" aria-label="Primary tools">
         <Action icon={<Camera size={20} />} label="Camera measure" onClick={() => openQuote("camera")} />
         <Action icon={<Map size={20} />} label="Map trace" onClick={() => openQuote("map")} />
-        <Action icon={<Package size={20} />} label="Infill calculator" onClick={() => changeView("tools")} />
-        <Action icon={<BookOpen size={20} />} label="Academy" onClick={() => changeView("learn")} />
+        <Action icon={<Package size={20} />} label="Infill calculator" onClick={() => openQuote("manual")} />
       </nav>
 
       <section className="tool-panel">
@@ -534,46 +564,27 @@ function HomeView({ jobs, openQuote, changeView }: { jobs: Job[]; openQuote: (mo
         </> : <div className="dashboard-empty"><Ruler size={24} /><div><p>First calculation</p><h3>No saved measurements yet</h3><span>Measure a yard to calculate infill bags and customer price.</span></div><button className="ghost-button" onClick={() => openQuote("manual")}>Start <Plus size={16} /></button></div>}
       </section>
 
+      <section className="tool-list dashboard-tools" aria-label="Measurement tools">
+        <ToolRow icon={<Camera size={20} />} title="Live camera measure" detail="Place AR points around the turf boundary" onClick={() => openQuote("camera")} />
+        <ToolRow icon={<Map size={20} />} title="Map trace" detail="Outline a remote property before the visit" onClick={() => openQuote("map")} />
+        <ToolRow icon={<Calculator size={20} />} title="Manual calculation" detail="Use known length and width" onClick={() => openQuote("manual")} />
+      </section>
+      <section className="checklist-panel dashboard-checklist">
+        <div className="section-heading"><div><p>Arrival routine</p><h3>Property checklist</h3></div><span className="completion-count">{checks.filter(Boolean).length}/{checks.length}</span></div>
+        {checklist.map((item, index) => <label className={checks[index] ? "check-row done" : "check-row"} key={item}><input type="checkbox" checked={checks[index]} onChange={() => setChecks((current) => current.map((checked, itemIndex) => itemIndex === index ? !checked : checked))} /><span className="custom-check"><Check size={14} /></span><span>{item}</span></label>)}
+        <button className="secondary-button" onClick={() => setToast("Checklist saved for this visit.")}><ClipboardCheck size={17} /> Save checklist</button>
+      </section>
+
       {historyPhotos.length > 0 && <section className="history-strip">
         <div className="section-heading compact"><div><p>Site history</p><h3>Photos by visit</h3></div><ImagePlus size={18} /></div>
         <div className="photo-row" aria-label="Past turf photos">{historyPhotos.map((photo, index) => <a className="photo-tile real-photo" href={photo.url} target="_blank" rel="noreferrer" key={`${photo.url}-${index}`}><img src={photo.url} alt={`${photo.label} visit`} /><span>{formatPhotoDate(photo.capturedAt)}</span><small>{photo.label}</small></a>)}</div>
       </section>}
-
-      <section className="academy-preview">
-        <div className="section-heading"><div><p>Academy</p><h3>Continue your operator training</h3></div><button className="text-button" onClick={() => changeView("learn")}>Open</button></div>
-        <button className="academy-live-link" onClick={() => changeView("learn")}><span><BookOpen size={18} /></span><span><strong>Dirty Turf Academy</strong><small>Your courses and progress live inside the app.</small></span><ChevronRight size={17} /></button>
-      </section>
-
-      <section className="network-strip">
-        <div className="section-heading"><div><p>Your network</p><h3>Operator community</h3></div><Users size={18} /></div>
-        <div className="network-actions"><button onClick={() => changeView("community")}><Users size={18} /><span><strong>Member community</strong><small>Open discussions</small></span><ChevronRight size={16} /></button><button onClick={() => changeView("events")}><CalendarDays size={18} /><span><strong>Live events</strong><small>View the calendar</small></span><ChevronRight size={16} /></button></div>
-      </section>
 
       <section className="jobs"><div className="section-heading"><div><p>Pipeline</p><h3>Recent properties</h3></div><ClipboardList size={18} /></div>{jobs.slice(0, 4).map((job) => <JobRow job={job} key={job.id} />)}</section>
     </div>
   );
 }
 
-function ToolsView({ draft, quote, openQuote, setToast }: { draft: QuoteDraft; quote: QuoteTotals; openQuote: (mode: MeasurementMode) => void; setToast: (message: string) => void }) {
-  const [checks, setChecks] = useState([false, false, false, false]);
-  const checklist = ["Photograph problem areas", "Check seams and edges", "Confirm water access", "Log infill condition"];
-  return (
-    <div className="view-content tools-view">
-      <section className="tool-lead"><div><p className="kicker">Field kit</p><h2>Measure turf. Calculate infill.</h2></div><button className="primary-button" onClick={() => openQuote("camera")}><Plus size={18} /> New calculation</button></section>
-      <section className="live-estimate"><div className="estimate-total"><span>Current calculation</span><strong>{quote.bags40} bags</strong><small>{formatNumber(quote.area)} sq ft · {formatNumber(quote.infillPounds)} lb total · 40-lb bags</small></div><button className="edit-estimate" onClick={() => openQuote(draft.mode)} aria-label="Edit current calculation"><Settings2 size={19} /></button></section>
-      <section className="tool-list" aria-label="Measurement tools">
-        <ToolRow icon={<Camera size={20} />} title="Live camera measure" detail="Place AR points around the turf boundary" onClick={() => openQuote("camera")} />
-        <ToolRow icon={<Map size={20} />} title="Map trace" detail="Outline a remote property before the visit" onClick={() => openQuote("map")} />
-        <ToolRow icon={<Calculator size={20} />} title="Manual calculation" detail="Use known length and width" onClick={() => openQuote("manual")} />
-      </section>
-      <section className="checklist-panel">
-        <div className="section-heading"><div><p>Arrival routine</p><h3>Property checklist</h3></div><span className="completion-count">{checks.filter(Boolean).length}/{checks.length}</span></div>
-        {checklist.map((item, index) => <label className={checks[index] ? "check-row done" : "check-row"} key={item}><input type="checkbox" checked={checks[index]} onChange={() => setChecks((current) => current.map((checked, itemIndex) => itemIndex === index ? !checked : checked))} /><span className="custom-check"><Check size={14} /></span><span>{item}</span></label>)}
-        <button className="secondary-button" onClick={() => setToast("Checklist saved for this visit.")}><ClipboardCheck size={17} /> Save checklist</button>
-      </section>
-    </div>
-  );
-}
 function SearchPanel({ query, setQuery, jobs, onOpenJob, onNavigate }: { query: string; setQuery: (query: string) => void; jobs: Job[]; onOpenJob: () => void; onNavigate: (view: View) => void }) {
   const normalized = query.trim().toLowerCase();
   const results = [
@@ -681,7 +692,7 @@ function JobRow({ job }: { job: Job }) {
 }
 
 function DesktopNavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) { return <button className={active ? "desktop-nav-item active" : "desktop-nav-item"} onClick={onClick} aria-label={label} title={label}>{icon}<span>{label}</span></button>; }
-function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) { return <button className={active ? "nav-item active" : "nav-item"} onClick={onClick}>{icon}<span>{label}</span></button>; }
+function NavItem({ icon, label, active, emphasis = false, current = true, onClick }: { icon: React.ReactNode; label: string; active: boolean; emphasis?: boolean; current?: boolean; onClick: () => void }) { return <button className={`nav-item${active ? " active" : ""}${emphasis ? " emphasis" : ""}`} onClick={onClick} aria-current={active && current ? "page" : undefined} aria-expanded={!current ? active : undefined}>{icon}<span>{label}</span></button>; }
 
 function numberValue(value: string) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : 0; }
 function formatNumber(value: number) { return new Intl.NumberFormat("en-US").format(value); }
