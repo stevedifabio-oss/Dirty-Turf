@@ -31,6 +31,7 @@ const mapGeocodeSql = migration("20260918191038_map_geocoding_guardrails.sql");
 const academyAdminSql = migration("20260920113000_academy_admin_and_certificates.sql");
 const atomicMemberSql = migration("20260920124500_atomic_academy_member_creation.sql");
 const adminHardeningSql = migration("20260920130000_admin_security_release_hardening.sql");
+const ownerProtectionSql = migration("20260920131500_protect_owner_and_seed_certificate.sql");
 
 requireFragments(academySql, "schema", [
   "create table public.academy_communities",
@@ -238,6 +239,14 @@ requireFragments(adminHardeningSql, "Academy release hardening", [
   "create or replace function private.validate_academy_certificate_tenant",
   "pg_advisory_xact_lock",
   "certificateTitle",
+]);
+
+requireFragments(ownerProtectionSql, "Academy owner and certificate defaults", [
+  "target_is_organization_owner",
+  "The organization owner role and access are protected",
+  "insert into public.academy_certificate_templates",
+  "Dirty Turf Academy Completion",
+  "grant execute on function public.admin_update_academy_member",
 ]);
 
 requireFragments(allSql, "security hardening", [
