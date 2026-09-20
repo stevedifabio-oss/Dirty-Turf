@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, AtSign, Bookmark, CalendarDays, Check, ChevronRight, ExternalLink, Hash, Heart, Link2, LockKeyhole, MapPin, Megaphone, MessageSquare, MoreHorizontal, Pin, Plus, Search, Send, Share2, ThumbsUp, Trophy, Users, X } from "lucide-react";
+import { ArrowLeft, AtSign, Bookmark, CalendarDays, Check, ChevronRight, ExternalLink, Flag, Hash, Heart, Link2, LockKeyhole, MapPin, Megaphone, MessageSquare, MoreHorizontal, Pin, Plus, Search, Send, Share2, ThumbsUp, Trophy, UserX, Users, X } from "lucide-react";
 import type { AcademyEvent, CommunityComment, CommunityMedia, CommunityPost, Member } from "../domain";
 import { communityChannels, communityLeaders, communityStats, featuredCommunityPost } from "../lib/communityOverview";
 import { communityBodyBlocks, communityBodyNeedsExpansion, communityPostShareUrl } from "../lib/communityPost";
@@ -18,11 +18,13 @@ type Props = {
   onToggleLike: (post: CommunityPost) => Promise<boolean | null>;
   onToggleCommentLike: (comment: CommunityComment) => Promise<boolean | null>;
   onToggleBookmark: (post: CommunityPost) => Promise<boolean | null>;
+  onReport: (post: CommunityPost, reason: string) => Promise<void>;
+  onBlockMember: (memberId: string) => Promise<boolean>;
   onNavigate: (view: "events") => void;
   onToast: (message: string) => void;
 };
 
-export function CommunityView({ posts, comments, members, events, requestedPostCloudId, onRequestedPostOpened, onPostsChange, onCommentsChange, onCreatePost, onCreateComment, onToggleLike, onToggleCommentLike, onToggleBookmark, onNavigate, onToast }: Props) {
+export function CommunityView({ posts, comments, members, events, requestedPostCloudId, onRequestedPostOpened, onPostsChange, onCommentsChange, onCreatePost, onCreateComment, onToggleLike, onToggleCommentLike, onToggleBookmark, onReport, onBlockMember, onNavigate, onToast }: Props) {
   const [category, setCategory] = useState("All");
   const [sort, setSort] = useState<"Recent" | "Popular" | "Following" | "Saved">("Recent");
   const [composerOpen, setComposerOpen] = useState(false);
@@ -41,6 +43,33 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
   const [openPostMenuId, setOpenPostMenuId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const selected = posts.find((post) => post.id === selectedPostId);
+
+  const reportPost = async (post: CommunityPost) => {
+    if (!post.cloudId) return;
+    const reason = window.prompt("Why are you reporting this post?", "Spam or inappropriate content");
+    if (!reason?.trim()) return;
+    try {
+      await onReport(post, reason.trim());
+      onToast("Report sent to the Academy administrators.");
+    } catch {
+      onToast("The report could not be sent.");
+    }
+  };
+
+  const blockAuthor = async (post: CommunityPost) => {
+    if (!post.authorCloudId || !window.confirm(`Block ${post.author}? Their posts and comments will be hidden from you.`)) return;
+    try {
+      const blocked = await onBlockMember(post.authorCloudId);
+      if (blocked) {
+        onPostsChange(posts.filter((item) => item.authorCloudId !== post.authorCloudId));
+        onCommentsChange(comments.filter((item) => item.authorCloudId !== post.authorCloudId));
+        setSelectedPostId(null);
+        onToast(`${post.author} is blocked.`);
+      }
+    } catch {
+      onToast("That member could not be blocked.");
+    }
+  };
 
   useEffect(() => {
     if (!requestedPostCloudId) return;
@@ -269,7 +298,7 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
     const thread = orderThread(comments.filter((comment) => comment.postId === selected.id));
     const commentMentionMatches = mentionMatches(commentText, members);
     return <div className="view-content thread-view">
-      <div className="subview-bar"><button className="back-link" onClick={closeThread}><ArrowLeft size={17} /> Back to discussions</button><PostMenu post={selected} open={openPostMenuId === selected.id} onOpen={() => setOpenPostMenuId(openPostMenuId === selected.id ? null : selected.id)} onBookmark={() => void toggleBookmark(selected)} onCopyLink={() => void copyPostLink(selected)} /></div>
+      <div className="subview-bar"><button className="back-link" onClick={closeThread}><ArrowLeft size={17} /> Back to discussions</button><PostMenu post={selected} open={openPostMenuId === selected.id} onOpen={() => setOpenPostMenuId(openPostMenuId === selected.id ? null : selected.id)} onBookmark={() => void toggleBookmark(selected)} onCopyLink={() => void copyPostLink(selected)} onReport={() => void reportPost(selected)} onBlock={() => void blockAuthor(selected)} /></div>
       <article className="thread-post">
         <PostIdentity post={selected} members={members} onCategory={() => { closeThread(); selectCategory(selected.category ?? "General"); }} />
         <h2>{selected.name}</h2><PostBody body={selected.body} />
@@ -321,7 +350,7 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
             const bodyExpandable = communityBodyNeedsExpansion(post.body);
             const bodyExpanded = expandedPostIds.has(post.id);
             return <article className="post-card" key={post.id}>
-              <div className="post-card-heading"><PostIdentity post={post} members={members} onCategory={() => selectCategory(post.category ?? "General")} /><PostMenu post={post} open={openPostMenuId === post.id} onOpen={() => setOpenPostMenuId(openPostMenuId === post.id ? null : post.id)} onBookmark={() => void toggleBookmark(post)} onCopyLink={() => void copyPostLink(post)} /></div>
+              <div className="post-card-heading"><PostIdentity post={post} members={members} onCategory={() => selectCategory(post.category ?? "General")} /><PostMenu post={post} open={openPostMenuId === post.id} onOpen={() => setOpenPostMenuId(openPostMenuId === post.id ? null : post.id)} onBookmark={() => void toggleBookmark(post)} onCopyLink={() => void copyPostLink(post)} onReport={() => void reportPost(post)} onBlock={() => void blockAuthor(post)} /></div>
               <button className="post-title-button" onClick={() => openThread(post.id)} aria-label={`Open ${post.name}`}><h3>{post.name}</h3></button>
               <div className={`feed-post-body${bodyExpandable && !bodyExpanded ? " collapsed" : ""}`}><PostBody body={post.body} /></div>
               {bodyExpandable && <button className="post-view-more" aria-expanded={bodyExpanded} onClick={() => togglePostExpansion(post.id)}>{bodyExpanded ? "Show less" : "View more"}</button>}
@@ -359,12 +388,14 @@ function PostIdentity({ post, members, onCategory }: { post: CommunityPost; memb
   </div>;
 }
 
-function PostMenu({ post, open, onOpen, onBookmark, onCopyLink }: { post: CommunityPost; open: boolean; onOpen: () => void; onBookmark: () => void; onCopyLink: () => void }) {
+function PostMenu({ post, open, onOpen, onBookmark, onCopyLink, onReport, onBlock }: { post: CommunityPost; open: boolean; onOpen: () => void; onBookmark: () => void; onCopyLink: () => void; onReport: () => void; onBlock: () => void }) {
   return <div className="post-menu-wrap">
     <button className="post-options-button" aria-label="Post options" aria-expanded={open} onClick={onOpen}><MoreHorizontal size={19} /></button>
     {open && <div className="post-menu" role="menu">
       <button role="menuitem" onClick={() => { onBookmark(); onOpen(); }}><Bookmark size={15} fill={post.saved ? "currentColor" : "none"} /> {post.saved ? "Remove saved post" : "Save post"}</button>
       <button role="menuitem" onClick={() => { onCopyLink(); onOpen(); }}><Link2 size={15} /> Copy post link</button>
+      {post.cloudId && <button role="menuitem" onClick={() => { onReport(); onOpen(); }}><Flag size={15} /> Report post</button>}
+      {post.authorCloudId && <button role="menuitem" onClick={() => { onBlock(); onOpen(); }}><UserX size={15} /> Block author</button>}
     </div>}
   </div>;
 }

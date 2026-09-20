@@ -47,7 +47,8 @@ check(identity.appleId === "6813588770", "App Store Connect Apple ID is missing 
 check(identity.googlePlayAppId === "4973615558687213779", "Google Play app ID is missing or incorrect");
 check(identity.containsAds === false, "Store declaration must remain ad-free");
 check(release.versionName === "1.0", "Release version must match the native projects");
-check(release.versionCode === 2, "Android version code must match the native project");
+check(release.androidVersionCode === 2, "Android version code must match the native project");
+check(release.iosBuildNumber === 7, "iOS build number must match the release candidate");
 
 checkLimit("Apple app name", identity.name, 30);
 checkLimit("Apple subtitle", apple.subtitle, 30);
@@ -87,11 +88,11 @@ const iosInfo = read("ios/App/App/Info.plist");
 check(capacitor.includes(`appId: "${identity.bundleId}"`), "Capacitor app ID does not match store metadata");
 check(capacitor.includes(`appName: "${identity.name}"`), "Capacitor app name does not match store metadata");
 check(androidGradle.includes(`applicationId "${identity.bundleId}"`), "Android application ID does not match store metadata");
-check(androidGradle.includes(`versionCode ${release.versionCode}`), "Android version code does not match store metadata");
+check(androidGradle.includes(`versionCode ${release.androidVersionCode}`), "Android version code does not match store metadata");
 check(androidGradle.includes(`versionName "${release.versionName}"`), "Android version name does not match store metadata");
 check(iosProject.includes(`PRODUCT_BUNDLE_IDENTIFIER = ${identity.bundleId};`), "iOS bundle ID does not match store metadata");
 check(iosProject.includes(`MARKETING_VERSION = ${release.versionName};`), "iOS marketing version does not match store metadata");
-check(iosProject.includes("CURRENT_PROJECT_VERSION = 1;"), "iOS build number does not match store metadata");
+check(iosProject.includes(`CURRENT_PROJECT_VERSION = ${release.iosBuildNumber};`), "iOS build number does not match store metadata");
 check(iosInfo.includes(`<string>${identity.name}</string>`), "iOS display name does not match store metadata");
 check(iosInfo.includes("NSCameraUsageDescription"), "iOS camera usage description is missing");
 check(iosInfo.includes("NSLocationWhenInUseUsageDescription"), "iOS location usage description is missing");

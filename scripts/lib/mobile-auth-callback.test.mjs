@@ -16,6 +16,13 @@ describe("mobile auth callback bridge", () => {
     expect(url).toBe("com.dirtyturf.academy://auth/callback?code=secure-code");
   });
 
+  it("never forwards bearer tokens into the app custom scheme", () => {
+    const url = buildNativeAuthUrl("", "#access_token=access&refresh_token=refresh");
+    expect(url).toBe("com.dirtyturf.academy://auth/callback");
+    expect(url).not.toContain("access");
+    expect(url).not.toContain("refresh");
+  });
+
   it("uses an Android package-scoped intent from an HTTPS browser", () => {
     const nativeUrl = buildNativeAuthUrl("?code=secure-code");
     expect(buildAndroidIntentUrl(nativeUrl)).toBe(

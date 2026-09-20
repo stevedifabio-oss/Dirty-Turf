@@ -1,24 +1,29 @@
 import { useMemo, useState } from "react";
-import { ArrowLeft, BookOpen, Check, CheckCircle2, ChevronDown, Circle, Download, ExternalLink, FileText, Lock, MessageSquare, Play, RotateCcw, Trophy, XCircle } from "lucide-react";
-import type { Course, LessonQuiz } from "../domain";
+import { ArrowLeft, Award, BadgeCheck, BookOpen, Check, CheckCircle2, ChevronDown, Circle, Download, ExternalLink, FileText, Lock, MessageSquare, Play, Printer, RotateCcw, Trophy, XCircle } from "lucide-react";
+import type { AcademyCertificate, Course, LessonQuiz } from "../domain";
 import { combinedCourseProgress } from "../lib/courseProgress";
 import { safeExternalUrl } from "../lib/safeExternalUrl";
 import { SafeRichText } from "./SafeRichText";
 
 type Props = {
   courses: Course[];
+  certificates: AcademyCertificate[];
   dataMode: "device" | "cloud";
   onCoursesChange: (courses: Course[]) => void;
   onLessonCompletion: (lessonId: string, completed: boolean) => Promise<void>;
+  onQuizAttempt: (lessonId: string, scorePercent: number, answers: number[]) => Promise<{ passed: boolean; requiredScore: number }>;
+  onRequestCertificate: (courseId: string) => Promise<void>;
   onToast: (message: string) => void;
   onDiscuss: () => void;
 };
 
-export function AcademyView({ courses, dataMode, onCoursesChange, onLessonCompletion, onToast, onDiscuss }: Props) {
+export function AcademyView({ courses, certificates, dataMode, onCoursesChange, onLessonCompletion, onQuizAttempt, onRequestCertificate, onToast, onDiscuss }: Props) {
   const [filter, setFilter] = useState("All");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null);
   const [openModules, setOpenModules] = useState<Record<string, boolean>>({});
+  const [passedQuizIds, setPassedQuizIds] = useState<Set<string>>(() => new Set());
+  const [certificateBusy, setCertificateBusy] = useState(false);
   const selected = courses.find((course) => course.id === selectedId);
   const visibleCourses = filter === "All" ? courses : courses.filter((course) => course.category === filter);
   const overall = useMemo(() => {
@@ -74,6 +79,23 @@ export function AcademyView({ courses, dataMode, onCoursesChange, onLessonComple
     });
     const directVideo = /\.(mp4|webm|mov)(\?|$)/i.test(videoUrl ?? "");
     const hasContent = Boolean(selectedLesson.body?.trim() || selectedLesson.bodyHtml?.trim() || videoUrl || resources.length || selectedLesson.transcript?.trim() || selectedLesson.quiz?.questions.length);
+    const requiresPassing = Boolean(selectedLesson.quiz?.requiresPassing);
+    const canComplete = !requiresPassing || selectedLesson.completed || passedQuizIds.has(selectedLesson.id);
+    const submitQuiz = async (scorePercent: number, answers: number[]) => {
+      const result = await onQuizAttempt(selectedLesson.cloudId ?? selectedLesson.id, scorePercent, answers);
+      if (result.passed) {
+        setPassedQuizIds((current) => new Set(current).add(selectedLesson.id));
+        onCoursesChange(courses.map((course) => {
+          const modules = course.modules.map((module) => ({ ...module, lessons: module.lessons.map((lesson) => lesson.id === selectedLesson.id ? { ...lesson, completed: true } : lesson) }));
+          const allLessons = modules.flatMap((module) => module.lessons);
+          return { ...course, modules, progress: combinedCourseProgress(allLessons.filter((lesson) => lesson.completed).length, allLessons.length, course.importedProgress) };
+        }));
+        onToast("Quiz passed. Lesson completed.");
+      } else {
+        onToast(`Score ${result.requiredScore}% or higher to complete this lesson.`);
+      }
+      return result;
+    };
     return (
       <div className="view-content lesson-view">
         <button className="back-link" onClick={() => setSelectedLessonId(null)}><ArrowLeft size={17} /> {selected.title}</button>
@@ -82,19 +104,31 @@ export function AcademyView({ courses, dataMode, onCoursesChange, onLessonComple
           <h2>{selectedLesson.title}</h2>
           {videoUrl && directVideo && <video className="lesson-video" controls preload="metadata" src={videoUrl} />}
           {videoUrl && !directVideo && <a className="lesson-video-link" href={videoUrl} target="_blank" rel="noopener noreferrer"><Play size={18} /> Open lesson video <ExternalLink size={15} /></a>}
-          {selectedLesson.type === "quiz" && selectedLesson.quiz && <QuizLesson key={selectedLesson.id} quiz={selectedLesson.quiz} />}
+          {selectedLesson.type === "quiz" && selectedLesson.quiz && <QuizLesson key={selectedLesson.id} quiz={selectedLesson.quiz} onSubmit={submitQuiz} />}
           <SafeRichText html={selectedLesson.bodyHtml} fallback={selectedLesson.body} />
           {selectedLesson.transcript && <details className="lesson-transcript"><summary>Transcript</summary><p>{selectedLesson.transcript}</p></details>}
           {!!resources.length && <section className="lesson-resources"><h3>Resources</h3>{resources.map((resource) => <a href={resource.url} target="_blank" rel="noopener noreferrer" key={`${resource.title}-${resource.url}`}><Download size={17} /><span><strong>{resource.title}</strong><small>{resource.type ?? "Download"}</small></span><ExternalLink size={15} /></a>)}</section>}
           {!hasContent && <div className="empty-state"><XCircle size={24} /><h3>Lesson content unavailable</h3><p>This published lesson does not currently contain readable lesson text or media.</p></div>}
         </article>
-        {hasContent && <button className={selectedLesson.completed ? "secondary-button wide" : "primary-button wide"} onClick={() => void completeLesson(selectedLesson.id)}>{selectedLesson.completed ? <Check size={18} /> : <CheckCircle2 size={18} />}{selectedLesson.completed ? "Completed" : "Mark lesson complete"}</button>}
+        {hasContent && <button disabled={!canComplete} className={selectedLesson.completed ? "secondary-button wide" : "primary-button wide"} onClick={() => void completeLesson(selectedLesson.id)}>{selectedLesson.completed ? <Check size={18} /> : canComplete ? <CheckCircle2 size={18} /> : <Lock size={18} />}{selectedLesson.completed ? "Completed" : canComplete ? "Mark lesson complete" : "Pass quiz to complete"}</button>}
       </div>
     );
   }
 
   if (selected) {
     const lessonCount = selected.modules.reduce((total, module) => total + module.lessons.length, 0);
+    const certificate = certificates.find((item) => item.courseId === (selected.cloudId ?? selected.id) && item.status === "active");
+    const requestCertificate = async () => {
+      setCertificateBusy(true);
+      try {
+        await onRequestCertificate(selected.cloudId ?? selected.id);
+        onToast("Certificate issued and ready to share.");
+      } catch (error) {
+        onToast(error instanceof Error ? error.message : "Certificate could not be issued.");
+      } finally {
+        setCertificateBusy(false);
+      }
+    };
     return (
       <div className="view-content lesson-view">
         <button className="back-link" onClick={() => setSelectedId(null)}><ArrowLeft size={17} /> Academy</button>
@@ -123,6 +157,7 @@ export function AcademyView({ courses, dataMode, onCoursesChange, onLessonComple
             </article>;
           })}
         </section>
+        {certificate ? <CertificateCard certificate={certificate} /> : selected.progress >= 100 ? <section className="certificate-ready"><Award size={24} /><div><p>Course complete</p><h3>Your certificate is ready</h3><span>Create a verified completion record you can print or share.</span></div><button className="primary-button" disabled={certificateBusy} onClick={() => void requestCertificate()}>{certificateBusy ? "Issuing..." : "Issue certificate"}</button></section> : null}
         <div className="course-actions"><button className="secondary-button" onClick={onDiscuss}><MessageSquare size={17} /> Discuss this course</button></div>
       </div>
     );
@@ -156,9 +191,12 @@ export function AcademyView({ courses, dataMode, onCoursesChange, onLessonComple
   );
 }
 
-function QuizLesson({ quiz }: { quiz: LessonQuiz }) {
+function QuizLesson({ quiz, onSubmit }: { quiz: LessonQuiz; onSubmit: (scorePercent: number, answers: number[]) => Promise<{ passed: boolean; requiredScore: number }> }) {
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [result, setResult] = useState<{ passed: boolean; requiredScore: number } | null>(null);
+  const [submitError, setSubmitError] = useState("");
   const answerKeyCount = quiz.questions.filter((question) => question.correctOptionIndex !== undefined).length;
   const correctCount = quiz.questions.filter((question, index) => question.correctOptionIndex !== undefined && answers[index] === question.correctOptionIndex).length;
   const allAnswered = quiz.questions.every((_, index) => answers[index] !== undefined);
@@ -172,6 +210,22 @@ function QuizLesson({ quiz }: { quiz: LessonQuiz }) {
   const retry = () => {
     setAnswers({});
     setSubmitted(false);
+    setResult(null);
+    setSubmitError("");
+  };
+
+  const submit = async () => {
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      const outcome = await onSubmit(score ?? 0, quiz.questions.map((_, index) => answers[index]));
+      setResult(outcome);
+      setSubmitted(true);
+    } catch (error) {
+      setSubmitError(error instanceof Error && error.message ? error.message : "Your answers could not be saved. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -200,10 +254,27 @@ function QuizLesson({ quiz }: { quiz: LessonQuiz }) {
           {submitted && (question.explanation || question.explanationHtml) && <div className="quiz-explanation"><strong>{hasAnswerKey ? "Answer" : "Review note"}</strong><SafeRichText html={question.explanationHtml} fallback={question.explanation} /></div>}
         </fieldset>;
       })}
-      {!submitted ? <button type="button" className="primary-button wide quiz-submit" disabled={!allAnswered} onClick={() => setSubmitted(true)}><CheckCircle2 size={18} /> Review answers</button> : <div className="quiz-result" aria-live="polite">
-        <div><span>{score === null ? "Responses reviewed" : `${score}% on keyed questions`}</span><small>{answerKeyCount < quiz.questions.length ? `${answerKeyCount} of ${quiz.questions.length} captured questions include a verifiable answer key.` : `${correctCount} of ${answerKeyCount} correct.`}</small></div>
+      {submitError && <p className="quiz-submit-error" role="alert">{submitError}</p>}
+      {!submitted ? <button type="button" className="primary-button wide quiz-submit" disabled={!allAnswered || submitting} onClick={() => void submit()}><CheckCircle2 size={18} /> {submitting ? "Saving attempt..." : "Submit answers"}</button> : <div className={result?.passed ? "quiz-result passed" : "quiz-result"} aria-live="polite">
+        <div><span>{result?.passed ? `Passed · ${score ?? 0}%` : score === null ? "Responses reviewed" : `${score}% · ${result?.requiredScore ?? quiz.passingPercent ?? 0}% required`}</span><small>{answerKeyCount < quiz.questions.length ? `${answerKeyCount} of ${quiz.questions.length} captured questions include a verifiable answer key.` : `${correctCount} of ${answerKeyCount} correct.`}</small></div>
         <button type="button" className="icon-button" onClick={retry} aria-label="Retry quiz"><RotateCcw size={18} /></button>
       </div>}
     </section>
   );
+}
+
+function CertificateCard({ certificate }: { certificate: AcademyCertificate }) {
+  return <section className="academy-certificate" aria-label={`Certificate for ${certificate.courseTitle}`}>
+    <div className="certificate-seal"><BadgeCheck size={28} /></div>
+    <p>Dirty Turf Academy</p>
+    <h3>{certificate.certificateTitle}</h3>
+    <span>This certifies that</span>
+    <strong>{certificate.recipientName}</strong>
+    <span>{certificate.certificateDescription}</span>
+    <h4>{certificate.courseTitle}</h4>
+    <div className="certificate-signature"><strong>{certificate.signatoryName}</strong><span>{certificate.signatoryTitle}</span></div>
+    <small>Issued {new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(new Date(certificate.issuedAt))} · {certificate.verificationCode}</small>
+    <a className="certificate-verify-link" href={`https://app.dirtyturf.com/?certificate=${encodeURIComponent(certificate.verificationCode)}`} target="_blank" rel="noreferrer">Verify certificate</a>
+    <button className="secondary-button" onClick={() => window.print()}><Printer size={16} /> Print or save PDF</button>
+  </section>;
 }

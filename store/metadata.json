@@ -13,7 +13,8 @@
   },
   "release": {
     "versionName": "1.0",
-    "versionCode": 2,
+    "androidVersionCode": 2,
+    "iosBuildNumber": 7,
     "copyright": "2026 Dirty Turf LLC"
   },
   "urls": {
@@ -27,7 +28,7 @@
     "promotionalText": "Train with Dirty Turf Academy, connect with operators, and measure jobs with practical turf tools in one member app.",
     "keywords": "turf cleaning,artificial turf,infill,field service,academy,measurement",
     "description": "Dirty Turf Academy gives professional turf cleaning owners and operators one place to learn, connect, and work in the field.\n\nMembers can continue Academy courses, track lesson progress, join the private operator community, view events, and use practical turf tools from the same account on desktop, iPhone, and Android.\n\nField tools include point-to-point live camera measurement on supported devices, property tracing with current and historical map imagery, manual length-by-width measurement, and an infill calculator. Select the required pounds per square foot to see total material and rounded-up 40-pound and 50-pound bag counts. Operators can also calculate a customer price from their charge per square foot and save job history to the company workspace.\n\nAn existing Dirty Turf Academy membership is required. Members sign in to access the training, community, and field tools included with their account.",
-    "reviewerNotes": "Dirty Turf Academy is a membership-based training and operator tool. The iOS build is consumption-only and contains no purchase button, external checkout link, or billing portal. A pre-existing reviewer membership will be entered in App Review Information after member provisioning and Magic Link delivery are verified. Live camera measurement requires ARKit; unsupported devices can use map or manual measurement. Camera and location permissions are requested only when the reviewer opens the related tool."
+    "reviewerNotes": "Dirty Turf Academy is a membership-based training and operator tool. The iOS build is consumption-only and contains no purchase button, external checkout link, or billing portal. Reusable email-and-password credentials for a pre-existing reviewer membership will be entered in App Review Information; review does not depend on email delivery. Select Use a password on the welcome screen. Live camera measurement requires ARKit; unsupported devices can use map or manual measurement. Camera and location permissions are requested only when the reviewer opens the related tool."
   },
   "googlePlay": {
     "shortDescription": "Academy, community, measurement, and infill tools for turf cleaning pros.",

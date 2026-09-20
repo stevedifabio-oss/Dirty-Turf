@@ -30,6 +30,7 @@ export type CommunityPost = {
   cloudId?: string;
   name: string;
   author: string;
+  authorCloudId?: string;
   body: string;
   replies: number;
   age: string;
@@ -58,6 +59,7 @@ export type CommunityComment = {
   parentId?: number;
   parentCloudId?: string;
   author: string;
+  authorCloudId?: string;
   body: string;
   age: string;
   likes: number;
@@ -117,6 +119,21 @@ export type Course = {
   modules: { title: string; groupTitle?: string; lessons: Lesson[] }[];
   access: "open" | "level" | "purchase";
   requiredLevel?: number;
+};
+
+export type AcademyCertificate = {
+  id: string;
+  courseId: string;
+  recipientName: string;
+  courseTitle: string;
+  verificationCode: string;
+  status: "active" | "revoked";
+  issuedAt: string;
+  expiresAt?: string;
+  certificateTitle: string;
+  certificateDescription: string;
+  signatoryName: string;
+  signatoryTitle: string;
 };
 
 export type AcademyEvent = {

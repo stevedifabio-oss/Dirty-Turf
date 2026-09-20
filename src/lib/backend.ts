@@ -1,6 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { AcademyEvent, AppNotification, CommunityComment, CommunityPost, Course, Job, LessonQuiz, Member, NotificationPreferences } from "../domain";
+import type { AcademyCertificate, AcademyEvent, AppNotification, CommunityComment, CommunityPost, Course, Job, LessonQuiz, Member, NotificationPreferences } from "../domain";
 import { NATIVE_AUTH_EMAIL_REDIRECT, parseNativeAuthRedirect } from "./authRedirect";
 import { communityMediaStoragePaths, normalizeCommunityMediaItems } from "./communityMedia";
 import { cleanCommunityPostBody } from "./communityPost";
@@ -263,9 +263,7 @@ export async function initializeNativeAuth(onError: (message: string) => void = 
             redirect.code,
             redirect.flowId ? { flowId: redirect.flowId } : undefined,
           )
-        : redirect.accessToken && redirect.refreshToken
-          ? await supabase.auth.setSession({ access_token: redirect.accessToken, refresh_token: redirect.refreshToken })
-          : { error: new Error("The sign-in link is incomplete.") };
+        : { error: new Error("The sign-in link is incomplete.") };
       if (error) onError(error.message || "The sign-in link could not be completed.");
       else handledUrls.add(rawUrl);
     } catch (error) {
@@ -513,7 +511,7 @@ export async function loadPosts(seed: CommunityPost[]): Promise<CommunityPost[]>
 
   const { data, error } = await supabase!
     .from("community_feed")
-    .select("id,academy_community_id,title,body,author_name,reply_count,created_at,category_name,is_pinned,media,like_count")
+    .select("id,academy_community_id,title,body,author_name,reply_count,created_at,category_name,is_pinned,media,like_count,academy_author_id")
     .eq("academy_community_id", context.communityId)
     .order("created_at", { ascending: false })
     .limit(50);
@@ -547,6 +545,7 @@ export async function loadPosts(seed: CommunityPost[]): Promise<CommunityPost[]>
       cloudId: row.id,
       name: row.title,
       author: row.author_name,
+      authorCloudId: row.academy_author_id ?? undefined,
       body: cleanCommunityPostBody(row.body, row.title) || row.title,
       replies: Number(row.reply_count),
       age: relativeDate(row.created_at),
@@ -586,7 +585,7 @@ export async function loadComments(seed: CommunityComment[]): Promise<CommunityC
 
   const { data, error } = await supabase!
     .from("academy_comment_feed")
-    .select("id,post_id,parent_id,author_name,body,created_at,like_count,is_answer")
+    .select("id,post_id,parent_id,author_name,body,created_at,like_count,is_answer,academy_author_id")
     .eq("academy_community_id", context.communityId)
     .order("created_at", { ascending: true })
     .limit(500);
@@ -610,6 +609,7 @@ export async function loadComments(seed: CommunityComment[]): Promise<CommunityC
     parentId: row.parent_id ? stableNumericId(row.parent_id) : undefined,
     parentCloudId: row.parent_id ?? undefined,
     author: row.author_name,
+    authorCloudId: row.academy_author_id ?? undefined,
     body: row.body,
     age: relativeDate(row.created_at),
     likes: Number(row.like_count),
@@ -705,7 +705,7 @@ export async function loadCourses(seed: Course[]): Promise<Course[]> {
         completed: Boolean(progress.get(lesson.id)?.completed_at),
         body: normalizeLessonBody(lesson.body),
         bodyHtml: normalizeLessonHtml(lesson.body, signedLessonAssets.get(lesson.id)),
-        videoUrl: lesson.video_url ?? undefined,
+        videoUrl: lesson.video_url ? signedLessonAssets.get(lesson.id)?.get(lesson.video_url) ?? lesson.video_url : undefined,
         transcript: lesson.transcript ?? undefined,
         resources: normalizeResources(lesson.resources, signedLessonAssets.get(lesson.id)),
         quiz: normalizeQuiz(lesson.body),
@@ -771,6 +771,74 @@ export async function saveLessonCompletion(lessonCloudId: string, completed: boo
     p_completed: completed,
   });
   if (error) throw error;
+}
+
+export async function recordAcademyQuizAttempt(lessonCloudId: string, scorePercent: number, answers: number[]) {
+  const context = await getAcademyContext();
+  if (!context) throw new Error("Academy membership is required.");
+  const { data, error } = await supabase!.rpc("record_academy_quiz_attempt", {
+    p_lesson_id: lessonCloudId,
+    p_score_percent: scorePercent,
+    p_answers: answers,
+  });
+  if (error) throw error;
+  const result = data && typeof data === "object" ? data as Record<string, unknown> : {};
+  return {
+    passed: result.passed === true,
+    requiredScore: Number(result.requiredScore ?? 0),
+  };
+}
+
+export async function loadAcademyCertificates(): Promise<AcademyCertificate[]> {
+  const context = await getAcademyContext();
+  if (!context) return [];
+  const { data, error } = await supabase!
+    .from("academy_certificates")
+    .select("id,course_id,recipient_name,course_title,verification_code,status,issued_at,expires_at,metadata")
+    .eq("academy_member_id", context.memberId)
+    .order("issued_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row) => {
+    const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? row.metadata as Record<string, unknown> : {};
+    return {
+      id: row.id,
+      courseId: row.course_id,
+      recipientName: row.recipient_name,
+      courseTitle: row.course_title,
+      verificationCode: row.verification_code,
+      status: row.status,
+      issuedAt: row.issued_at,
+      expiresAt: row.expires_at ?? undefined,
+      certificateTitle: typeof metadata.certificateTitle === "string" ? metadata.certificateTitle : "Certificate of Completion",
+      certificateDescription: typeof metadata.certificateDescription === "string" ? metadata.certificateDescription : "has successfully completed the course",
+      signatoryName: typeof metadata.signatoryName === "string" ? metadata.signatoryName : "Steve DiFabio",
+      signatoryTitle: typeof metadata.signatoryTitle === "string" ? metadata.signatoryTitle : "Dirty Turf Academy",
+    };
+  });
+}
+
+export async function verifyAcademyCertificate(verificationCode: string) {
+  if (!supabase) throw new Error("Certificate verification is unavailable.");
+  const { data, error } = await supabase.rpc("verify_academy_certificate", { p_verification_code: verificationCode });
+  if (error) throw error;
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const value = data as Record<string, unknown>;
+  return {
+    valid: value.valid === true,
+    recipientName: typeof value.recipientName === "string" ? value.recipientName : "Academy member",
+    courseTitle: typeof value.courseTitle === "string" ? value.courseTitle : "Academy course",
+    issuedAt: typeof value.issuedAt === "string" ? value.issuedAt : "",
+    status: typeof value.status === "string" ? value.status : "unknown",
+  };
+}
+
+export async function requestAcademyCertificate(courseId: string) {
+  const context = await getAcademyContext();
+  if (!context) throw new Error("Academy membership is required.");
+  const { data, error } = await supabase!.rpc("issue_my_academy_certificate", { p_course_id: courseId });
+  if (error) throw error;
+  if (!data) throw new Error("Complete every published lesson before requesting the certificate.");
+  return String(data);
 }
 
 export async function loadMembers(seed: Member[]): Promise<Member[]> {
@@ -945,6 +1013,26 @@ export async function togglePostBookmark(cloudPostId: string) {
   return Boolean(data);
 }
 
+export async function reportAcademyContent(contentType: "post" | "comment" | "member", contentId: string, reason: string) {
+  const context = await getAcademyContext();
+  if (!context) throw new Error("Academy membership is required.");
+  const { data, error } = await supabase!.rpc("report_academy_content", {
+    p_content_type: contentType,
+    p_content_id: contentId,
+    p_reason: reason,
+  });
+  if (error) throw error;
+  return String(data);
+}
+
+export async function toggleAcademyMemberBlock(memberId: string) {
+  const context = await getAcademyContext();
+  if (!context) throw new Error("Academy membership is required.");
+  const { data, error } = await supabase!.rpc("toggle_academy_member_block", { p_member_id: memberId });
+  if (error) throw error;
+  return Boolean(data);
+}
+
 export async function toggleEventRsvp(cloudEventId: string) {
   if (!(await hasCloudSession())) return null;
   const { data, error } = await supabase!.rpc("toggle_event_rsvp", { target_event_id: cloudEventId });
@@ -1102,7 +1190,11 @@ function normalizeQuiz(value: unknown): LessonQuiz | undefined {
 
     const explanation = richTextValue(question.explanation);
     const normalizedExplanation = normalizeAnswerText(explanation.text);
-    const correctOptionIndex = normalizedExplanation
+    const storedCorrectIndex = typeof question.correctOptionIndex === "number" && Number.isInteger(question.correctOptionIndex)
+      && question.correctOptionIndex >= 0 && question.correctOptionIndex < options.length
+      ? question.correctOptionIndex
+      : undefined;
+    const legacyExplanationIndex = normalizedExplanation
       ? options.findIndex((option) => normalizeAnswerText(option.text) === normalizedExplanation)
       : -1;
     return [{
@@ -1111,7 +1203,7 @@ function normalizeQuiz(value: unknown): LessonQuiz | undefined {
       options,
       explanation: explanation.text || undefined,
       explanationHtml: explanation.html || undefined,
-      correctOptionIndex: correctOptionIndex >= 0 ? correctOptionIndex : undefined,
+      correctOptionIndex: storedCorrectIndex ?? (legacyExplanationIndex >= 0 ? legacyExplanationIndex : undefined),
     }];
   });
   if (!questions.length) return undefined;

@@ -1,11 +1,10 @@
 export const NATIVE_AUTH_REDIRECT = "com.dirtyturf.academy://auth/callback";
 export const NATIVE_AUTH_EMAIL_REDIRECT = "https://app.dirtyturf.com/mobile-auth-callback.html";
+export const UNSAFE_NATIVE_TOKEN_REDIRECT_ERROR = "For your security, this older sign-in link is not supported. Request a new sign-in link in the app.";
 
 export type NativeAuthRedirect = {
   code?: string;
   flowId?: string;
-  accessToken?: string;
-  refreshToken?: string;
   error?: string;
 };
 
@@ -21,6 +20,10 @@ export function parseNativeAuthRedirect(rawUrl: string): NativeAuthRedirect | nu
   }
 
   const fragment = new URLSearchParams(url.hash.replace(/^#/, ""));
+  const hasLegacyTokens = fragment.has("access_token")
+    || fragment.has("refresh_token")
+    || url.searchParams.has("access_token")
+    || url.searchParams.has("refresh_token");
   const error = url.searchParams.get("error_description")
     ?? fragment.get("error_description")
     ?? url.searchParams.get("error")
@@ -29,8 +32,6 @@ export function parseNativeAuthRedirect(rawUrl: string): NativeAuthRedirect | nu
   return {
     code: url.searchParams.get("code") ?? undefined,
     flowId: url.searchParams.get("sb_flow_id") ?? undefined,
-    accessToken: fragment.get("access_token") ?? url.searchParams.get("access_token") ?? undefined,
-    refreshToken: fragment.get("refresh_token") ?? url.searchParams.get("refresh_token") ?? undefined,
-    error,
+    error: hasLegacyTokens ? UNSAFE_NATIVE_TOKEN_REDIRECT_ERROR : error,
   };
 }
