@@ -263,9 +263,7 @@ export async function initializeNativeAuth(onError: (message: string) => void = 
             redirect.code,
             redirect.flowId ? { flowId: redirect.flowId } : undefined,
           )
-        : redirect.accessToken && redirect.refreshToken
-          ? await supabase.auth.setSession({ access_token: redirect.accessToken, refresh_token: redirect.refreshToken })
-          : { error: new Error("The sign-in link is incomplete.") };
+        : { error: new Error("The sign-in link is incomplete.") };
       if (error) onError(error.message || "The sign-in link could not be completed.");
       else handledUrls.add(rawUrl);
     } catch (error) {
