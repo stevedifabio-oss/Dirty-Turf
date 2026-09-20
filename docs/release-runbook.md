@@ -33,11 +33,12 @@ preview is evidence for compilation and layout, not production acceptance.
    key, and Internal testing release `1 (1.0)` are complete. Finish the remaining
    declarations and reusable reviewer account, then run the full path on
    Steve's Android phone.
-11. Upload the signed build 2 TestFlight candidate, complete Apple's account
-   declarations and screenshots, then repeat the physical iPhone measurement
-   test against that exact candidate. A physical iPhone camera measurement was
-   user-confirmed on September 20, 2026; the store candidate still needs the
-   recorded model, OS version, and acceptance result.
+11. Signed iOS `1.0 (3)` was uploaded successfully to App Store Connect on
+   September 20, 2026 and is processing. Complete Apple's account declarations,
+   reviewer credentials, and screenshots, then repeat the physical iPhone
+   measurement test against that exact TestFlight candidate. Camera measurement
+   was user-confirmed on the connected iPhone before upload; record its model,
+   OS version, and Build 3 acceptance result.
 12. Pilot 3-5 members, capture the final GHL delta, then notify the remaining
    members in batches of 25 or fewer.
 
@@ -114,20 +115,20 @@ member emails, private tokens, or reviewer credentials in this repository.
 
 | Evidence | Value |
 | --- | --- |
-| Git commit SHA | `3b51728afb910e6e08e2cfbc99e541a2eefdb805` |
-| GitHub PR and successful run | `stevedifabio-oss/Dirty-Turf#2` and `#3`; CI runs `35386112811` and `35386821902` passed before merge |
+| Git commit SHA | Build 3 application code `12713c9a4283d398ffcb4443b16dd85c792eb3f4` |
+| GitHub PR and successful run | `stevedifabio-oss/Dirty-Turf#12`; CI run `35524757883` passed; owner merge remains pending |
 | Netlify deploy ID and URL | Production deploy `6aad92da88497700081bd70a` at `https://app.dirtyturf.com`; unauthenticated production smoke passed |
-| Supabase migrations | Applied through `20260920113000_academy_admin_and_certificates`; certificate, quiz, moderation, and manager RPC checks passed live on September 20, 2026 |
+| Supabase migrations | Applied through `20260920131500_protect_owner_and_seed_certificate`; live checks passed for atomic membership, Steve's organization-owner guard, direct-write restrictions, moderation/asset/template RPCs, and one active certificate template on September 20, 2026 |
 | Supabase Edge Function versions | Ten active: `academy-import` v5; `map-geocode` v2; health/invite/checkout/portal/Stripe webhook v3; GHL status/webhook and Academy notifications v1 |
-| Source archive SHA-256 | `e919ba8701b532ca3c8e4b63fa6612a87f621bd27c7ce33e9c6e8397c9d4a4f7` |
-| Local automated gate | 88 tests, typecheck, production build, PWA, 20-migration schema contract, store metadata, and secret scan pass |
+| Source archive SHA-256 | Build 3 application code archive `9fed0d628926f7c5df8c113e8ab33ad574de085e2ab45106393fec2b471a59c1` |
+| Local automated gate | 91 tests, typecheck, production build, PWA, 23-migration schema contract, store metadata, secret scan, and zero-vulnerability npm audit pass |
 | Responsive UI/UX audit | 320 x 640, 360 x 800, 800 x 360, 768 x 1024, and 1440 x 900 pass with no horizontal overflow; mobile thread comments focus above navigation; the landscape calculator body scrolls above its fixed save action |
 | Play listing assets | 512 x 512 icon, 1024 x 500 feature graphic, and five 1080 x 1920 phone screenshots prepared under `output/store-assets/` |
-| Native candidate proof | Android debug APK, Android unit tests, and signed release AAB pass; web, Android source, iOS source, APK, and AAB all contain SHA-256 `bc584012c7d3880556e71e6bcafb628dc12810942900e6200b11707af3ab03a5`. The uploaded AAB SHA-256 is `c414978aa823c8acdbb729d9063b5d56aa35bde1a87c073c15c73fad9a323863`. |
+| Native candidate proof | Build 3 archive is signed by Apple Distribution team `Z36XF6NX6G`; its embedded web entry matches the production web and iOS source at SHA-256 `b56ebaff5c201bfee5f3a924f9664b1648abf9e1291ada31568a8ad79d6ee5d1`. Exported Build 3 IPA SHA-256 is `c2d6f9abe34b262b7b2e237c9a7f5201454251f3af39d47a895cb160b1619ba6`. Existing Android APK/AAB artifacts predate this iOS-only candidate and were not treated as Build 3 evidence. |
 | Smoke-test account owner | Client vault only |
 | iPhone model / OS / AR error | Physical iPhone camera measurement user-confirmed September 20, 2026; exact model, OS, error range, and build-2 repeat still pending |
 | Android model / OS / AR error | Pending physical test |
-| TestFlight build | App record `6813588770`; build 1 was uploaded September 18, 2026 but predates the native-auth fix. Apple Distribution identity and App Store profile are valid through September 18, 2027. Build 2, screenshots, reviewer credentials, declarations, and final TestFlight acceptance are the release candidate gates. |
+| TestFlight build | App record `6813588770`; signed `1.0 (3)` uploaded successfully September 20, 2026 and Apple reported the package is processing. Build 2 is superseded. Apple Distribution identity and App Store profile are valid through September 18, 2027. Processing completion, screenshots, reviewer credentials, declarations, and final physical-device acceptance remain. |
 | Play Internal build | App record `4973615558687213779`; track Active; release `1 (1.0)` uploaded and released September 18, 2026; checked tester list contains four accounts; join URL `https://play.google.com/apps/internaltest/4701757813213362221`. Pending physical Galaxy acceptance, reusable reviewer account, and final declaration review. |
 | Rollback owner | Pending client assignment |
 | Final sign-off owner / timestamp | Pending client approval |
