@@ -85,6 +85,7 @@ import { AcademyView } from "./components/Academy";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { CommunityView } from "./components/Community";
 import { EventsView } from "./components/Events";
+import { PrimaryNavigation, type PrimaryNavigationView } from "./components/PrimaryNavigation";
 import type { HubSection } from "./components/Network";
 import { courses as seedCourses, initialComments, initialEvents, initialMembers, initialNotifications, initialPosts } from "./appData";
 import "./styles.css";
@@ -99,7 +100,7 @@ const AdminStudio = lazy(() =>
   import("./components/AdminStudio").then((module) => ({ default: module.AdminStudio })),
 );
 
-type View = "home" | "learn" | "community" | "events" | "admin";
+type View = PrimaryNavigationView;
 
 type PublicCertificateResult = Awaited<ReturnType<typeof verifyAcademyCertificate>>;
 
@@ -282,6 +283,7 @@ function App() {
 
   const openQuote = (mode: MeasurementMode = "camera") => {
     setDraft((current) => ({ ...current, mode }));
+    setHubSection(null);
     setQuoteOpen(true);
   };
 
@@ -322,11 +324,18 @@ function App() {
 
   const changeView = (view: View) => {
     setActiveView(view);
+    setHubSection(null);
+    setQuoteOpen(false);
     if (view !== "community") setRequestedPostCloudId(undefined);
     setSearchOpen(false);
     setQuery("");
     document.querySelector(".phone-frame")?.scrollTo({ top: 0, behavior: "auto" });
     window.scrollTo({ top: 0, behavior: "auto" });
+  };
+
+  const openSettings = () => {
+    setQuoteOpen(false);
+    setHubSection("settings");
   };
 
   const sendMagicLink = async (email: string) => {
@@ -441,14 +450,10 @@ function App() {
         {!searchOpen && activeView === "events" && <EventsView events={events} onEventsChange={setEvents} onToggleRsvp={(event) => event.cloudId ? toggleAcademyEventRsvp(event.cloudId) : Promise.resolve(null)} onToast={setToast} />}
         {!searchOpen && activeView === "admin" && canManage && <Suspense fallback={<div className="admin-loading" role="status">Loading Admin Studio...</div>}><AdminStudio onToast={setToast} onContentChange={() => setWorkspaceRefreshToken((token) => token + 1)} /></Suspense>}
 
-        <footer className="bottom-nav" aria-label="App sections">
-          <NavItem icon={<BookOpen size={20} />} label="Academy" active={activeView !== "home"} onClick={() => changeView("learn")} />
-          <NavItem icon={<Home size={23} />} label="Dashboard" active={activeView === "home"} emphasis onClick={() => changeView("home")} />
-          <NavItem icon={<Settings2 size={20} />} label="Settings" active={hubSection === "settings"} current={false} onClick={() => setHubSection("settings")} />
-        </footer>
+        {!quoteOpen && !hubSection && <PrimaryNavigation activeView={activeView} settingsOpen={false} onNavigate={changeView} onOpenSettings={openSettings} />}
 
-        {quoteOpen && <QuoteSheet draft={draft} setDraft={setDraft} quote={quote} photoUrl={photoUrl} setPhotoUrl={setPhotoUrl} setPhotoFile={setPhotoFile} onClose={() => setQuoteOpen(false)} onSave={saveQuote} onError={setToast} />}
-        {hubSection && <Suspense fallback={<div className="sheet-loading" role="status">Loading workspace...</div>}><HubSheet section={hubSection} onClose={() => setHubSection(null)} onToast={setToast} onRequestMagicLink={sendMagicLink} onSignOut={handleSignOut} dataMode={dataMode} notifications={notifications} onOpenNotification={openNotification} onMarkAllNotificationsRead={markEveryNotificationRead} /></Suspense>}
+        {quoteOpen && <QuoteSheet draft={draft} setDraft={setDraft} quote={quote} photoUrl={photoUrl} setPhotoUrl={setPhotoUrl} setPhotoFile={setPhotoFile} onClose={() => setQuoteOpen(false)} onSave={saveQuote} onError={setToast} primaryNavigation={<PrimaryNavigation activeView={activeView} settingsOpen={false} onNavigate={changeView} onOpenSettings={openSettings} />} />}
+        {hubSection && <Suspense fallback={<div className="sheet-loading" role="status">Loading workspace...</div>}><HubSheet section={hubSection} onClose={() => setHubSection(null)} onToast={setToast} onRequestMagicLink={sendMagicLink} onSignOut={handleSignOut} dataMode={dataMode} notifications={notifications} onOpenNotification={openNotification} onMarkAllNotificationsRead={markEveryNotificationRead} primaryNavigation={<PrimaryNavigation activeView={activeView} settingsOpen onNavigate={changeView} onOpenSettings={openSettings} />} /></Suspense>}
         {toast && <div className="toast" role="status"><CheckCircle2 size={18} />{toast}</div>}
       </section>
     </main>
@@ -617,7 +622,7 @@ function SearchPanel({ query, setQuery, jobs, onOpenJob, onNavigate }: { query: 
   );
 }
 
-function QuoteSheet({ draft, setDraft, quote, photoUrl, setPhotoUrl, setPhotoFile, onClose, onSave, onError }: { draft: QuoteDraft; setDraft: React.Dispatch<React.SetStateAction<QuoteDraft>>; quote: QuoteTotals; photoUrl: string; setPhotoUrl: (url: string) => void; setPhotoFile: (file: File | null) => void; onClose: () => void; onSave: () => void | Promise<void>; onError: (message: string) => void }) {
+function QuoteSheet({ draft, setDraft, quote, photoUrl, setPhotoUrl, setPhotoFile, onClose, onSave, onError, primaryNavigation }: { draft: QuoteDraft; setDraft: React.Dispatch<React.SetStateAction<QuoteDraft>>; quote: QuoteTotals; photoUrl: string; setPhotoUrl: (url: string) => void; setPhotoFile: (file: File | null) => void; onClose: () => void; onSave: () => void | Promise<void>; onError: (message: string) => void; primaryNavigation: React.ReactNode }) {
   const dialogRef = useRef<HTMLElement>(null);
   useModalDialog(dialogRef, onClose);
   const update = <K extends keyof QuoteDraft>(key: K, value: QuoteDraft[K]) => setDraft((current) => ({ ...current, [key]: value }));
@@ -650,6 +655,7 @@ function QuoteSheet({ draft, setDraft, quote, photoUrl, setPhotoUrl, setPhotoFil
           <section className="infill-summary" aria-label="Infill calculation results"><div className="area-total"><span>Total turf area</span><strong>{formatNumber(quote.area)}</strong><small>square feet</small></div><div className="infill-result-grid"><div><span>Total infill</span><strong>{formatNumber(quote.infillPounds)} lb</strong></div><div><span>40-lb bags</span><strong>{quote.bags40}</strong></div><div><span>50-lb bags</span><strong>{quote.bags50}</strong></div></div><div className="customer-price"><span>Customer price</span><strong>{formatCurrency(quote.serviceTotal)}</strong></div></section>
         </div>
         <div className="sheet-footer"><button className="primary-button wide" onClick={onSave}><CheckCircle2 size={18} /> Save calculation</button></div>
+        {primaryNavigation}
       </section>
     </div>
   );
@@ -711,8 +717,6 @@ function JobRow({ job }: { job: Job }) {
 }
 
 function DesktopNavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) { return <button className={active ? "desktop-nav-item active" : "desktop-nav-item"} onClick={onClick} aria-label={label} title={label}>{icon}<span>{label}</span></button>; }
-function NavItem({ icon, label, active, emphasis = false, current = true, onClick }: { icon: React.ReactNode; label: string; active: boolean; emphasis?: boolean; current?: boolean; onClick: () => void }) { return <button className={`nav-item${active ? " active" : ""}${emphasis ? " emphasis" : ""}`} onClick={onClick} aria-current={active && current ? "page" : undefined} aria-expanded={!current ? active : undefined}>{icon}<span>{label}</span></button>; }
-
 function numberValue(value: string) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : 0; }
 function formatNumber(value: number) { return new Intl.NumberFormat("en-US").format(value); }
 function formatCurrency(value: number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value); }
