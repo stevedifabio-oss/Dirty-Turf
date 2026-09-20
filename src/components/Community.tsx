@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, AtSign, BookOpen, Bookmark, CalendarDays, Check, ChevronRight, ExternalLink, Hash, Heart, Link2, LockKeyhole, MapPin, Megaphone, MessageSquare, MoreHorizontal, Pin, Plus, Search, Send, Share2, ThumbsUp, Trophy, Users, X } from "lucide-react";
+import { ArrowLeft, AtSign, Bookmark, CalendarDays, Check, ChevronRight, ExternalLink, Hash, Heart, Link2, LockKeyhole, MapPin, Megaphone, MessageSquare, MoreHorizontal, Pin, Plus, Search, Send, Share2, ThumbsUp, Trophy, Users, X } from "lucide-react";
 import type { AcademyEvent, CommunityComment, CommunityMedia, CommunityPost, Member } from "../domain";
 import { communityChannels, communityLeaders, communityStats, featuredCommunityPost } from "../lib/communityOverview";
 import { communityBodyBlocks, communityBodyNeedsExpansion, communityPostShareUrl } from "../lib/communityPost";
@@ -18,7 +18,7 @@ type Props = {
   onToggleLike: (post: CommunityPost) => Promise<boolean | null>;
   onToggleCommentLike: (comment: CommunityComment) => Promise<boolean | null>;
   onToggleBookmark: (post: CommunityPost) => Promise<boolean | null>;
-  onNavigate: (view: "learn" | "events") => void;
+  onNavigate: (view: "events") => void;
   onToast: (message: string) => void;
 };
 
@@ -291,8 +291,6 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
     <div className="view-content community-view">
       <nav className="community-section-tabs" aria-label="Community sections">
         <button className={communitySection === "discussion" ? "active" : ""} aria-current={communitySection === "discussion" ? "page" : undefined} onClick={() => { setCommunitySection("discussion"); setCategory("All"); openCommunitySection("community-discussion"); }}>Discussion</button>
-        <button onClick={() => onNavigate("learn")}><BookOpen size={15} /> Learning</button>
-        <button onClick={() => onNavigate("events")}><CalendarDays size={15} /> Events</button>
         <button className={communitySection === "leaderboard" ? "active" : ""} aria-current={communitySection === "leaderboard" ? "page" : undefined} onClick={() => { setCommunitySection("leaderboard"); openCommunitySection("community-leaderboard"); }}><Trophy size={15} /> Leaderboard</button>
         <button onClick={() => setMembersOpen(true)}><Users size={15} /> Members</button>
         <button className={communitySection === "about" ? "active" : ""} aria-current={communitySection === "about" ? "page" : undefined} onClick={() => { setCommunitySection("about"); openCommunitySection("community-about"); }}><LockKeyhole size={15} /> About</button>
