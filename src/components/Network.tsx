@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, AtSign, Bell, BookOpen, CalendarDays, CheckCheck, CheckCircle2, ChevronRight, CreditCard, Database, ExternalLink, FileLock2, GraduationCap, Heart, LifeBuoy, LockKeyhole, Megaphone, MessageCircle, ShieldCheck, Signpost, Trash2, UserRoundCheck, X } from "lucide-react";
 import type { AppNotification, NotificationPreferences } from "../domain";
 import {
@@ -31,6 +31,7 @@ type HubProps = {
   notifications: AppNotification[];
   onOpenNotification: (notification: AppNotification) => void;
   onMarkAllNotificationsRead: () => Promise<void>;
+  primaryNavigation: ReactNode;
 };
 
 export function HubSheet(props: HubProps) {
@@ -54,6 +55,7 @@ export function HubSheet(props: HubProps) {
               ? <NotificationsPanel notifications={props.notifications} onOpen={props.onOpenNotification} onMarkAll={props.onMarkAllNotificationsRead} />
               : <AccessPanel onRequestMagicLink={props.onRequestMagicLink} />}
         </div>
+        {props.primaryNavigation}
       </section>
     </div>
   );
