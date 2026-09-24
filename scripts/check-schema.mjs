@@ -32,6 +32,8 @@ const academyAdminSql = migration("20260920113000_academy_admin_and_certificates
 const atomicMemberSql = migration("20260920124500_atomic_academy_member_creation.sql");
 const adminHardeningSql = migration("20260920130000_admin_security_release_hardening.sql");
 const ownerProtectionSql = migration("20260920131500_protect_owner_and_seed_certificate.sql");
+const invitationAndReportIsolationSql = migration("20260924163306_lock_academy_invites_and_reports.sql");
+const reportModerationWriteSql = migration("20260924163851_restrict_report_moderation_writes.sql");
 
 requireFragments(academySql, "schema", [
   "create table public.academy_communities",
@@ -249,6 +251,47 @@ requireFragments(ownerProtectionSql, "Academy owner and certificate defaults", [
   "grant execute on function public.admin_update_academy_member",
 ]);
 
+requireFragments(invitationAndReportIsolationSql, "Academy invitation and report isolation", [
+  "revoke insert, update, delete on public.academy_member_invites from authenticated",
+  'drop policy if exists "academy_invites_admin_insert"',
+  'drop policy if exists "academy_invites_admin_update"',
+  'drop policy if exists "academy_invites_admin_delete"',
+  'drop policy if exists "content_reports_academy_admin_manage"',
+  'create policy "content_reports_academy_admin_manage"',
+  "with check (exists (",
+  "post.academy_community_id = community.id",
+  "comment.academy_community_id = community.id",
+  "member.academy_community_id = community.id",
+  "community.owner_organization_id = content_reports.organization_id",
+]);
+const reportPolicyParts = invitationAndReportIsolationSql
+  .split('create policy "content_reports_academy_admin_manage"')[1]
+  ?.split("with check (exists (");
+if (reportPolicyParts?.length !== 2) {
+  failures.push("Academy report policy must scope both USING and WITH CHECK");
+} else {
+  for (const [boundary, sql] of [["read/update target", reportPolicyParts[0]], ["new target", reportPolicyParts[1]]]) {
+    requireFragments(sql, `Academy report ${boundary}`, [
+      "community.owner_organization_id = content_reports.organization_id",
+      "post.academy_community_id = community.id",
+      "comment.academy_community_id = community.id",
+      "member.academy_community_id = community.id",
+    ]);
+  }
+}
+
+requireFragments(reportModerationWriteSql, "Academy report moderation writes", [
+  "revoke insert, update, delete on public.content_reports from authenticated",
+  "grant update (status, resolved_at, resolved_by) on public.content_reports to authenticated",
+  "private.can_moderate_academy_report",
+  'drop policy if exists "content_reports_academy_admin_manage"',
+  'create policy "content_reports_academy_admin_read"',
+  'create policy "content_reports_academy_admin_update"',
+  "resolved_by = (select auth.uid())",
+  "resolved_at is not null",
+  "resolved_by is null and resolved_at is null",
+]);
+
 requireFragments(allSql, "security hardening", [
   "revoke all on all tables in schema public from anon;",
   "revoke execute on all functions in schema public from public, anon;",
@@ -256,7 +299,7 @@ requireFragments(allSql, "security hardening", [
 ]);
 
 for (const [file, fragments] of [
-  ["supabase/functions/academy-import/index.ts", ["existingAsset?.storage_bucket", "existingAsset?.storage_path", "existingAsset?.content_hash", "preserveImportedPostMedia", ".select(\"id,media\")", "storage_bucket", "storage_path"]],
+  ["supabase/functions/academy-import/index.ts", ["existingAsset?.storage_bucket", "existingAsset?.storage_path", "existingAsset?.content_hash", "preserveImportedPostMedia", ".select(\"id,media\")", "storage_bucket", "storage_path", "Academy owner access required", '.eq("status", "active").eq("role", "owner")', '.eq("user_id", userId).eq("role", "owner")']],
   ["supabase/functions/ghl-webhook/index.ts", ["x-ghl-signature", "MAX_WEBHOOK_BYTES"]],
   ["supabase/functions/ghl-status/index.ts", ["handlePreflight(request, \"GET, OPTIONS\")", "Administrator access required"]],
   ["supabase/functions/academy-notifications/index.ts", ["x-notification-secret", "claim_academy_email_deliveries", "NOTIFICATION_SIGNING_SECRET", "List-Unsubscribe=One-Click", "MAILGUN_API_KEY"]],
