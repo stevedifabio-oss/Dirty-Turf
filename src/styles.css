@@ -36,6 +36,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .brand-lockup > img { width: 82px; height: auto; flex: 0 0 82px; }
 .brand-lockup > div { display: grid; min-width: 0; gap: 3px; }
 .topbar h1 { max-width: 190px; margin: 0; overflow: hidden; font-family: "Outfit",sans-serif; font-size: 1.15rem; line-height: 1.08; text-overflow: ellipsis; white-space: nowrap; }
+.cloud-load-alert { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 16px 12px; padding: 10px 12px; border: 1px solid rgba(167,83,0,.32); border-radius: 9px; background: #fff5e7; color: #713b09; font-size: .72rem; line-height: 1.4; }
+.cloud-load-alert span { min-width: 0; }
+.cloud-load-alert button { flex: 0 0 auto; min-height: 40px; padding: 0 12px; border-radius: 7px; background: var(--asphalt); color: white; font-size: .7rem; font-weight: 800; }
 .data-mode { display: inline-flex; align-items: center; gap: 5px; width: fit-content; padding: 0; border: 0; background: transparent; color: var(--ink-soft); font-size: .58rem; font-weight: 700; }
 .data-mode::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--clay); }
 .data-mode.cloud::before { background: var(--lime); box-shadow: 0 0 0 3px rgba(120,193,46,.16); }
@@ -135,6 +138,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .access-intro { display: grid; justify-items: center; padding: 18px 12px 12px; text-align: center; }.access-intro > span { display: grid; width: 52px; height: 52px; place-items: center; border-radius: 12px; background: var(--mist); color: var(--turf); }.access-intro h3 { margin: 13px 0 5px; font-family: "Outfit",sans-serif; font-size: 1.2rem; }.access-intro p { max-width: 310px; margin: 0; color: var(--ink-soft); font-size: .7rem; line-height: 1.5; }.access-form { display: grid; gap: 12px; margin-top: 12px; }.access-form label { display: grid; gap: 6px; font-size: .7rem; font-weight: 800; }.access-form input { min-height: 46px; padding: 0 12px; border: 1px solid #ccd5d0; border-radius: 8px; background: white; }.access-note { display: flex; gap: 8px; align-items: flex-start; margin-top: 15px; padding: 12px; border-left: 3px solid var(--turf); background: white; color: var(--ink-soft); }.access-note svg { flex: 0 0 auto; color: var(--turf); }.access-note p { margin: 0; font-size: .62rem; line-height: 1.45; }
 
 .member-directory-view .subview-bar { margin: 6px 16px 0; padding-right: 0; padding-left: 0; }.member-directory-heading { margin: 12px 16px 4px; }.member-directory-heading h2 { margin: 4px 0 0; font-family: "Outfit",sans-serif; font-size: 1.45rem; }.member-directory { margin: 0 16px; }.member-row .avatar { object-fit: cover; }.member-row em { display: inline-flex; align-items: center; gap: 3px; }.member-level { padding: 5px 7px; border-radius: 999px; background: var(--mist); color: var(--turf-dark); font-size: .57rem; font-weight: 850; }
+.member-directory-actions { display: grid; justify-items: end; gap: 6px; }.member-directory-actions .follow-button { margin: 0; cursor: pointer; }.member-directory-actions .follow-button:disabled { cursor: wait; opacity: .55; }.community-load-more { display: flex; justify-content: center; margin: 14px 16px 22px; }.community-load-more button { min-height: 42px; padding: 0 20px; border: 1px solid var(--turf); border-radius: 8px; background: white; color: var(--turf); font-size: .72rem; font-weight: 800; }.community-load-more button:disabled { opacity: .6; }
+.member-safety-action { min-height: 26px; padding: 2px 4px; background: transparent; color: var(--ink-soft); font-size: .58rem; font-weight: 750; }.member-safety-action:disabled { opacity: .5; }.community-safety-error { margin: 8px 16px; padding: 9px 11px; border: 1px solid #dca59d; border-radius: 7px; background: #fff3f1; color: #7c3024; font-size: .65rem; }
 
 /* Search */
 .setting-row { grid-template-columns: auto minmax(0,1fr); }.setting-row > span:nth-child(2) { min-width: 0; }.setting-row small { line-height: 1.35; }
@@ -227,7 +232,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .notification-options.disabled { opacity: .52; }
 .toggle-row input:disabled + i { cursor: not-allowed; }
 .comment.nested { margin-left: 32px; padding-left: 10px; border-left: 2px solid #c9dcc5; }
-.comment-actions { display: flex; align-items: center; gap: 14px; }
+.comment-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
 .comment-actions button.active { color: var(--clay); }
 .replying-to { display: flex; align-items: center; justify-content: space-between; margin: 8px 18px -4px 58px; padding: 7px 10px; border-radius: 6px; background: #eaf4e6; color: var(--ink-soft); font-size: .62rem; }
 .replying-to button { display: grid; width: 24px; height: 24px; place-items: center; background: transparent; color: var(--ink-soft); }
@@ -384,7 +389,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .view-content, .search-view { flex: 1 0 auto; }
   .bottom-nav { position: fixed; right: 0; bottom: 0; left: 0; width: 100%; margin: 0; padding-bottom: max(10px,env(safe-area-inset-bottom)); }
   .toast { bottom: calc(86px + env(safe-area-inset-bottom)); }
-  .topbar { padding-right: 18px; padding-left: 18px; }
+  .topbar { padding-top: max(20px,env(safe-area-inset-top)); padding-right: 18px; padding-left: 18px; }
   .sheet-layer { align-items: flex-end; }
   .quote-sheet, .hub-sheet { height: calc(100dvh - 36px); }
   .quote-sheet > .bottom-nav, .hub-sheet > .bottom-nav { position: static; z-index: auto; flex: 0 0 auto; width: 100%; margin: 0; }
@@ -392,6 +397,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 
 @media (max-width: 430px) {
   body { background: var(--chalk); }.app-shell { padding: 0; }.phone-frame { width: 100%; border: 0; border-radius: 0; box-shadow: none; }
+  .community-section-tabs { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 0; overflow-x: visible; }
+  .community-section-tabs button { justify-content: center; min-width: 0; gap: 3px; padding: 0 2px; font-size: .61rem; }
+  .community-section-tabs button svg { width: 13px; height: 13px; flex: 0 0 auto; }
   .toast { bottom: calc(76px + env(safe-area-inset-bottom)); }
   /* Keep iOS from zooming the web view when a compact form control receives focus. */
   input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), textarea, select { font-size: 1rem; }

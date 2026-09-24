@@ -97,9 +97,9 @@ export const initialComments: CommunityComment[] = [
 ];
 
 export const initialEvents: AcademyEvent[] = [
-  { id: 1, title: "Live job review", description: "Bring one estimate or difficult property. We will review scope, treatment, and pricing together.", date: "Sep 18", time: "9:00 AM", duration: "45 min", host: "Steve", kind: "live", attending: true, attendeeCount: 46 },
-  { id: 2, title: "Odor diagnosis workshop", description: "A practical walkthrough for finding the source before you choose chemistry or extraction passes.", date: "Sep 22", time: "2:00 PM", duration: "60 min", host: "Mike", kind: "workshop", attending: false, attendeeCount: 31 },
-  { id: 3, title: "Operator office hours", description: "Open questions about equipment, routes, staffing, and difficult customer conversations.", date: "Sep 25", time: "11:30 AM", duration: "30 min", host: "Maya", kind: "office-hours", attending: false, attendeeCount: 18 },
+  { id: 1, title: "Live job review", description: "Bring one estimate or difficult property. We will review scope, treatment, and pricing together.", date: "Sep 18", time: "9:00 AM", duration: "45 min", startsAt: "2026-09-18T09:00:00", endsAt: "2026-09-18T09:45:00", host: "Steve", kind: "live", attending: true, attendeeCount: 46 },
+  { id: 2, title: "Odor diagnosis workshop", description: "A practical walkthrough for finding the source before you choose chemistry or extraction passes.", date: "Sep 22", time: "2:00 PM", duration: "60 min", startsAt: "2026-09-22T14:00:00", endsAt: "2026-09-22T15:00:00", host: "Mike", kind: "workshop", attending: false, attendeeCount: 31 },
+  { id: 3, title: "Operator office hours", description: "Open questions about equipment, routes, staffing, and difficult customer conversations.", date: "Sep 25", time: "11:30 AM", duration: "30 min", startsAt: "2026-09-25T11:30:00", endsAt: "2026-09-25T12:00:00", host: "Maya", kind: "office-hours", attending: false, attendeeCount: 18 },
 ];
 
 export const initialMembers: Member[] = [

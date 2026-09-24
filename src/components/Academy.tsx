@@ -179,9 +179,8 @@ export function AcademyView({ courses, certificates, dataMode, onCoursesChange, 
         <div className="section-heading"><div><p>Training library</p><h3>Your courses</h3></div><span className="sync-status"><Check size={13} /> In app</span></div>
         {visibleCourses.map((course) => {
           const count = course.modules.reduce((total, module) => total + module.lessons.length, 0);
-          const locked = course.access === "level" && (course.requiredLevel ?? 0) > 4;
-          return <button className="course-card course-button" key={course.id} onClick={() => locked ? onToast(`Reach level ${course.requiredLevel} to unlock this course.`) : openCourse(course.id)}>
-            <span className={locked ? "play-button locked" : "play-button"}>{locked ? <Lock size={15} /> : <Play size={15} fill="currentColor" />}</span>
+          return <button className="course-card course-button" key={course.id} onClick={() => openCourse(course.id)}>
+            <span className="play-button"><Play size={15} fill="currentColor" /></span>
             <span><span className="course-meta"><span>{course.category}</span><span>{count} lessons · {course.duration}</span></span><strong className="course-title">{course.title}</strong><span className="course-description">{course.description}</span><span className="course-foot"><span className="progress-track"><span style={{ width: `${course.progress}%` }} /></span><span>{course.progress}%</span></span></span>
           </button>;
         })}

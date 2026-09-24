@@ -30,6 +30,7 @@
     "academy:compose": "node scripts/compose-academy-import.mjs",
     "academy:batches": "node scripts/prepare-academy-import-batches.mjs",
     "academy:validate": "node scripts/validate-academy-import.mjs",
+    "academy:delta": "node scripts/plan-academy-delta.mjs",
     "academy:access-audit": "node scripts/audit-academy-access.mjs --expect-members 60 --expect-enrolled 49",
     "check": "npm run security:secrets && npm run schema:check && npm run store:check && npm run typecheck && npm run test && npm run build && npm run pwa:check",
     "ghl:verify": "node scripts/verify-ghl.mjs",
