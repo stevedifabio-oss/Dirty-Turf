@@ -194,7 +194,7 @@ Deno.serve(async (request) => {
   const ownerOrganizationId = existingCommunity?.owner_organization_id ?? manifest.ownerOrganizationId;
   if (!ownerOrganizationId) return jsonResponse(request, { error: "ownerOrganizationId is required for the first import" }, { status: 422 });
   if (!(await canManageImport(admin, userData.user.id, existingCommunity?.id, ownerOrganizationId))) {
-    return jsonResponse(request, { error: "Academy administrator access required" }, { status: 403 });
+    return jsonResponse(request, { error: "Academy owner access required" }, { status: 403 });
   }
 
   const counts = manifestCounts(manifest);
@@ -683,11 +683,11 @@ async function upsertCommunity(admin: SupabaseClient, manifest: ImportManifest, 
 async function canManageImport(admin: SupabaseClient, userId: string, communityId: string | undefined, organizationId: string) {
   if (communityId) {
     const membership = await maybeSingle(admin.from("academy_members").select("id")
-      .eq("academy_community_id", communityId).eq("user_id", userId).eq("status", "active").in("role", ["owner", "admin"]));
+      .eq("academy_community_id", communityId).eq("user_id", userId).eq("status", "active").eq("role", "owner"));
     if (membership) return true;
   }
   return Boolean(await maybeSingle(admin.from("organization_members").select("user_id")
-    .eq("organization_id", organizationId).eq("user_id", userId).in("role", ["owner", "admin"])));
+    .eq("organization_id", organizationId).eq("user_id", userId).eq("role", "owner")));
 }
 
 async function recordSource(

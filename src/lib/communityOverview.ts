@@ -35,6 +35,12 @@ export function featuredCommunityPost(posts: CommunityPost[]) {
     .sort((a, b) => (b.likes ?? 0) - (a.likes ?? 0))[0];
 }
 
+export function postsFromFollowedMembers(posts: CommunityPost[], members: Member[]) {
+  const followedIds = new Set(members.filter((member) => member.following && member.cloudId).map((member) => member.cloudId));
+  const followedNames = new Set(members.filter((member) => member.following && !member.cloudId).map((member) => member.name.toLocaleLowerCase()));
+  return posts.filter((post) => post.authorCloudId ? followedIds.has(post.authorCloudId) : followedNames.has(post.author.toLocaleLowerCase()));
+}
+
 export function communityLeaders(members: Member[], limit = 4) {
   return [...members]
     .sort((a, b) => b.points - a.points || b.level - a.level || a.name.localeCompare(b.name))

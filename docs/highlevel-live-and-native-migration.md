@@ -19,6 +19,16 @@ The initial native Academy migration completed on September 18, 2026. The ignore
 
 HighLevel must remain available through the member pilot and final delta capture. Mailgun activation, `app.dirtyturf.com`, a real-member Magic Link pilot, and client approval are still cutover gates.
 
+## Edits Made in HighLevel During Migration
+
+The September 18 archive is a snapshot, not live synchronization. The signed GHL webhook currently queues events in `integration_events`; it does not update Academy records. HighLevel's documented Social Planner API is not this Academy community, and the public Courses API does not offer a supported course-catalog export. Do not promise that Steve's GHL course or community edits automatically appear in the app.
+
+For each editing cycle, recapture the exact Academy group, courses, community, events, membership, entitlements, and media through the client-owned authenticated admin session. Keep archives in ignored, access-controlled `output/private/`. Compose and validate a fresh manifest, then compare it with the previous capture using `npm run academy:delta -- <previous-manifest> <fresh-manifest> --report output/private/<new-report-name>.json`. The console prints counts only; the private report contains stable source IDs. A stale or cross-community capture is rejected.
+
+Review additions and updates against HighLevel before applying them. A missing record is not an automatic deletion: it may be a pagination or permission gap. Compare each change with native Admin Studio edits and member progress; replaying a full manifest can overwrite native-authored work. Import approved changes in dependency-ordered batches after a dry run and backup, then reconcile counts, source IDs, media, access, and visual examples in the live app. Record the last successfully applied capture time.
+
+At cutover, freeze GHL edits briefly, run one final reviewed delta, and keep GHL available for rollback until Steve approves native content and real-member sign-in. After cutover, Admin Studio becomes the content source of truth. Fully automatic mirroring remains blocked until a supported GHL content read/export or edit-event source exists for this legacy Academy group.
+
 ## What HighLevel Officially Exposes
 
 - The public Memberships API documents a course **import** endpoint but no supported course catalog export/read endpoint: <https://marketplace.gohighlevel.com/docs/2023-02-21/ghl/courses/import-courses/>

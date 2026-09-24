@@ -18,6 +18,7 @@ import {
   Check,
   CheckCircle2,
   ChevronRight,
+  ClipboardCheck,
   ClipboardList,
   CreditCard,
   Crosshair,
@@ -32,16 +33,19 @@ import {
   Search,
   Send,
   Settings2,
+  ShieldCheck,
   Smartphone,
   Users,
   X,
 } from "lucide-react";
-import type { AcademyEvent, AppNotification, CommunityComment, CommunityPost, Course, Job, MeasurementMode, QuoteDraft, QuoteTotals, Member } from "./domain";
+import type { AcademyCertificate, AcademyEvent, AppNotification, CommunityComment, CommunityPost, Course, Job, MeasurementMode, QuoteDraft, QuoteTotals, Member } from "./domain";
 import {
   claimAcademyMemberships,
   getDataMode,
   getWorkspaceAccessState,
   initializeNativeAuth,
+  loadAcademyCertificates,
+  loadBlockedAcademyMemberIds,
   loadComments,
   loadCourses,
   loadEvents,
@@ -49,9 +53,13 @@ import {
   loadMembers,
   loadNotifications,
   loadPosts,
+  setAcademyMemberFollow,
   markAllNotificationsRead,
   markNotificationRead,
+  recordAcademyQuizAttempt,
+  requestAcademyCertificate,
   requestMagicLink,
+  reportAcademyContent,
   openAcademyBillingPortal,
   saveComment,
   saveJob,
@@ -65,18 +73,24 @@ import {
   toggleCommentReaction,
   togglePostBookmark,
   togglePostReaction,
+  toggleAcademyMemberBlock,
+  verifyAcademyCertificate,
   type DataMode,
+  type CommunityPostCursor,
   type WorkspaceAccessState,
   webBillingAvailable,
 } from "./lib/backend";
 import { hasNativeLiveMeasurement, startNativeLiveMeasurement } from "./lib/liveMeasurement";
 import { academyPaymentLink, checkoutReturnNotice } from "./lib/academyPaymentLink";
+import { cloudCollectionOrEmpty } from "./lib/cloudCollection";
+import { createCommunityPostPageGate } from "./lib/communityPostPageGate";
 import { calculateQuote, INFILL_RATES } from "./lib/quote";
 import { useModalDialog } from "./lib/useModalDialog";
 import { AcademyView } from "./components/Academy";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { CommunityView } from "./components/Community";
 import { EventsView } from "./components/Events";
+import { PrimaryNavigation, type PrimaryNavigationView } from "./components/PrimaryNavigation";
 import type { HubSection } from "./components/Network";
 import { courses as seedCourses, initialComments, initialEvents, initialMembers, initialNotifications, initialPosts } from "./appData";
 import "./styles.css";
@@ -87,8 +101,13 @@ const MapMeasurement = lazy(() =>
 const HubSheet = lazy(() =>
   import("./components/Network").then((module) => ({ default: module.HubSheet })),
 );
+const AdminStudio = lazy(() =>
+  import("./components/AdminStudio").then((module) => ({ default: module.AdminStudio })),
+);
 
-type View = "home" | "learn" | "community" | "events";
+type View = PrimaryNavigationView;
+
+type PublicCertificateResult = Awaited<ReturnType<typeof verifyAcademyCertificate>>;
 
 const initialJobs: Job[] = [
   { id: 1, address: "Mesa backyard", area: 684, infill: 5, infillPounds: 171, bags50: 4, infillRate: 0.25, serviceRate: 0.72, quote: 492.48, status: "Calculated", method: "camera", createdAt: "Today", photos: 4 },
@@ -112,6 +131,7 @@ const navTitles: Record<View, string> = {
   learn: "Academy",
   community: "Academy",
   events: "Academy",
+  admin: "Admin Studio",
 };
 
 function initialViewFromUrl(): View {
@@ -125,6 +145,20 @@ function initialHubSectionFromUrl(): HubSection | null {
   return requested === "settings" || requested === "access" || requested === "notifications" ? requested : null;
 }
 
+function CertificateVerificationPage({ code }: { code: string }) {
+  const [result, setResult] = useState<PublicCertificateResult | undefined>();
+  useEffect(() => {
+    let active = true;
+    void verifyAcademyCertificate(code).then((value) => { if (active) setResult(value); }).catch(() => { if (active) setResult(null); });
+    return () => { active = false; };
+  }, [code]);
+  return <main className="certificate-verification-page"><section>
+    <img src="/dirty-turf-logo.png" alt="Dirty Turf Academy" />
+    {result === undefined ? <><ShieldCheck size={34} /><h1>Verifying certificate…</h1><p>Checking the Academy’s secure certificate record.</p></> : result ? <><CheckCircle2 size={38} className={result.valid ? "valid" : "invalid"} /><h1>{result.valid ? "Certificate verified" : "Certificate is not active"}</h1><p><strong>{result.recipientName}</strong> completed <strong>{result.courseTitle}</strong>.</p><span>Issued {result.issuedAt ? new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(new Date(result.issuedAt)) : "date unavailable"} · Status: {result.status}</span></> : <><LockKeyhole size={38} className="invalid" /><h1>Certificate not found</h1><p>This verification code does not match a Dirty Turf Academy certificate.</p></>}
+    <a href="/">Open Dirty Turf Academy</a>
+  </section></main>;
+}
+
 function App() {
   const [activeView, setActiveView] = useState<View>(initialViewFromUrl);
   const [quoteOpen, setQuoteOpen] = useState(false);
@@ -132,22 +166,41 @@ function App() {
   const [hubSection, setHubSection] = useState<HubSection | null>(initialHubSectionFromUrl);
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState("");
+  const [cloudLoadError, setCloudLoadError] = useState("");
   const [draft, setDraft] = useState<QuoteDraft>(defaultDraft);
   const [photoUrl, setPhotoUrl] = useState("");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [jobs, setJobs] = useState<Job[]>(initialJobs);
-  const [courses, setCourses] = useState<Course[]>(seedCourses);
-  const [posts, setPosts] = useState<CommunityPost[]>(initialPosts);
-  const [comments, setComments] = useState<CommunityComment[]>(initialComments);
-  const [events, setEvents] = useState<AcademyEvent[]>(initialEvents);
-  const [members, setMembers] = useState<Member[]>(initialMembers);
-  const [notifications, setNotifications] = useState<AppNotification[]>(initialNotifications);
+  const [jobs, setJobs] = useState<Job[]>(supabase ? [] : initialJobs);
+  const [courses, setCourses] = useState<Course[]>(supabase ? [] : seedCourses);
+  const [posts, setPosts] = useState<CommunityPost[]>(supabase ? [] : initialPosts);
+  const [postCursor, setPostCursor] = useState<CommunityPostCursor | undefined>();
+  const [hasMorePosts, setHasMorePosts] = useState(false);
+  const [loadingMorePosts, setLoadingMorePosts] = useState(false);
+  const postPageGate = useRef(createCommunityPostPageGate());
+  const [comments, setComments] = useState<CommunityComment[]>(supabase ? [] : initialComments);
+  const [events, setEvents] = useState<AcademyEvent[]>(supabase ? [] : initialEvents);
+  const [members, setMembers] = useState<Member[]>(supabase ? [] : initialMembers);
+  const [notifications, setNotifications] = useState<AppNotification[]>(supabase ? [] : initialNotifications);
   const [arrivalChecks, setArrivalChecks] = useState<boolean[]>([false, false, false, false]);
+  const [certificates, setCertificates] = useState<AcademyCertificate[]>([]);
   const [requestedPostCloudId, setRequestedPostCloudId] = useState(() => new URLSearchParams(window.location.search).get("post") ?? undefined);
   const [dataMode, setDataMode] = useState<DataMode>("device");
   const [workspaceAccess, setWorkspaceAccess] = useState<
     WorkspaceAccessState | { status: "loading" }
   >({ status: "loading" });
+  const [workspaceRefreshToken, setWorkspaceRefreshToken] = useState(0);
+  const canManage = workspaceAccess.status === "member" && workspaceAccess.canManage;
+
+  const clearWorkspaceContent = () => {
+    setJobs([]);
+    setCourses([]);
+    setPosts([]);
+    setComments([]);
+    setEvents([]);
+    setMembers([]);
+    setNotifications([]);
+    setCertificates([]);
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -156,24 +209,27 @@ function App() {
 
     const refreshWorkspace = async () => {
       const activeRefresh = ++refreshId;
+      postPageGate.current.refresh();
+      setLoadingMorePosts(false);
+      setHasMorePosts(false);
+      setPostCursor(undefined);
+      if (supabase) {
+        setWorkspaceAccess({ status: "loading" });
+        setCloudLoadError("");
+        clearWorkspaceContent();
+      }
       try {
         const mode = await getDataMode();
         if (mode === "cloud") await claimAcademyMemberships();
         const access = await getWorkspaceAccessState();
         if (!mounted || activeRefresh !== refreshId) return;
-        setDataMode(mode);
-        setWorkspaceAccess(access);
         if (access.status === "signed_out" || access.status === "no_access") {
-          setJobs([]);
-          setCourses([]);
-          setPosts([]);
-          setComments([]);
-          setEvents([]);
-          setMembers([]);
-          setNotifications([]);
+          clearWorkspaceContent();
+          setDataMode(mode);
+          setWorkspaceAccess(access);
           return;
         }
-        const [loadedJobs, loadedCourses, loadedPosts, loadedComments, loadedEvents, loadedMembers, loadedNotifications] = await Promise.all([
+        const results = await Promise.allSettled([
           loadJobs(initialJobs),
           loadCourses(seedCourses),
           loadPosts(initialPosts),
@@ -181,15 +237,28 @@ function App() {
           loadEvents(initialEvents),
           loadMembers(initialMembers),
           loadNotifications(initialNotifications),
-        ]);
+          loadAcademyCertificates(),
+        ] as const);
         if (!mounted || activeRefresh !== refreshId) return;
-        setJobs(loadedJobs);
-        setCourses(loadedCourses);
-        setPosts(loadedPosts);
-        setComments(loadedComments);
-        setEvents(loadedEvents);
-        setMembers(loadedMembers);
-        setNotifications(loadedNotifications);
+        const [jobsResult, coursesResult, postsResult, commentsResult, eventsResult, membersResult, notificationsResult, certificatesResult] = results;
+        setJobs(cloudCollectionOrEmpty(jobsResult));
+        setCourses(cloudCollectionOrEmpty(coursesResult));
+        if (postsResult.status === "fulfilled") {
+          postPageGate.current.activate();
+          setPosts(postsResult.value.posts);
+          setPostCursor(postsResult.value.nextCursor);
+          setHasMorePosts(postsResult.value.hasMore);
+        } else setPosts([]);
+        setComments(cloudCollectionOrEmpty(commentsResult));
+        setEvents(cloudCollectionOrEmpty(eventsResult));
+        setMembers(cloudCollectionOrEmpty(membersResult));
+        setNotifications(cloudCollectionOrEmpty(notificationsResult));
+        setCertificates(cloudCollectionOrEmpty(certificatesResult));
+        setDataMode(mode);
+        setWorkspaceAccess(access);
+        const names = ["jobs", "courses", "posts", "comments", "events", "members", "notifications", "certificates"];
+        const failed = results.flatMap((result, index) => result.status === "rejected" ? [names[index]] : []);
+        setCloudLoadError(failed.length ? `Could not load ${failed.join(", ")}. This content is unavailable until you retry.` : "");
       } catch {
         if (mounted && activeRefresh === refreshId) {
           setWorkspaceAccess(supabase ? { status: "no_access" } : { status: "preview" });
@@ -216,11 +285,33 @@ function App() {
 
     return () => {
       mounted = false;
+      postPageGate.current.refresh();
       authSubscription?.unsubscribe();
       disposeNativeAuth();
       disposeNotifications();
     };
-  }, []);
+  }, [workspaceRefreshToken]);
+
+  const loadMoreCommunityPosts = async () => {
+    if (!hasMorePosts) return;
+    const requestGeneration = postPageGate.current.begin();
+    if (requestGeneration === null) return;
+    setLoadingMorePosts(true);
+    try {
+      const page = await loadPosts(initialPosts, postCursor);
+      if (!postPageGate.current.isCurrent(requestGeneration)) return;
+      setPosts((current) => {
+        const existing = new Set(current.map((post) => post.cloudId ?? String(post.id)));
+        return [...current, ...page.posts.filter((post) => !existing.has(post.cloudId ?? String(post.id)))];
+      });
+      setPostCursor(page.nextCursor);
+      setHasMorePosts(page.hasMore);
+    } catch {
+      if (postPageGate.current.isCurrent(requestGeneration)) setToast("More posts could not load. Try again.");
+    } finally {
+      if (postPageGate.current.finish(requestGeneration)) setLoadingMorePosts(false);
+    }
+  };
 
   useEffect(() => {
     if (!toast || ["loading", "signed_out", "no_access"].includes(workspaceAccess.status)) return;
@@ -239,10 +330,15 @@ function App() {
     if (photoUrl) URL.revokeObjectURL(photoUrl);
   }, [photoUrl]);
 
+  useEffect(() => {
+    if (activeView === "admin" && workspaceAccess.status !== "loading" && !canManage) setActiveView("learn");
+  }, [activeView, canManage, workspaceAccess.status]);
+
   const quote = calculateQuote(draft);
 
   const openQuote = (mode: MeasurementMode = "camera") => {
     setDraft((current) => ({ ...current, mode }));
+    setHubSection(null);
     setQuoteOpen(true);
   };
 
@@ -283,11 +379,18 @@ function App() {
 
   const changeView = (view: View) => {
     setActiveView(view);
+    setHubSection(null);
+    setQuoteOpen(false);
     if (view !== "community") setRequestedPostCloudId(undefined);
     setSearchOpen(false);
     setQuery("");
     document.querySelector(".phone-frame")?.scrollTo({ top: 0, behavior: "auto" });
     window.scrollTo({ top: 0, behavior: "auto" });
+  };
+
+  const openSettings = () => {
+    setQuoteOpen(false);
+    setHubSection("settings");
   };
 
   const sendMagicLink = async (email: string) => {
@@ -373,6 +476,7 @@ function App() {
         <nav className="desktop-nav" aria-label="App sections">
           <DesktopNavItem icon={<Home size={19} />} label="Dashboard" active={activeView === "home"} onClick={() => changeView("home")} />
           <DesktopNavItem icon={<BookOpen size={19} />} label="Academy" active={["learn", "community", "events"].includes(activeView)} onClick={() => changeView("learn")} />
+          {canManage && <DesktopNavItem icon={<ShieldCheck size={19} />} label="Admin Studio" active={activeView === "admin"} onClick={() => changeView("admin")} />}
         </nav>
         <div className="desktop-sidebar-footer">
           <button className={`desktop-workspace-status ${dataMode}`} onClick={() => setHubSection(dataMode === "cloud" ? "settings" : "access")} aria-label={dataMode === "cloud" ? "Workspace synced" : "Device preview"} title={dataMode === "cloud" ? "Workspace synced" : "Device preview"}>
@@ -394,21 +498,20 @@ function App() {
           </div>
         </header>
 
+        {cloudLoadError && <div className="cloud-load-alert" role="alert"><span>{cloudLoadError}</span><button type="button" onClick={() => setWorkspaceRefreshToken((token) => token + 1)}>Try again</button></div>}
+
         {searchOpen && <SearchPanel query={query} setQuery={setQuery} jobs={jobs} onOpenJob={() => openQuote("manual")} onNavigate={changeView} />}
-        {!searchOpen && activeView !== "home" && <AcademyTabs activeView={activeView} onNavigate={changeView} />}
-        {!searchOpen && activeView === "home" && <HomeView jobs={jobs} openQuote={openQuote} checks={arrivalChecks} setChecks={setArrivalChecks} />}
-        {!searchOpen && activeView === "learn" && <AcademyView courses={courses} dataMode={dataMode} onCoursesChange={setCourses} onLessonCompletion={saveLessonCompletion} onToast={setToast} onDiscuss={() => changeView("community")} />}
-        {!searchOpen && activeView === "community" && <CommunityView posts={posts} comments={comments} members={members} events={events} requestedPostCloudId={requestedPostCloudId} onRequestedPostOpened={() => setRequestedPostCloudId(undefined)} onPostsChange={setPosts} onCommentsChange={setComments} onCreatePost={savePost} onCreateComment={saveComment} onToggleLike={(post) => post.cloudId ? togglePostReaction(post.cloudId) : Promise.resolve(null)} onToggleCommentLike={(comment) => comment.cloudId ? toggleCommentReaction(comment.cloudId) : Promise.resolve(null)} onToggleBookmark={(post) => post.cloudId ? togglePostBookmark(post.cloudId) : Promise.resolve(null)} onNavigate={changeView} onToast={setToast} />}
+        {!searchOpen && activeView !== "home" && <AcademyTabs activeView={activeView} canManage={canManage} onNavigate={changeView} />}
+        {!searchOpen && activeView === "home" && <HomeView jobs={jobs} openQuote={openQuote} checks={arrivalChecks} setChecks={setArrivalChecks} setToast={setToast} />}
+        {!searchOpen && activeView === "learn" && <AcademyView courses={courses} certificates={certificates} dataMode={dataMode} onCoursesChange={setCourses} onLessonCompletion={saveLessonCompletion} onQuizAttempt={recordAcademyQuizAttempt} onRequestCertificate={async (courseId) => { await requestAcademyCertificate(courseId); setCertificates(await loadAcademyCertificates()); }} onToast={setToast} onDiscuss={() => changeView("community")} />}
+        {!searchOpen && activeView === "community" && <CommunityView posts={posts} comments={comments} members={members} events={events} requestedPostCloudId={requestedPostCloudId} onRequestedPostOpened={() => setRequestedPostCloudId(undefined)} onPostsChange={setPosts} onCommentsChange={setComments} onMembersChange={setMembers} onToggleFollow={(member, following) => member.cloudId ? setAcademyMemberFollow(member.cloudId, following) : Promise.resolve(following)} onLoadMorePosts={loadMoreCommunityPosts} hasMorePosts={hasMorePosts} loadingMorePosts={loadingMorePosts} onCreatePost={savePost} onCreateComment={saveComment} onToggleLike={(post) => post.cloudId ? togglePostReaction(post.cloudId) : Promise.resolve(null)} onToggleCommentLike={(comment) => comment.cloudId ? toggleCommentReaction(comment.cloudId) : Promise.resolve(null)} onToggleBookmark={(post) => post.cloudId ? togglePostBookmark(post.cloudId) : Promise.resolve(null)} onReport={(contentType, contentId, reason) => reportAcademyContent(contentType, contentId, reason).then(() => undefined)} onBlockMember={toggleAcademyMemberBlock} onLoadBlockedMembers={loadBlockedAcademyMemberIds} onRefreshCommunity={() => setWorkspaceRefreshToken((current) => current + 1)} onNavigate={changeView} onToast={setToast} />}
         {!searchOpen && activeView === "events" && <EventsView events={events} onEventsChange={setEvents} onToggleRsvp={(event) => event.cloudId ? toggleAcademyEventRsvp(event.cloudId) : Promise.resolve(null)} onToast={setToast} />}
+        {!searchOpen && activeView === "admin" && canManage && <Suspense fallback={<div className="admin-loading" role="status">Loading Admin Studio...</div>}><AdminStudio onToast={setToast} onContentChange={() => setWorkspaceRefreshToken((token) => token + 1)} /></Suspense>}
 
-        <footer className="bottom-nav" aria-label="App sections">
-          <NavItem icon={<BookOpen size={20} />} label="Academy" active={activeView !== "home"} onClick={() => changeView("learn")} />
-          <NavItem icon={<Home size={23} />} label="Dashboard" active={activeView === "home"} emphasis onClick={() => changeView("home")} />
-          <NavItem icon={<Settings2 size={20} />} label="Settings" active={hubSection === "settings"} current={false} onClick={() => setHubSection("settings")} />
-        </footer>
+        {!quoteOpen && !hubSection && <PrimaryNavigation activeView={activeView} settingsOpen={false} onNavigate={changeView} onOpenSettings={openSettings} />}
 
-        {quoteOpen && <QuoteSheet draft={draft} setDraft={setDraft} quote={quote} photoUrl={photoUrl} setPhotoUrl={setPhotoUrl} setPhotoFile={setPhotoFile} onClose={() => setQuoteOpen(false)} onSave={saveQuote} onError={setToast} />}
-        {hubSection && <Suspense fallback={<div className="sheet-loading" role="status">Loading workspace...</div>}><HubSheet section={hubSection} onClose={() => setHubSection(null)} onToast={setToast} onRequestMagicLink={sendMagicLink} onSignOut={handleSignOut} dataMode={dataMode} notifications={notifications} onOpenNotification={openNotification} onMarkAllNotificationsRead={markEveryNotificationRead} /></Suspense>}
+        {quoteOpen && <QuoteSheet draft={draft} setDraft={setDraft} quote={quote} photoUrl={photoUrl} setPhotoUrl={setPhotoUrl} setPhotoFile={setPhotoFile} onClose={() => setQuoteOpen(false)} onSave={saveQuote} onError={setToast} primaryNavigation={<PrimaryNavigation activeView={activeView} settingsOpen={false} onNavigate={changeView} onOpenSettings={openSettings} />} />}
+        {hubSection && <Suspense fallback={<div className="sheet-loading" role="status">Loading workspace...</div>}><HubSheet section={hubSection} onClose={() => setHubSection(null)} onToast={setToast} onRequestMagicLink={sendMagicLink} onSignOut={handleSignOut} dataMode={dataMode} notifications={notifications} onOpenNotification={openNotification} onMarkAllNotificationsRead={markEveryNotificationRead} primaryNavigation={<PrimaryNavigation activeView={activeView} settingsOpen onNavigate={changeView} onOpenSettings={openSettings} />} /></Suspense>}
         {toast && <div className="toast" role="status"><CheckCircle2 size={18} />{toast}</div>}
       </section>
     </main>
@@ -508,25 +611,16 @@ function LaunchAccessGate({
   </main>;
 }
 
-function AcademyTabs({ activeView, onNavigate }: { activeView: Exclude<View, "home">; onNavigate: (view: View) => void }) {
-  return <nav className="academy-tabs" aria-label="Academy sections">
+function AcademyTabs({ activeView, canManage, onNavigate }: { activeView: Exclude<View, "home">; canManage: boolean; onNavigate: (view: View) => void }) {
+  return <nav className={canManage ? "academy-tabs manage" : "academy-tabs"} aria-label="Academy sections">
     <button className={activeView === "learn" ? "active" : ""} aria-current={activeView === "learn" ? "page" : undefined} onClick={() => onNavigate("learn")}><BookOpen size={16} /> Courses</button>
     <button className={activeView === "community" ? "active" : ""} aria-current={activeView === "community" ? "page" : undefined} onClick={() => onNavigate("community")}><Users size={16} /> Community</button>
     <button className={activeView === "events" ? "active" : ""} aria-current={activeView === "events" ? "page" : undefined} onClick={() => onNavigate("events")}><CalendarDays size={16} /> Events</button>
+    {canManage && <button className={activeView === "admin" ? "active" : ""} aria-current={activeView === "admin" ? "page" : undefined} onClick={() => onNavigate("admin")}><ShieldCheck size={16} /> Admin</button>}
   </nav>;
 }
 
-function HomeView({
-  jobs,
-  openQuote,
-  checks,
-  setChecks,
-}: {
-  jobs: Job[];
-  openQuote: (mode: MeasurementMode) => void;
-  checks: boolean[];
-  setChecks: React.Dispatch<React.SetStateAction<boolean[]>>;
-}) {
+function HomeView({ jobs, openQuote, checks, setChecks, setToast }: { jobs: Job[]; openQuote: (mode: MeasurementMode) => void; checks: boolean[]; setChecks: React.Dispatch<React.SetStateAction<boolean[]>>; setToast: (message: string) => void }) {
   const latest = jobs[0];
   const historyPhotos = jobs.flatMap((job) => (job.photoItems ?? []).map((photo) => ({ ...photo, label: job.address }))).slice(0, 6);
   const checklist = ["Photograph problem areas", "Check seams and edges", "Confirm water access", "Log infill condition"];
@@ -559,6 +653,7 @@ function HomeView({
       <section className="checklist-panel dashboard-checklist">
         <div className="section-heading"><div><p>Arrival routine</p><h3>Property checklist</h3></div><span className="completion-count">{checks.filter(Boolean).length}/{checks.length}</span></div>
         {checklist.map((item, index) => <label className={checks[index] ? "check-row done" : "check-row"} key={item}><input type="checkbox" checked={checks[index]} onChange={() => setChecks((current) => current.map((checked, itemIndex) => itemIndex === index ? !checked : checked))} /><span className="custom-check"><Check size={14} /></span><span>{item}</span></label>)}
+        <button className="secondary-button" onClick={() => setToast("Checklist saved for this visit.")}><ClipboardCheck size={17} /> Save checklist</button>
       </section>
 
       {historyPhotos.length > 0 && <section className="history-strip">
@@ -584,7 +679,7 @@ function SearchPanel({ query, setQuery, jobs, onOpenJob, onNavigate }: { query: 
   );
 }
 
-function QuoteSheet({ draft, setDraft, quote, photoUrl, setPhotoUrl, setPhotoFile, onClose, onSave, onError }: { draft: QuoteDraft; setDraft: React.Dispatch<React.SetStateAction<QuoteDraft>>; quote: QuoteTotals; photoUrl: string; setPhotoUrl: (url: string) => void; setPhotoFile: (file: File | null) => void; onClose: () => void; onSave: () => void | Promise<void>; onError: (message: string) => void }) {
+function QuoteSheet({ draft, setDraft, quote, photoUrl, setPhotoUrl, setPhotoFile, onClose, onSave, onError, primaryNavigation }: { draft: QuoteDraft; setDraft: React.Dispatch<React.SetStateAction<QuoteDraft>>; quote: QuoteTotals; photoUrl: string; setPhotoUrl: (url: string) => void; setPhotoFile: (file: File | null) => void; onClose: () => void; onSave: () => void | Promise<void>; onError: (message: string) => void; primaryNavigation: React.ReactNode }) {
   const dialogRef = useRef<HTMLElement>(null);
   useModalDialog(dialogRef, onClose);
   const update = <K extends keyof QuoteDraft>(key: K, value: QuoteDraft[K]) => setDraft((current) => ({ ...current, [key]: value }));
@@ -617,6 +712,7 @@ function QuoteSheet({ draft, setDraft, quote, photoUrl, setPhotoUrl, setPhotoFil
           <section className="infill-summary" aria-label="Infill calculation results"><div className="area-total"><span>Total turf area</span><strong>{formatNumber(quote.area)}</strong><small>square feet</small></div><div className="infill-result-grid"><div><span>Total infill</span><strong>{formatNumber(quote.infillPounds)} lb</strong></div><div><span>40-lb bags</span><strong>{quote.bags40}</strong></div><div><span>50-lb bags</span><strong>{quote.bags50}</strong></div></div><div className="customer-price"><span>Customer price</span><strong>{formatCurrency(quote.serviceTotal)}</strong></div></section>
         </div>
         <div className="sheet-footer"><button className="primary-button wide" onClick={onSave}><CheckCircle2 size={18} /> Save calculation</button></div>
+        {primaryNavigation}
       </section>
     </div>
   );
@@ -678,8 +774,6 @@ function JobRow({ job }: { job: Job }) {
 }
 
 function DesktopNavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) { return <button className={active ? "desktop-nav-item active" : "desktop-nav-item"} onClick={onClick} aria-current={active ? "page" : undefined} aria-label={label} title={label}>{icon}<span>{label}</span></button>; }
-function NavItem({ icon, label, active, emphasis = false, current = true, onClick }: { icon: React.ReactNode; label: string; active: boolean; emphasis?: boolean; current?: boolean; onClick: () => void }) { return <button className={`nav-item${active ? " active" : ""}${emphasis ? " emphasis" : ""}`} onClick={onClick} aria-current={active && current ? "page" : undefined} aria-expanded={!current ? active : undefined}>{icon}<span>{label}</span></button>; }
-
 function numberValue(value: string) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : 0; }
 function formatNumber(value: number) { return new Intl.NumberFormat("en-US").format(value); }
 function formatCurrency(value: number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value); }
@@ -689,7 +783,8 @@ function formatPhotoDate(value: string) { const date = new Date(value); return N
 const rootElement = document.getElementById("root")!;
 const appWindow = window as Window & { __dirtyTurfRoot?: ReturnType<typeof createRoot> };
 appWindow.__dirtyTurfRoot ??= createRoot(rootElement);
-appWindow.__dirtyTurfRoot.render(<AppErrorBoundary><App /></AppErrorBoundary>);
+const publicCertificateCode = new URLSearchParams(window.location.search).get("certificate");
+appWindow.__dirtyTurfRoot.render(<AppErrorBoundary>{publicCertificateCode ? <CertificateVerificationPage code={publicCertificateCode} /> : <App />}</AppErrorBoundary>);
 
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {

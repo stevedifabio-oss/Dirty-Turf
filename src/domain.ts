@@ -30,6 +30,7 @@ export type CommunityPost = {
   cloudId?: string;
   name: string;
   author: string;
+  authorCloudId?: string;
   body: string;
   replies: number;
   age: string;
@@ -58,6 +59,7 @@ export type CommunityComment = {
   parentId?: number;
   parentCloudId?: string;
   author: string;
+  authorCloudId?: string;
   body: string;
   age: string;
   likes: number;
@@ -119,6 +121,21 @@ export type Course = {
   requiredLevel?: number;
 };
 
+export type AcademyCertificate = {
+  id: string;
+  courseId: string;
+  recipientName: string;
+  courseTitle: string;
+  verificationCode: string;
+  status: "active" | "revoked";
+  issuedAt: string;
+  expiresAt?: string;
+  certificateTitle: string;
+  certificateDescription: string;
+  signatoryName: string;
+  signatoryTitle: string;
+};
+
 export type AcademyEvent = {
   id: number;
   cloudId?: string;
@@ -127,6 +144,8 @@ export type AcademyEvent = {
   date: string;
   time: string;
   duration: string;
+  startsAt?: string;
+  endsAt?: string;
   host: string;
   kind: "live" | "workshop" | "office-hours";
   attending: boolean;
@@ -145,6 +164,7 @@ export type Member = {
   level: number;
   points: number;
   following: boolean;
+  isSelf?: boolean;
   online?: boolean;
   avatarUrl?: string;
 };

@@ -1,6 +1,6 @@
 import { Capacitor } from "@capacitor/core";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { AcademyEvent, AppNotification, CommunityComment, CommunityPost, Course, Job, LessonQuiz, Member, NotificationPreferences } from "../domain";
+import type { AcademyCertificate, AcademyEvent, AppNotification, CommunityComment, CommunityPost, Course, Job, LessonQuiz, Member, NotificationPreferences } from "../domain";
 import { NATIVE_AUTH_EMAIL_REDIRECT, parseNativeAuthRedirect } from "./authRedirect";
 import { communityMediaStoragePaths, normalizeCommunityMediaItems } from "./communityMedia";
 import { cleanCommunityPostBody } from "./communityPost";
@@ -263,9 +263,7 @@ export async function initializeNativeAuth(onError: (message: string) => void = 
             redirect.code,
             redirect.flowId ? { flowId: redirect.flowId } : undefined,
           )
-        : redirect.accessToken && redirect.refreshToken
-          ? await supabase.auth.setSession({ access_token: redirect.accessToken, refresh_token: redirect.refreshToken })
-          : { error: new Error("The sign-in link is incomplete.") };
+        : { error: new Error("The sign-in link is incomplete.") };
       if (error) onError(error.message || "The sign-in link could not be completed.");
       else handledUrls.add(rawUrl);
     } catch (error) {
@@ -507,28 +505,43 @@ export async function saveJob(job: Job, photoFile?: File): Promise<Job> {
   };
 }
 
-export async function loadPosts(seed: CommunityPost[]): Promise<CommunityPost[]> {
-  const context = await getAcademyContext();
-  if (!context) return (await hasCloudSession()) ? [] : readLocal(POSTS_KEY, seed);
+export const COMMUNITY_POST_PAGE_SIZE = 50;
+export type CommunityPostCursor = { createdAt: string; id: string };
 
-  const { data, error } = await supabase!
+export async function loadPosts(seed: CommunityPost[], cursor?: CommunityPostCursor): Promise<{ posts: CommunityPost[]; hasMore: boolean; nextCursor?: CommunityPostCursor }> {
+  const context = await getAcademyContext();
+  if (!context) {
+    const all = (await hasCloudSession()) ? [] : readLocal(POSTS_KEY, seed);
+    return { posts: all, hasMore: false };
+  }
+
+  if (cursor && (!/^\d{4}-\d\d-\d\dT[\d:.]+(?:Z|[+-]\d\d:\d\d)$/.test(cursor.createdAt) || !/^[0-9a-f-]{36}$/i.test(cursor.id))) {
+    throw new Error("Invalid post page cursor.");
+  }
+  const query = supabase!
     .from("community_feed")
-    .select("id,academy_community_id,title,body,author_name,reply_count,created_at,category_name,is_pinned,media,like_count")
+    .select("id,academy_community_id,title,body,author_name,reply_count,created_at,category_name,is_pinned,media,like_count,academy_author_id")
     .eq("academy_community_id", context.communityId)
     .order("created_at", { ascending: false })
-    .limit(50);
+    .order("id", { ascending: false });
+  const { data, error } = await (cursor
+    ? query.or(`created_at.lt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`)
+    : query).limit(COMMUNITY_POST_PAGE_SIZE + 1);
 
   if (error) throw error;
-  const postIds = (data ?? []).map((row) => row.id);
+  const rows = (data ?? []).slice(0, COMMUNITY_POST_PAGE_SIZE);
+  const postIds = rows.map((row) => row.id);
   const [reactionResult, bookmarkResult] = postIds.length
     ? await Promise.all([
         supabase!.from("academy_post_reactions").select("post_id").eq("academy_member_id", context.memberId).in("post_id", postIds),
         supabase!.from("academy_post_bookmarks").select("post_id").eq("academy_member_id", context.memberId).in("post_id", postIds),
       ])
     : [{ data: [] }, { data: [] }];
+  if ("error" in reactionResult && reactionResult.error) throw reactionResult.error;
+  if ("error" in bookmarkResult && bookmarkResult.error) throw bookmarkResult.error;
   const liked = new Set((reactionResult.data ?? []).map((row) => row.post_id));
   const saved = new Set((bookmarkResult.data ?? []).map((row) => row.post_id));
-  const mediaPaths = [...new Set((data ?? []).flatMap((row) => communityMediaStoragePaths(row.media)))];
+  const mediaPaths = [...new Set(rows.flatMap((row) => communityMediaStoragePaths(row.media)))];
   const signedByPath = new Map<string, string>();
   if (mediaPaths.length) {
     const { data: signedRows, error: signedError } = await supabase!.storage
@@ -540,13 +553,14 @@ export async function loadPosts(seed: CommunityPost[]): Promise<CommunityPost[]>
     }
   }
 
-  return (data ?? []).map((row) => {
+  const posts = rows.map((row) => {
     const mediaItems = normalizeCommunityMediaItems(row.media, signedByPath);
     return {
       id: stableNumericId(row.id),
       cloudId: row.id,
       name: row.title,
       author: row.author_name,
+      authorCloudId: row.academy_author_id ?? undefined,
       body: cleanCommunityPostBody(row.body, row.title) || row.title,
       replies: Number(row.reply_count),
       age: relativeDate(row.created_at),
@@ -559,6 +573,8 @@ export async function loadPosts(seed: CommunityPost[]): Promise<CommunityPost[]>
       mediaItems,
     } satisfies CommunityPost;
   });
+  const last = rows.at(-1);
+  return { posts, hasMore: (data ?? []).length > COMMUNITY_POST_PAGE_SIZE, nextCursor: last ? { createdAt: last.created_at, id: last.id } : undefined };
 }
 
 export async function savePost(post: CommunityPost): Promise<CommunityPost> {
@@ -586,7 +602,7 @@ export async function loadComments(seed: CommunityComment[]): Promise<CommunityC
 
   const { data, error } = await supabase!
     .from("academy_comment_feed")
-    .select("id,post_id,parent_id,author_name,body,created_at,like_count,is_answer")
+    .select("id,post_id,parent_id,author_name,body,created_at,like_count,is_answer,academy_author_id")
     .eq("academy_community_id", context.communityId)
     .order("created_at", { ascending: true })
     .limit(500);
@@ -610,6 +626,7 @@ export async function loadComments(seed: CommunityComment[]): Promise<CommunityC
     parentId: row.parent_id ? stableNumericId(row.parent_id) : undefined,
     parentCloudId: row.parent_id ?? undefined,
     author: row.author_name,
+    authorCloudId: row.academy_author_id ?? undefined,
     body: row.body,
     age: relativeDate(row.created_at),
     likes: Number(row.like_count),
@@ -705,7 +722,7 @@ export async function loadCourses(seed: Course[]): Promise<Course[]> {
         completed: Boolean(progress.get(lesson.id)?.completed_at),
         body: normalizeLessonBody(lesson.body),
         bodyHtml: normalizeLessonHtml(lesson.body, signedLessonAssets.get(lesson.id)),
-        videoUrl: lesson.video_url ?? undefined,
+        videoUrl: lesson.video_url ? signedLessonAssets.get(lesson.id)?.get(lesson.video_url) ?? lesson.video_url : undefined,
         transcript: lesson.transcript ?? undefined,
         resources: normalizeResources(lesson.resources, signedLessonAssets.get(lesson.id)),
         quiz: normalizeQuiz(lesson.body),
@@ -773,17 +790,93 @@ export async function saveLessonCompletion(lessonCloudId: string, completed: boo
   if (error) throw error;
 }
 
+export async function recordAcademyQuizAttempt(lessonCloudId: string, scorePercent: number, answers: number[]) {
+  const context = await getAcademyContext();
+  if (!context) throw new Error("Academy membership is required.");
+  const { data, error } = await supabase!.rpc("record_academy_quiz_attempt", {
+    p_lesson_id: lessonCloudId,
+    p_score_percent: scorePercent,
+    p_answers: answers,
+  });
+  if (error) throw error;
+  const result = data && typeof data === "object" ? data as Record<string, unknown> : {};
+  return {
+    passed: result.passed === true,
+    requiredScore: Number(result.requiredScore ?? 0),
+  };
+}
+
+export async function loadAcademyCertificates(): Promise<AcademyCertificate[]> {
+  const context = await getAcademyContext();
+  if (!context) return [];
+  const { data, error } = await supabase!
+    .from("academy_certificates")
+    .select("id,course_id,recipient_name,course_title,verification_code,status,issued_at,expires_at,metadata")
+    .eq("academy_member_id", context.memberId)
+    .order("issued_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((row) => {
+    const metadata = row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata) ? row.metadata as Record<string, unknown> : {};
+    return {
+      id: row.id,
+      courseId: row.course_id,
+      recipientName: row.recipient_name,
+      courseTitle: row.course_title,
+      verificationCode: row.verification_code,
+      status: row.status,
+      issuedAt: row.issued_at,
+      expiresAt: row.expires_at ?? undefined,
+      certificateTitle: typeof metadata.certificateTitle === "string" ? metadata.certificateTitle : "Certificate of Completion",
+      certificateDescription: typeof metadata.certificateDescription === "string" ? metadata.certificateDescription : "has successfully completed the course",
+      signatoryName: typeof metadata.signatoryName === "string" ? metadata.signatoryName : "Steve DiFabio",
+      signatoryTitle: typeof metadata.signatoryTitle === "string" ? metadata.signatoryTitle : "Dirty Turf Academy",
+    };
+  });
+}
+
+export async function verifyAcademyCertificate(verificationCode: string) {
+  if (!supabase) throw new Error("Certificate verification is unavailable.");
+  const { data, error } = await supabase.rpc("verify_academy_certificate", { p_verification_code: verificationCode });
+  if (error) throw error;
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const value = data as Record<string, unknown>;
+  return {
+    valid: value.valid === true,
+    recipientName: typeof value.recipientName === "string" ? value.recipientName : "Academy member",
+    courseTitle: typeof value.courseTitle === "string" ? value.courseTitle : "Academy course",
+    issuedAt: typeof value.issuedAt === "string" ? value.issuedAt : "",
+    status: typeof value.status === "string" ? value.status : "unknown",
+  };
+}
+
+export async function requestAcademyCertificate(courseId: string) {
+  const context = await getAcademyContext();
+  if (!context) throw new Error("Academy membership is required.");
+  const { data, error } = await supabase!.rpc("issue_my_academy_certificate", { p_course_id: courseId });
+  if (error) throw error;
+  if (!data) throw new Error("Complete every published lesson before requesting the certificate.");
+  return String(data);
+}
+
 export async function loadMembers(seed: Member[]): Promise<Member[]> {
   const context = await getAcademyContext();
   if (!context) return (await hasCloudSession()) ? [] : seed;
-  const { data, error } = await supabase!
+  const [membersResult, followsResult] = await Promise.all([
+    supabase!
     .from("academy_members")
     .select("id,display_name,avatar_url,company_name,location,role,level,points,last_seen_at")
     .eq("academy_community_id", context.communityId)
     .eq("status", "active")
-    .order("points", { ascending: false });
-  if (error) throw error;
-  return (data ?? []).map((row) => ({
+    .order("points", { ascending: false }),
+    supabase!.from("academy_member_follows")
+      .select("followed_member_id")
+      .eq("academy_community_id", context.communityId)
+      .eq("follower_member_id", context.memberId),
+  ]);
+  if (membersResult.error) throw membersResult.error;
+  if (followsResult.error) throw followsResult.error;
+  const following = new Set((followsResult.data ?? []).map((row) => row.followed_member_id));
+  return (membersResult.data ?? []).map((row) => ({
     id: stableNumericId(row.id),
     cloudId: row.id,
     name: row.display_name || "Academy member",
@@ -794,9 +887,25 @@ export async function loadMembers(seed: Member[]): Promise<Member[]> {
     role: academyRole(row.role),
     level: Number(row.level),
     points: Number(row.points),
-    following: false,
+    following: following.has(row.id),
+    isSelf: row.id === context.memberId,
     online: row.last_seen_at ? Date.now() - new Date(row.last_seen_at).getTime() < 15 * 60_000 : false,
   }));
+}
+
+export async function setAcademyMemberFollow(memberId: string, following: boolean): Promise<boolean> {
+  const context = await getAcademyContext();
+  if (!context) {
+    if (await hasCloudSession()) throw new Error("Academy membership is required.");
+    return following;
+  }
+  if (memberId === context.memberId) throw new Error("You cannot follow yourself.");
+  const query = supabase!.from("academy_member_follows");
+  const { error } = following
+    ? await query.insert({ academy_community_id: context.communityId, follower_member_id: context.memberId, followed_member_id: memberId })
+    : await query.delete().eq("academy_community_id", context.communityId).eq("follower_member_id", context.memberId).eq("followed_member_id", memberId);
+  if (error) throw error;
+  return following;
 }
 
 export async function loadEvents(seed: AcademyEvent[]): Promise<AcademyEvent[]> {
@@ -819,6 +928,8 @@ export async function loadEvents(seed: AcademyEvent[]): Promise<AcademyEvent[]> 
       date: new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(startsAt),
       time: new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(startsAt),
       duration: formatDuration(Math.max(0, (endsAt.getTime() - startsAt.getTime()) / 1000)),
+      startsAt: row.starts_at,
+      endsAt: row.ends_at,
       host: row.host_name || "Dirty Turf Academy",
       kind: String(row.kind).replace("_", "-") as AcademyEvent["kind"],
       attending: Boolean(row.is_attending),
@@ -943,6 +1054,38 @@ export async function togglePostBookmark(cloudPostId: string) {
   const { data, error } = await supabase!.rpc("toggle_academy_post_bookmark", { p_post_id: cloudPostId });
   if (error) throw error;
   return Boolean(data);
+}
+
+export async function reportAcademyContent(contentType: "post" | "comment" | "member", contentId: string, reason: string) {
+  const context = await getAcademyContext();
+  if (!context) throw new Error("Academy membership is required.");
+  const { data, error } = await supabase!.rpc("report_academy_content", {
+    p_content_type: contentType,
+    p_content_id: contentId,
+    p_reason: reason,
+  });
+  if (error) throw error;
+  return String(data);
+}
+
+export async function toggleAcademyMemberBlock(memberId: string) {
+  const context = await getAcademyContext();
+  if (!context) throw new Error("Academy membership is required.");
+  const { data, error } = await supabase!.rpc("toggle_academy_member_block", { p_member_id: memberId });
+  if (error) throw error;
+  return Boolean(data);
+}
+
+export async function loadBlockedAcademyMemberIds(): Promise<string[]> {
+  const context = await getAcademyContext();
+  if (!context) return [];
+  const { data, error } = await supabase!
+    .from("academy_member_blocks")
+    .select("blocked_member_id")
+    .eq("academy_community_id", context.communityId)
+    .eq("blocker_member_id", context.memberId);
+  if (error) throw error;
+  return (data ?? []).map((row) => row.blocked_member_id);
 }
 
 export async function toggleEventRsvp(cloudEventId: string) {
@@ -1102,7 +1245,11 @@ function normalizeQuiz(value: unknown): LessonQuiz | undefined {
 
     const explanation = richTextValue(question.explanation);
     const normalizedExplanation = normalizeAnswerText(explanation.text);
-    const correctOptionIndex = normalizedExplanation
+    const storedCorrectIndex = typeof question.correctOptionIndex === "number" && Number.isInteger(question.correctOptionIndex)
+      && question.correctOptionIndex >= 0 && question.correctOptionIndex < options.length
+      ? question.correctOptionIndex
+      : undefined;
+    const legacyExplanationIndex = normalizedExplanation
       ? options.findIndex((option) => normalizeAnswerText(option.text) === normalizedExplanation)
       : -1;
     return [{
@@ -1111,7 +1258,7 @@ function normalizeQuiz(value: unknown): LessonQuiz | undefined {
       options,
       explanation: explanation.text || undefined,
       explanationHtml: explanation.html || undefined,
-      correctOptionIndex: correctOptionIndex >= 0 ? correctOptionIndex : undefined,
+      correctOptionIndex: storedCorrectIndex ?? (legacyExplanationIndex >= 0 ? legacyExplanationIndex : undefined),
     }];
   });
   if (!questions.length) return undefined;
