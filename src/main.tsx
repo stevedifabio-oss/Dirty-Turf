@@ -162,6 +162,7 @@ function CertificateVerificationPage({ code }: { code: string }) {
 function App() {
   const [activeView, setActiveView] = useState<View>(initialViewFromUrl);
   const [quoteOpen, setQuoteOpen] = useState(false);
+  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [hubSection, setHubSection] = useState<HubSection | null>(initialHubSectionFromUrl);
   const [query, setQuery] = useState("");
@@ -186,7 +187,7 @@ function App() {
   const [requestedPostCloudId, setRequestedPostCloudId] = useState(() => new URLSearchParams(window.location.search).get("post") ?? undefined);
   const [dataMode, setDataMode] = useState<DataMode>("device");
   const [workspaceAccess, setWorkspaceAccess] = useState<
-    WorkspaceAccessState | { status: "loading" }
+    WorkspaceAccessState | { status: "loading" | "error" }
   >({ status: "loading" });
   const [workspaceRefreshToken, setWorkspaceRefreshToken] = useState(0);
   const canManage = workspaceAccess.status === "member" && workspaceAccess.canManage;
@@ -261,8 +262,8 @@ function App() {
         setCloudLoadError(failed.length ? `Could not load ${failed.join(", ")}. This content is unavailable until you retry.` : "");
       } catch {
         if (mounted && activeRefresh === refreshId) {
-          setWorkspaceAccess(supabase ? { status: "no_access" } : { status: "preview" });
-          setToast(supabase ? "Academy access could not be verified." : "Cloud data is unavailable. Working on this device.");
+          setWorkspaceAccess(supabase ? { status: "error" } : { status: "preview" });
+          if (!supabase) setToast("Cloud data is unavailable. Working on this device.");
         }
       }
     };
@@ -314,7 +315,7 @@ function App() {
   };
 
   useEffect(() => {
-    if (!toast || ["loading", "signed_out", "no_access"].includes(workspaceAccess.status)) return;
+    if (!toast || ["loading", "signed_out", "no_access", "error"].includes(workspaceAccess.status)) return;
     const timer = window.setTimeout(() => setToast(""), 2600);
     return () => window.clearTimeout(timer);
   }, [toast, workspaceAccess.status]);
@@ -340,6 +341,7 @@ function App() {
     setDraft((current) => ({ ...current, mode }));
     setHubSection(null);
     setQuoteOpen(true);
+    setSelectedJob(null);
   };
 
   const saveQuote = async () => {
@@ -371,7 +373,11 @@ function App() {
       setPhotoUrl("");
       setQuoteOpen(false);
       setActiveView("home");
-      setToast(dataMode === "cloud" ? "Calculation synced to the company workspace." : "Calculation saved on this device.");
+      setToast(savedJob.photoUploadFailed
+        ? "Calculation saved, but the visit photo could not be attached."
+        : savedJob.photoPreviewUnavailable
+          ? "Calculation and photo saved. The photo preview is temporarily unavailable."
+          : dataMode === "cloud" ? "Calculation synced to the company workspace." : "Calculation saved on this device.");
     } catch {
       setToast("Calculation could not be saved. Check the connection and try again.");
     }
@@ -381,6 +387,7 @@ function App() {
     setActiveView(view);
     setHubSection(null);
     setQuoteOpen(false);
+    setSelectedJob(null);
     if (view !== "community") setRequestedPostCloudId(undefined);
     setSearchOpen(false);
     setQuery("");
@@ -393,13 +400,13 @@ function App() {
     setHubSection("settings");
   };
 
-  const sendMagicLink = async (email: string) => {
+  const sendMagicLink = async (email: string, notify = true) => {
     try {
       const { error } = await requestMagicLink(email);
       if (error) throw error;
-      setToast("If this email has Academy access, a secure sign-in link is on the way.");
+      if (notify) setToast("If this email has Academy access, a secure sign-in link is on the way.");
     } catch (error) {
-      setToast("The sign-in link could not be requested. Check the connection and try again.");
+      if (notify) setToast("The sign-in link could not be requested. Check the connection and try again.");
       throw error;
     }
   };
@@ -417,6 +424,7 @@ function App() {
     setWorkspaceAccess(supabase ? { status: "signed_out" } : { status: "preview" });
     setHubSection(null);
     setSearchOpen(false);
+    setSelectedJob(null);
     setQuery("");
     setActiveView("home");
     setToast("Signed out of the workspace.");
@@ -456,13 +464,14 @@ function App() {
 
   const unreadNotifications = notifications.filter((notification) => !notification.read).length;
 
-  if (workspaceAccess.status === "loading" || workspaceAccess.status === "signed_out" || workspaceAccess.status === "no_access") {
+  if (workspaceAccess.status === "loading" || workspaceAccess.status === "signed_out" || workspaceAccess.status === "no_access" || workspaceAccess.status === "error") {
     return <LaunchAccessGate
       status={workspaceAccess.status}
       authMessage={toast}
-      onRequestMagicLink={sendMagicLink}
+      onRequestMagicLink={(email) => sendMagicLink(email, false)}
       onPasswordSignIn={handlePasswordSignIn}
       onSignOut={handleSignOut}
+      onRetry={() => { setWorkspaceAccess({ status: "loading" }); setWorkspaceRefreshToken((token) => token + 1); }}
     />;
   }
 
@@ -500,7 +509,7 @@ function App() {
 
         {cloudLoadError && <div className="cloud-load-alert" role="alert"><span>{cloudLoadError}</span><button type="button" onClick={() => setWorkspaceRefreshToken((token) => token + 1)}>Try again</button></div>}
 
-        {searchOpen && <SearchPanel query={query} setQuery={setQuery} jobs={jobs} onOpenJob={() => openQuote("manual")} onNavigate={changeView} />}
+        {searchOpen && <SearchPanel query={query} setQuery={setQuery} jobs={jobs} onOpenJob={(job) => { setSelectedJob(job); setSearchOpen(false); }} onNavigate={changeView} />}
         {!searchOpen && activeView !== "home" && <AcademyTabs activeView={activeView} canManage={canManage} onNavigate={changeView} />}
         {!searchOpen && activeView === "home" && <HomeView jobs={jobs} openQuote={openQuote} checks={arrivalChecks} setChecks={setArrivalChecks} setToast={setToast} />}
         {!searchOpen && activeView === "learn" && <AcademyView courses={courses} certificates={certificates} dataMode={dataMode} onCoursesChange={setCourses} onLessonCompletion={saveLessonCompletion} onQuizAttempt={recordAcademyQuizAttempt} onRequestCertificate={async (courseId) => { await requestAcademyCertificate(courseId); setCertificates(await loadAcademyCertificates()); }} onToast={setToast} onDiscuss={() => changeView("community")} />}
@@ -511,7 +520,8 @@ function App() {
         {!quoteOpen && !hubSection && <PrimaryNavigation activeView={activeView} settingsOpen={false} onNavigate={changeView} onOpenSettings={openSettings} />}
 
         {quoteOpen && <QuoteSheet draft={draft} setDraft={setDraft} quote={quote} photoUrl={photoUrl} setPhotoUrl={setPhotoUrl} setPhotoFile={setPhotoFile} onClose={() => setQuoteOpen(false)} onSave={saveQuote} onError={setToast} primaryNavigation={<PrimaryNavigation activeView={activeView} settingsOpen={false} onNavigate={changeView} onOpenSettings={openSettings} />} />}
-        {hubSection && <Suspense fallback={<div className="sheet-loading" role="status">Loading workspace...</div>}><HubSheet section={hubSection} onClose={() => setHubSection(null)} onToast={setToast} onRequestMagicLink={sendMagicLink} onSignOut={handleSignOut} dataMode={dataMode} notifications={notifications} onOpenNotification={openNotification} onMarkAllNotificationsRead={markEveryNotificationRead} primaryNavigation={<PrimaryNavigation activeView={activeView} settingsOpen onNavigate={changeView} onOpenSettings={openSettings} />} /></Suspense>}
+        {selectedJob && <SavedJobSheet job={selectedJob} onClose={() => setSelectedJob(null)} />}
+        {hubSection && <Suspense fallback={<div className="sheet-loading" role="status">Loading workspace...</div>}><HubSheet section={hubSection} onClose={() => setHubSection(null)} onToast={setToast} onRequestMagicLink={sendMagicLink} onSignOut={handleSignOut} dataMode={dataMode} canManage={canManage} notifications={notifications} onOpenNotification={openNotification} onMarkAllNotificationsRead={markEveryNotificationRead} primaryNavigation={<PrimaryNavigation activeView={activeView} settingsOpen onNavigate={changeView} onOpenSettings={openSettings} />} /></Suspense>}
         {toast && <div className="toast" role="status"><CheckCircle2 size={18} />{toast}</div>}
       </section>
     </main>
@@ -524,12 +534,14 @@ function LaunchAccessGate({
   onRequestMagicLink,
   onPasswordSignIn,
   onSignOut,
+  onRetry,
 }: {
-  status: "loading" | "signed_out" | "no_access";
+  status: "loading" | "signed_out" | "no_access" | "error";
   authMessage?: string;
   onRequestMagicLink: (email: string) => Promise<void>;
   onPasswordSignIn: (email: string, password: string) => Promise<void>;
   onSignOut: () => Promise<void>;
+  onRetry: () => void;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -580,7 +592,13 @@ function LaunchAccessGate({
       <img src="/dirty-turf-logo.png" alt="Dirty Turf" />
       <span className="launch-lock"><LockKeyhole size={25} /></span>
       {checkoutNotice && <p className="launch-notice" role="status"><CheckCircle2 size={17} />{checkoutNotice}</p>}
-      {status === "signed_out" ? <>
+      {status === "error" ? <>
+        <p className="kicker">Connection issue</p>
+        <h1>We couldn't check your access.</h1>
+        <p className="launch-copy">Your membership status has not changed. Check your connection and try again.</p>
+        <button className="primary-button wide" onClick={onRetry}>Try again</button>
+        <button className="secondary-button wide" onClick={() => void onSignOut()}>Use a different email</button>
+      </> : status === "signed_out" ? <>
         <p className="kicker">Dirty Turf Academy</p>
         <h1>Welcome back.</h1>
         <p className="launch-copy">{passwordMode
@@ -666,17 +684,34 @@ function HomeView({ jobs, openQuote, checks, setChecks, setToast }: { jobs: Job[
   );
 }
 
-function SearchPanel({ query, setQuery, jobs, onOpenJob, onNavigate }: { query: string; setQuery: (query: string) => void; jobs: Job[]; onOpenJob: () => void; onNavigate: (view: View) => void }) {
+function SearchPanel({ query, setQuery, jobs, onOpenJob, onNavigate }: { query: string; setQuery: (query: string) => void; jobs: Job[]; onOpenJob: (job: Job) => void; onNavigate: (view: View) => void }) {
   const normalized = query.trim().toLowerCase();
   const results = [
-    ...jobs.map((job) => ({ type: "Property", title: job.address, detail: `${job.area} sq ft · ${formatCurrency(job.quote)}`, icon: <MapPin size={18} />, action: onOpenJob })),
-    { type: "Academy", title: "Course library", detail: "Courses, lessons, resources, and progress", icon: <BookOpen size={18} />, action: () => onNavigate("learn") },
-    { type: "Community", title: "7 Figure Turf Cleaning", detail: "Discussions, members, and operator answers", icon: <Users size={18} />, action: () => onNavigate("community") },
-    { type: "Events", title: "Academy event calendar", detail: "Sessions, workshops, and RSVPs", icon: <CalendarDays size={18} />, action: () => onNavigate("events") },
+    ...jobs.map((job) => ({ key: `job-${job.cloudId ?? job.id}`, type: "Property", title: job.address, detail: `${job.area} sq ft · ${formatCurrency(job.quote)}`, icon: <MapPin size={18} />, action: () => onOpenJob(job) })),
+    { key: "academy", type: "Academy", title: "Course library", detail: "Courses, lessons, resources, and progress", icon: <BookOpen size={18} />, action: () => onNavigate("learn") },
+    { key: "community", type: "Community", title: "7 Figure Turf Cleaning", detail: "Discussions, members, and operator answers", icon: <Users size={18} />, action: () => onNavigate("community") },
+    { key: "events", type: "Events", title: "Academy event calendar", detail: "Sessions, workshops, and RSVPs", icon: <CalendarDays size={18} />, action: () => onNavigate("events") },
   ].filter((item) => !normalized || `${item.type} ${item.title} ${item.detail}`.toLowerCase().includes(normalized));
   return (
-    <section className="search-view"><label className="search-input"><Search size={19} /><span className="sr-only">Search properties and Academy destinations</span><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search properties and Academy" />{query && <button onClick={() => setQuery("")} aria-label="Clear search"><X size={16} /></button>}</label><p className="result-count">{results.length} {normalized ? "matches" : "destinations and recent properties"}</p><div className="search-results">{results.slice(0, 9).map((item) => <button className="result-row" key={`${item.type}-${item.title}`} onClick={item.action}><span className="result-icon">{item.icon}</span><span><small>{item.type}</small><strong>{item.title}</strong><em>{item.detail}</em></span><ChevronRight size={17} /></button>)}{results.length === 0 && <div className="empty-state"><Search size={24} /><h3>No matches yet</h3><p>Try a saved calculation, Academy, community, or events.</p></div>}</div></section>
+    <section className="search-view"><label className="search-input"><Search size={19} /><span className="sr-only">Search properties and Academy destinations</span><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search properties and Academy" />{query && <button onClick={() => setQuery("")} aria-label="Clear search"><X size={16} /></button>}</label><p className="result-count">{results.length} {normalized ? "matches" : "destinations and recent properties"}</p><div className="search-results">{results.slice(0, 9).map((item) => <button className="result-row" key={item.key} onClick={item.action}><span className="result-icon">{item.icon}</span><span><small>{item.type}</small><strong>{item.title}</strong><em>{item.detail}</em></span><ChevronRight size={17} /></button>)}{results.length === 0 && <div className="empty-state"><Search size={24} /><h3>No matches yet</h3><p>Try a saved calculation, Academy, community, or events.</p></div>}</div></section>
   );
+}
+
+function SavedJobSheet({ job, onClose }: { job: Job; onClose: () => void }) {
+  const dialogRef = useRef<HTMLElement>(null);
+  useModalDialog(dialogRef, onClose);
+  const pounds = job.infillPounds ?? job.area * (job.infillRate ?? 0.25);
+  const photos = job.photoItems ?? [];
+  return <div className="sheet-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <section ref={dialogRef} className="quote-sheet saved-job-sheet" role="dialog" aria-modal="true" aria-labelledby="saved-job-title">
+      <header className="sheet-header"><button className="bare-icon" aria-label="Close saved calculation" onClick={onClose} data-dialog-autofocus><ArrowLeft size={20} /></button><div><p>Saved calculation</p><h2 id="saved-job-title">{job.address}</h2></div></header>
+      <div className="sheet-body">
+        <p className="saved-job-method">{measurementLabel(job.method)} · {job.createdAt}</p>
+        <section className="infill-summary" aria-label="Saved calculation results"><div className="area-total"><span>Total turf area</span><strong>{formatNumber(job.area)}</strong><small>square feet</small></div><div className="infill-result-grid"><div><span>Total infill</span><strong>{formatNumber(pounds)} lb</strong></div><div><span>40-lb bags</span><strong>{job.infill}</strong></div><div><span>50-lb bags</span><strong>{job.bags50 ?? Math.ceil(pounds / 50)}</strong></div></div><div className="customer-price"><span>Customer price</span><strong>{formatCurrency(job.quote)}</strong></div></section>
+        {photos.length > 0 && <section className="saved-job-photos"><h3>Visit photos</h3><div className="photo-row">{photos.map((photo, index) => <a className="photo-tile real-photo" key={`${photo.url}-${index}`} href={photo.url} target="_blank" rel="noreferrer"><img src={photo.url} alt={`${job.address} visit photo ${index + 1}`} /><span>{formatPhotoDate(photo.capturedAt)}</span></a>)}</div></section>}
+      </div>
+    </section>
+  </div>;
 }
 
 function QuoteSheet({ draft, setDraft, quote, photoUrl, setPhotoUrl, setPhotoFile, onClose, onSave, onError, primaryNavigation }: { draft: QuoteDraft; setDraft: React.Dispatch<React.SetStateAction<QuoteDraft>>; quote: QuoteTotals; photoUrl: string; setPhotoUrl: (url: string) => void; setPhotoFile: (file: File | null) => void; onClose: () => void; onSave: () => void | Promise<void>; onError: (message: string) => void; primaryNavigation: React.ReactNode }) {

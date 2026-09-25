@@ -146,7 +146,8 @@ export async function searchPropertyAddress(query: string): Promise<PropertyGeoc
 
 export async function getWorkspaceAccessState(): Promise<WorkspaceAccessState> {
   if (!supabase) return { status: "preview" };
-  const { data: sessionData } = await supabase.auth.getSession();
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
   if (!sessionData.session) return { status: "signed_out" };
   const { data, error } = await supabase.rpc("get_academy_access_state");
   if (error) throw error;
@@ -302,7 +303,8 @@ export async function loadAccountDeletionRequest(): Promise<AccountDeletionReque
 
 export async function requestAccountDeletion(reason?: string): Promise<AccountDeletionRequest> {
   if (!supabase) throw new Error("Supabase is not configured.");
-  const { data: sessionData } = await supabase.auth.getSession();
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
   const userId = sessionData.session?.user.id;
   if (!userId) throw new Error("Sign in before requesting account deletion.");
 
@@ -346,7 +348,8 @@ export async function uploadJobPhoto(organizationId: string, propertyId: string,
 
 export async function getDataMode(): Promise<DataMode> {
   if (!supabase) return "device";
-  const { data } = await supabase.auth.getSession();
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
   return data.session ? "cloud" : "device";
 }
 
@@ -451,11 +454,14 @@ export async function loadJobs(seed: Job[]): Promise<Job[]> {
   }));
 }
 
-export async function saveJob(job: Job, photoFile?: File): Promise<Job> {
+export type SavedJobResult = Job & { photoUploadFailed?: boolean; photoPreviewUnavailable?: boolean };
+
+export async function saveJob(job: Job, photoFile?: File): Promise<SavedJobResult> {
   if (!(await hasCloudSession())) {
     const current = readLocal<Job[]>(JOBS_KEY, []);
-    writeLocal(JOBS_KEY, [job, ...current.filter((item) => item.id !== job.id)]);
-    return job;
+    const localJob = { ...job, photos: 0, photoItems: [] };
+    writeLocal(JOBS_KEY, [localJob, ...current.filter((item) => item.id !== job.id)]);
+    return photoFile ? { ...localJob, photoUploadFailed: true } : localJob;
   }
 
   const { data, error } = await supabase!.rpc("create_infill_calculation", {
@@ -467,42 +473,46 @@ export async function saveJob(job: Job, photoFile?: File): Promise<Job> {
   });
   if (error) throw error;
   const estimateId = String(data);
-  if (!photoFile) return { ...job, id: stableNumericId(estimateId), cloudId: estimateId };
+  const savedJob = { ...job, id: stableNumericId(estimateId), cloudId: estimateId, photos: 0, photoItems: [] };
+  if (!photoFile) return savedJob;
 
-  const { data: estimate, error: estimateError } = await supabase!
-    .from("estimates")
-    .select("organization_id,property_id")
-    .eq("id", estimateId)
-    .single();
-  if (estimateError || !estimate) throw estimateError || new Error("Saved calculation could not be resolved.");
+  let photoPersisted = false;
+  try {
+    const { data: estimate, error: estimateError } = await supabase!
+      .from("estimates")
+      .select("organization_id,property_id")
+      .eq("id", estimateId)
+      .single();
+    if (estimateError || !estimate) throw estimateError || new Error("Saved calculation could not be resolved.");
 
-  const { data: userData, error: userError } = await supabase!.auth.getUser();
-  if (userError || !userData.user) throw userError || new Error("Sign in again before uploading a visit photo.");
+    const { data: userData, error: userError } = await supabase!.auth.getUser();
+    if (userError || !userData.user) throw userError || new Error("Sign in again before uploading a visit photo.");
 
-  const storagePath = await uploadJobPhoto(estimate.organization_id, estimate.property_id, photoFile);
-  const { error: metadataError } = await supabase!.from("photos").insert({
-    organization_id: estimate.organization_id,
-    property_id: estimate.property_id,
-    storage_path: storagePath,
-    kind: "site",
-    created_by: userData.user.id,
-  });
-  if (metadataError) {
-    await supabase!.storage.from("job-photos").remove([storagePath]);
-    throw metadataError;
+    const storagePath = await uploadJobPhoto(estimate.organization_id, estimate.property_id, photoFile);
+    const { error: metadataError } = await supabase!.from("photos").insert({
+      organization_id: estimate.organization_id,
+      property_id: estimate.property_id,
+      storage_path: storagePath,
+      kind: "site",
+      created_by: userData.user.id,
+    });
+    if (metadataError) {
+      await supabase!.storage.from("job-photos").remove([storagePath]).catch(() => undefined);
+      throw metadataError;
+    }
+
+    photoPersisted = true;
+    const withPhoto = { ...savedJob, photos: 1 };
+    const { data: signed, error: signedError } = await supabase!.storage
+      .from("job-photos")
+      .createSignedUrl(storagePath, 60 * 60);
+    if (signedError || !signed?.signedUrl) return { ...withPhoto, photoPreviewUnavailable: true };
+    return { ...withPhoto, photoItems: [{ url: signed.signedUrl, capturedAt: new Date().toISOString(), kind: "site" }] };
+  } catch {
+    return photoPersisted
+      ? { ...savedJob, photos: 1, photoPreviewUnavailable: true }
+      : { ...savedJob, photoUploadFailed: true };
   }
-
-  const { data: signed, error: signedError } = await supabase!.storage
-    .from("job-photos")
-    .createSignedUrl(storagePath, 60 * 60);
-  if (signedError) throw signedError;
-  return {
-    ...job,
-    id: stableNumericId(estimateId),
-    cloudId: estimateId,
-    photos: 1,
-    photoItems: signed?.signedUrl ? [{ url: signed.signedUrl, capturedAt: new Date().toISOString(), kind: "site" }] : [],
-  };
 }
 
 export const COMMUNITY_POST_PAGE_SIZE = 50;
@@ -1029,7 +1039,8 @@ export async function saveNotificationPreferences(preferences: NotificationPrefe
     writeLocal(NOTIFICATION_PREFERENCES_KEY, preferences);
     return preferences;
   }
-  const { data: sessionData } = await supabase!.auth.getSession();
+  const { data: sessionData, error: sessionError } = await supabase!.auth.getSession();
+  if (sessionError) throw sessionError;
   const userId = sessionData.session?.user.id;
   if (!userId) throw new Error("Sign in before changing notification settings.");
   const { error } = await supabase!.from("notification_preferences").upsert({
@@ -1123,13 +1134,15 @@ export function subscribeToNotifications(onChange: () => void) {
 
 async function hasCloudSession() {
   if (!supabase) return false;
-  const { data } = await supabase.auth.getSession();
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
   return Boolean(data.session);
 }
 
 async function getAcademyContext(): Promise<AcademyContext | null> {
   if (!supabase) return null;
-  const { data: sessionData } = await supabase.auth.getSession();
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
   const userId = sessionData.session?.user.id;
   if (!userId) return null;
   const { data, error } = await supabase

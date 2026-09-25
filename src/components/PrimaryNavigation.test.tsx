@@ -39,6 +39,7 @@ describe("PrimaryNavigation", () => {
         onRequestMagicLink={async () => undefined}
         onSignOut={async () => undefined}
         dataMode="device"
+        canManage={false}
         notifications={[]}
         onOpenNotification={noOp}
         onMarkAllNotificationsRead={async () => undefined}

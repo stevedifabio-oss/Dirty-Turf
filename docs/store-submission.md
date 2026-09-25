@@ -143,9 +143,12 @@ store-required dimensions with each asset.
 
 - The explicit Apple App ID and App Store Connect record are created. EU trader
   status must still be completed by the Dirty Turf account holder. This Mac has
-  no usable Apple code-signing identity, so a distribution certificate/profile
-  still has to be issued to the client team before a TestFlight archive can be
-  uploaded. A physical iPhone is also required for the ARKit acceptance test.
+  a valid Apple Distribution identity and App Store provisioning profile through
+  September 18, 2027. Signed `1.0 (4)` uploaded successfully on September 20,
+  2026 and Apple reported the package is processing; Builds 1-3 are superseded.
+  After processing, capture the required iPhone screenshots, enter the private
+  reviewer credentials, and repeat the ARKit and persistent-navigation acceptance
+  tests against Build 4.
 - The Google Play app record is created, `com.dirtyturf.academy` is reserved,
   Play App Signing is accepted, the Education listing and graphics are saved,
   and signed release `1 (1.0)` is Active on Internal testing. The checked
