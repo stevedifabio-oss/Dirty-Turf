@@ -228,6 +228,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .notification-settings .toggle-row > span { display: grid; gap: 2px; }
 .notification-settings .toggle-row strong { font-size: .7rem; }
 .notification-settings .toggle-row small, .setting-help, .settings-loading { color: var(--ink-soft); font-size: .58rem; line-height: 1.45; }
+.saved-job-method { margin: 0; color: var(--ink-soft); font-size: .72rem; font-weight: 700; }
+.saved-job-photos { margin-top: 22px; }
+.saved-job-photos h3 { margin: 0 0 10px; font-family: "Outfit",sans-serif; font-size: 1rem; }
+.settings-loading .secondary-button { display: inline-flex; margin: 8px 0 0; }
 .notification-options { display: grid; padding-left: 10px; border-left: 2px solid var(--line); transition: opacity 150ms ease; }
 .notification-options.disabled { opacity: .52; }
 .toggle-row input:disabled + i { cursor: not-allowed; }
