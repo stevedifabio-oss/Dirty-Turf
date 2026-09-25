@@ -144,6 +144,8 @@ export type AcademyEvent = {
   date: string;
   time: string;
   duration: string;
+  startsAt?: string;
+  endsAt?: string;
   host: string;
   kind: "live" | "workshop" | "office-hours";
   attending: boolean;
@@ -162,6 +164,7 @@ export type Member = {
   level: number;
   points: number;
   following: boolean;
+  isSelf?: boolean;
   online?: boolean;
   avatarUrl?: string;
 };

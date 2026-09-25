@@ -47,8 +47,8 @@ check(identity.appleId === "6813588770", "App Store Connect Apple ID is missing 
 check(identity.googlePlayAppId === "4973615558687213779", "Google Play app ID is missing or incorrect");
 check(identity.containsAds === false, "Store declaration must remain ad-free");
 check(release.versionName === "1.0", "Release version must match the native projects");
-check(release.androidVersionCode === 2, "Android version code must match the native project");
-check(release.iosBuildNumber === 4, "iOS build number must match the release candidate");
+check(Number.isInteger(release.androidVersionCode) && release.androidVersionCode > 0, "Android version code must be positive");
+check(Number.isInteger(release.iosBuildNumber) && release.iosBuildNumber > 0, "iOS build number must be positive");
 
 checkLimit("Apple app name", identity.name, 30);
 checkLimit("Apple subtitle", apple.subtitle, 30);

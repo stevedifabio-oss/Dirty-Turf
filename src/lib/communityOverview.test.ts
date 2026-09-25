@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CommunityPost, Member } from "../domain";
-import { communityChannels, communityLeaders, communityStats, featuredCommunityPost } from "./communityOverview";
+import { communityChannels, communityLeaders, communityStats, featuredCommunityPost, postsFromFollowedMembers } from "./communityOverview";
 
 const posts: CommunityPost[] = [
   { id: 1, name: "Pinned", author: "A", body: "", replies: 0, age: "Now", category: "General", likes: 3, pinned: true },
@@ -30,5 +30,23 @@ describe("community overview selectors", () => {
   it("derives leaderboard and group totals from current member data", () => {
     expect(communityLeaders(members, 2).map((member) => member.name)).toEqual(["Admin", "Moderator"]);
     expect(communityStats(posts, members)).toEqual({ members: 3, posts: 3, admins: 2 });
+  });
+
+  it("shows posts from followed cloud members and updates when a follow changes", () => {
+    const cloudPosts = [
+      { ...posts[0], authorCloudId: "member-a" },
+      { ...posts[1], authorCloudId: "member-b" },
+      { ...posts[2], author: "B" },
+    ];
+    const cloudMembers = [
+      { ...members[0], name: "A", cloudId: "member-a", following: true },
+      { ...members[1], name: "B", cloudId: "member-b", following: false },
+    ];
+    expect(postsFromFollowedMembers(cloudPosts, cloudMembers).map((post) => post.id)).toEqual([1]);
+    expect(postsFromFollowedMembers(cloudPosts, cloudMembers.map((member) => member.cloudId === "member-b" ? { ...member, following: true } : member)).map((post) => post.id)).toEqual([1, 2]);
+  });
+
+  it("matches preview posts by author name when member cloud ids are unavailable", () => {
+    expect(postsFromFollowedMembers(posts, [{ ...members[0], name: "A", following: true }]).map((post) => post.id)).toEqual([1]);
   });
 });

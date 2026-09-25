@@ -45,6 +45,7 @@ import {
   getWorkspaceAccessState,
   initializeNativeAuth,
   loadAcademyCertificates,
+  loadBlockedAcademyMemberIds,
   loadComments,
   loadCourses,
   loadEvents,
@@ -52,6 +53,7 @@ import {
   loadMembers,
   loadNotifications,
   loadPosts,
+  setAcademyMemberFollow,
   markAllNotificationsRead,
   markNotificationRead,
   recordAcademyQuizAttempt,
@@ -74,11 +76,14 @@ import {
   toggleAcademyMemberBlock,
   verifyAcademyCertificate,
   type DataMode,
+  type CommunityPostCursor,
   type WorkspaceAccessState,
   webBillingAvailable,
 } from "./lib/backend";
 import { hasNativeLiveMeasurement, startNativeLiveMeasurement } from "./lib/liveMeasurement";
 import { academyPaymentLink, checkoutReturnNotice } from "./lib/academyPaymentLink";
+import { cloudCollectionOrEmpty } from "./lib/cloudCollection";
+import { createCommunityPostPageGate } from "./lib/communityPostPageGate";
 import { calculateQuote, INFILL_RATES } from "./lib/quote";
 import { useModalDialog } from "./lib/useModalDialog";
 import { AcademyView } from "./components/Academy";
@@ -161,16 +166,22 @@ function App() {
   const [hubSection, setHubSection] = useState<HubSection | null>(initialHubSectionFromUrl);
   const [query, setQuery] = useState("");
   const [toast, setToast] = useState("");
+  const [cloudLoadError, setCloudLoadError] = useState("");
   const [draft, setDraft] = useState<QuoteDraft>(defaultDraft);
   const [photoUrl, setPhotoUrl] = useState("");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
-  const [jobs, setJobs] = useState<Job[]>(initialJobs);
-  const [courses, setCourses] = useState<Course[]>(seedCourses);
-  const [posts, setPosts] = useState<CommunityPost[]>(initialPosts);
-  const [comments, setComments] = useState<CommunityComment[]>(initialComments);
-  const [events, setEvents] = useState<AcademyEvent[]>(initialEvents);
-  const [members, setMembers] = useState<Member[]>(initialMembers);
-  const [notifications, setNotifications] = useState<AppNotification[]>(initialNotifications);
+  const [jobs, setJobs] = useState<Job[]>(supabase ? [] : initialJobs);
+  const [courses, setCourses] = useState<Course[]>(supabase ? [] : seedCourses);
+  const [posts, setPosts] = useState<CommunityPost[]>(supabase ? [] : initialPosts);
+  const [postCursor, setPostCursor] = useState<CommunityPostCursor | undefined>();
+  const [hasMorePosts, setHasMorePosts] = useState(false);
+  const [loadingMorePosts, setLoadingMorePosts] = useState(false);
+  const postPageGate = useRef(createCommunityPostPageGate());
+  const [comments, setComments] = useState<CommunityComment[]>(supabase ? [] : initialComments);
+  const [events, setEvents] = useState<AcademyEvent[]>(supabase ? [] : initialEvents);
+  const [members, setMembers] = useState<Member[]>(supabase ? [] : initialMembers);
+  const [notifications, setNotifications] = useState<AppNotification[]>(supabase ? [] : initialNotifications);
+  const [arrivalChecks, setArrivalChecks] = useState<boolean[]>([false, false, false, false]);
   const [certificates, setCertificates] = useState<AcademyCertificate[]>([]);
   const [requestedPostCloudId, setRequestedPostCloudId] = useState(() => new URLSearchParams(window.location.search).get("post") ?? undefined);
   const [dataMode, setDataMode] = useState<DataMode>("device");
@@ -180,6 +191,17 @@ function App() {
   const [workspaceRefreshToken, setWorkspaceRefreshToken] = useState(0);
   const canManage = workspaceAccess.status === "member" && workspaceAccess.canManage;
 
+  const clearWorkspaceContent = () => {
+    setJobs([]);
+    setCourses([]);
+    setPosts([]);
+    setComments([]);
+    setEvents([]);
+    setMembers([]);
+    setNotifications([]);
+    setCertificates([]);
+  };
+
   useEffect(() => {
     let mounted = true;
     let refreshId = 0;
@@ -187,22 +209,24 @@ function App() {
 
     const refreshWorkspace = async () => {
       const activeRefresh = ++refreshId;
+      postPageGate.current.refresh();
+      setLoadingMorePosts(false);
+      setHasMorePosts(false);
+      setPostCursor(undefined);
+      if (supabase) {
+        setWorkspaceAccess({ status: "loading" });
+        setCloudLoadError("");
+        clearWorkspaceContent();
+      }
       try {
         const mode = await getDataMode();
         if (mode === "cloud") await claimAcademyMemberships();
         const access = await getWorkspaceAccessState();
         if (!mounted || activeRefresh !== refreshId) return;
-        setDataMode(mode);
-        setWorkspaceAccess(access);
         if (access.status === "signed_out" || access.status === "no_access") {
-          setJobs([]);
-          setCourses([]);
-          setPosts([]);
-          setComments([]);
-          setEvents([]);
-          setMembers([]);
-          setNotifications([]);
-          setCertificates([]);
+          clearWorkspaceContent();
+          setDataMode(mode);
+          setWorkspaceAccess(access);
           return;
         }
         const results = await Promise.allSettled([
@@ -217,15 +241,24 @@ function App() {
         ] as const);
         if (!mounted || activeRefresh !== refreshId) return;
         const [jobsResult, coursesResult, postsResult, commentsResult, eventsResult, membersResult, notificationsResult, certificatesResult] = results;
-        if (jobsResult.status === "fulfilled") setJobs(jobsResult.value);
-        if (coursesResult.status === "fulfilled") setCourses(coursesResult.value);
-        if (postsResult.status === "fulfilled") setPosts(postsResult.value);
-        if (commentsResult.status === "fulfilled") setComments(commentsResult.value);
-        if (eventsResult.status === "fulfilled") setEvents(eventsResult.value);
-        if (membersResult.status === "fulfilled") setMembers(membersResult.value);
-        if (notificationsResult.status === "fulfilled") setNotifications(notificationsResult.value);
-        if (certificatesResult.status === "fulfilled") setCertificates(certificatesResult.value);
-        if (results.some((result) => result.status === "rejected")) setToast("Some Academy content could not load. Your access is still active; try refreshing.");
+        setJobs(cloudCollectionOrEmpty(jobsResult));
+        setCourses(cloudCollectionOrEmpty(coursesResult));
+        if (postsResult.status === "fulfilled") {
+          postPageGate.current.activate();
+          setPosts(postsResult.value.posts);
+          setPostCursor(postsResult.value.nextCursor);
+          setHasMorePosts(postsResult.value.hasMore);
+        } else setPosts([]);
+        setComments(cloudCollectionOrEmpty(commentsResult));
+        setEvents(cloudCollectionOrEmpty(eventsResult));
+        setMembers(cloudCollectionOrEmpty(membersResult));
+        setNotifications(cloudCollectionOrEmpty(notificationsResult));
+        setCertificates(cloudCollectionOrEmpty(certificatesResult));
+        setDataMode(mode);
+        setWorkspaceAccess(access);
+        const names = ["jobs", "courses", "posts", "comments", "events", "members", "notifications", "certificates"];
+        const failed = results.flatMap((result, index) => result.status === "rejected" ? [names[index]] : []);
+        setCloudLoadError(failed.length ? `Could not load ${failed.join(", ")}. This content is unavailable until you retry.` : "");
       } catch {
         if (mounted && activeRefresh === refreshId) {
           setWorkspaceAccess(supabase ? { status: "no_access" } : { status: "preview" });
@@ -252,11 +285,33 @@ function App() {
 
     return () => {
       mounted = false;
+      postPageGate.current.refresh();
       authSubscription?.unsubscribe();
       disposeNativeAuth();
       disposeNotifications();
     };
   }, [workspaceRefreshToken]);
+
+  const loadMoreCommunityPosts = async () => {
+    if (!hasMorePosts) return;
+    const requestGeneration = postPageGate.current.begin();
+    if (requestGeneration === null) return;
+    setLoadingMorePosts(true);
+    try {
+      const page = await loadPosts(initialPosts, postCursor);
+      if (!postPageGate.current.isCurrent(requestGeneration)) return;
+      setPosts((current) => {
+        const existing = new Set(current.map((post) => post.cloudId ?? String(post.id)));
+        return [...current, ...page.posts.filter((post) => !existing.has(post.cloudId ?? String(post.id)))];
+      });
+      setPostCursor(page.nextCursor);
+      setHasMorePosts(page.hasMore);
+    } catch {
+      if (postPageGate.current.isCurrent(requestGeneration)) setToast("More posts could not load. Try again.");
+    } finally {
+      if (postPageGate.current.finish(requestGeneration)) setLoadingMorePosts(false);
+    }
+  };
 
   useEffect(() => {
     if (!toast || ["loading", "signed_out", "no_access"].includes(workspaceAccess.status)) return;
@@ -357,6 +412,7 @@ function App() {
     setEvents(initialEvents);
     setMembers(initialMembers);
     setNotifications(initialNotifications);
+    setArrivalChecks([false, false, false, false]);
     setDataMode("device");
     setWorkspaceAccess(supabase ? { status: "signed_out" } : { status: "preview" });
     setHubSection(null);
@@ -442,11 +498,13 @@ function App() {
           </div>
         </header>
 
+        {cloudLoadError && <div className="cloud-load-alert" role="alert"><span>{cloudLoadError}</span><button type="button" onClick={() => setWorkspaceRefreshToken((token) => token + 1)}>Try again</button></div>}
+
         {searchOpen && <SearchPanel query={query} setQuery={setQuery} jobs={jobs} onOpenJob={() => openQuote("manual")} onNavigate={changeView} />}
         {!searchOpen && activeView !== "home" && <AcademyTabs activeView={activeView} canManage={canManage} onNavigate={changeView} />}
-        {!searchOpen && activeView === "home" && <HomeView jobs={jobs} openQuote={openQuote} setToast={setToast} />}
+        {!searchOpen && activeView === "home" && <HomeView jobs={jobs} openQuote={openQuote} checks={arrivalChecks} setChecks={setArrivalChecks} setToast={setToast} />}
         {!searchOpen && activeView === "learn" && <AcademyView courses={courses} certificates={certificates} dataMode={dataMode} onCoursesChange={setCourses} onLessonCompletion={saveLessonCompletion} onQuizAttempt={recordAcademyQuizAttempt} onRequestCertificate={async (courseId) => { await requestAcademyCertificate(courseId); setCertificates(await loadAcademyCertificates()); }} onToast={setToast} onDiscuss={() => changeView("community")} />}
-        {!searchOpen && activeView === "community" && <CommunityView posts={posts} comments={comments} members={members} events={events} requestedPostCloudId={requestedPostCloudId} onRequestedPostOpened={() => setRequestedPostCloudId(undefined)} onPostsChange={setPosts} onCommentsChange={setComments} onCreatePost={savePost} onCreateComment={saveComment} onToggleLike={(post) => post.cloudId ? togglePostReaction(post.cloudId) : Promise.resolve(null)} onToggleCommentLike={(comment) => comment.cloudId ? toggleCommentReaction(comment.cloudId) : Promise.resolve(null)} onToggleBookmark={(post) => post.cloudId ? togglePostBookmark(post.cloudId) : Promise.resolve(null)} onReport={(post, reason) => post.cloudId ? reportAcademyContent("post", post.cloudId, reason).then(() => undefined) : Promise.resolve()} onBlockMember={toggleAcademyMemberBlock} onNavigate={changeView} onToast={setToast} />}
+        {!searchOpen && activeView === "community" && <CommunityView posts={posts} comments={comments} members={members} events={events} requestedPostCloudId={requestedPostCloudId} onRequestedPostOpened={() => setRequestedPostCloudId(undefined)} onPostsChange={setPosts} onCommentsChange={setComments} onMembersChange={setMembers} onToggleFollow={(member, following) => member.cloudId ? setAcademyMemberFollow(member.cloudId, following) : Promise.resolve(following)} onLoadMorePosts={loadMoreCommunityPosts} hasMorePosts={hasMorePosts} loadingMorePosts={loadingMorePosts} onCreatePost={savePost} onCreateComment={saveComment} onToggleLike={(post) => post.cloudId ? togglePostReaction(post.cloudId) : Promise.resolve(null)} onToggleCommentLike={(comment) => comment.cloudId ? toggleCommentReaction(comment.cloudId) : Promise.resolve(null)} onToggleBookmark={(post) => post.cloudId ? togglePostBookmark(post.cloudId) : Promise.resolve(null)} onReport={(contentType, contentId, reason) => reportAcademyContent(contentType, contentId, reason).then(() => undefined)} onBlockMember={toggleAcademyMemberBlock} onLoadBlockedMembers={loadBlockedAcademyMemberIds} onRefreshCommunity={() => setWorkspaceRefreshToken((current) => current + 1)} onNavigate={changeView} onToast={setToast} />}
         {!searchOpen && activeView === "events" && <EventsView events={events} onEventsChange={setEvents} onToggleRsvp={(event) => event.cloudId ? toggleAcademyEventRsvp(event.cloudId) : Promise.resolve(null)} onToast={setToast} />}
         {!searchOpen && activeView === "admin" && canManage && <Suspense fallback={<div className="admin-loading" role="status">Loading Admin Studio...</div>}><AdminStudio onToast={setToast} onContentChange={() => setWorkspaceRefreshToken((token) => token + 1)} /></Suspense>}
 
@@ -562,10 +620,9 @@ function AcademyTabs({ activeView, canManage, onNavigate }: { activeView: Exclud
   </nav>;
 }
 
-function HomeView({ jobs, openQuote, setToast }: { jobs: Job[]; openQuote: (mode: MeasurementMode) => void; setToast: (message: string) => void }) {
+function HomeView({ jobs, openQuote, checks, setChecks, setToast }: { jobs: Job[]; openQuote: (mode: MeasurementMode) => void; checks: boolean[]; setChecks: React.Dispatch<React.SetStateAction<boolean[]>>; setToast: (message: string) => void }) {
   const latest = jobs[0];
   const historyPhotos = jobs.flatMap((job) => (job.photoItems ?? []).map((photo) => ({ ...photo, label: job.address }))).slice(0, 6);
-  const [checks, setChecks] = useState([false, false, false, false]);
   const checklist = ["Photograph problem areas", "Check seams and edges", "Confirm water access", "Log infill condition"];
   return (
     <div className="view-content home-view">
@@ -716,7 +773,7 @@ function JobRow({ job }: { job: Job }) {
   return <article className="job-row"><div className="job-method">{job.method === "map" ? <Map size={17} /> : job.method === "camera" ? <Camera size={17} /> : <Ruler size={17} />}</div><div><h4>{job.address}</h4><p>{formatNumber(job.area)} sq ft · {job.infill} 40-lb bags · {formatCurrency(job.quote)}</p></div><span>{job.status}</span></article>;
 }
 
-function DesktopNavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) { return <button className={active ? "desktop-nav-item active" : "desktop-nav-item"} onClick={onClick} aria-label={label} title={label}>{icon}<span>{label}</span></button>; }
+function DesktopNavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) { return <button className={active ? "desktop-nav-item active" : "desktop-nav-item"} onClick={onClick} aria-current={active ? "page" : undefined} aria-label={label} title={label}>{icon}<span>{label}</span></button>; }
 function numberValue(value: string) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : 0; }
 function formatNumber(value: number) { return new Intl.NumberFormat("en-US").format(value); }
 function formatCurrency(value: number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value); }
