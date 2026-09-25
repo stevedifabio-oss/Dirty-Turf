@@ -21,7 +21,10 @@ export function buildAndroidIntentUrl(nativeUrl) {
 }
 
 export function preferredAppUrl(nativeUrl, userAgent = "") {
-  return /Android/i.test(userAgent) ? buildAndroidIntentUrl(nativeUrl) : nativeUrl;
+  // The intent URL is Chrome-specific; use the registered scheme in Samsung Internet.
+  return /Android/i.test(userAgent) && !/SamsungBrowser\//i.test(userAgent)
+    ? buildAndroidIntentUrl(nativeUrl)
+    : nativeUrl;
 }
 
 export function initializeMobileAuthCallback(
