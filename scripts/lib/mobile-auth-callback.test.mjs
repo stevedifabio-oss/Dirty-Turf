@@ -31,6 +31,11 @@ describe("mobile auth callback bridge", () => {
     expect(preferredAppUrl(nativeUrl, "Mozilla/5.0 (Linux; Android 16)")).toContain("package=com.dirtyturf.academy");
   });
 
+  it("uses the registered native scheme in Samsung Internet", () => {
+    const nativeUrl = buildNativeAuthUrl("?code=secure-code&sb_flow_id=0123456789abcdef0123456789abcdef");
+    expect(preferredAppUrl(nativeUrl, "Mozilla/5.0 (Linux; Android 16) SamsungBrowser/30.0 Chrome/143.0.0.0 Mobile Safari/537.36")).toBe(nativeUrl);
+  });
+
   it("keeps the custom scheme on non-Android devices", () => {
     const nativeUrl = buildNativeAuthUrl("?code=secure-code");
     expect(preferredAppUrl(nativeUrl, "Mozilla/5.0 (iPhone)")).toBe(nativeUrl);
