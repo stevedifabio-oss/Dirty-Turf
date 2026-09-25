@@ -400,13 +400,13 @@ function App() {
     setHubSection("settings");
   };
 
-  const sendMagicLink = async (email: string) => {
+  const sendMagicLink = async (email: string, notify = true) => {
     try {
       const { error } = await requestMagicLink(email);
       if (error) throw error;
-      setToast("If this email has Academy access, a secure sign-in link is on the way.");
+      if (notify) setToast("If this email has Academy access, a secure sign-in link is on the way.");
     } catch (error) {
-      setToast("The sign-in link could not be requested. Check the connection and try again.");
+      if (notify) setToast("The sign-in link could not be requested. Check the connection and try again.");
       throw error;
     }
   };
@@ -468,7 +468,7 @@ function App() {
     return <LaunchAccessGate
       status={workspaceAccess.status}
       authMessage={toast}
-      onRequestMagicLink={sendMagicLink}
+      onRequestMagicLink={(email) => sendMagicLink(email, false)}
       onPasswordSignIn={handlePasswordSignIn}
       onSignOut={handleSignOut}
       onRetry={() => { setWorkspaceAccess({ status: "loading" }); setWorkspaceRefreshToken((token) => token + 1); }}
