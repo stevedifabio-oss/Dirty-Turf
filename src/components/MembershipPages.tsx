@@ -35,7 +35,7 @@ function MembershipEnrollment() {
       <p className="membership-existing"><strong>Already a member?</strong> <a href="/">Sign in first</a>. Your existing access stays in place; you do not need to buy again.</p>
     </section>
     <section className="membership-panel" aria-label="Membership options">
-      {cancelled && <p className="membership-notice" role="status">Checkout was cancelled. You can choose an option again when you're ready.</p>}
+      {cancelled && <p className="membership-notice" role="status">Checkout wasn't completed. Select the same membership option and use the same email to resume. To change options, wait for that checkout to expire (up to one hour).</p>}
       {error ? <div role="alert"><h2>Let's try that again.</h2><p>{error}</p><button className="secondary-button wide" onClick={() => setRetry((value) => value + 1)}>Reload options</button></div>
         : !catalog ? <p role="status">Loading membership options…</p>
         : !catalog.enabled || catalog.plans.length === 0 ? <><span className="membership-symbol"><BookOpen size={25} /></span><h2>Online enrollment is being prepared.</h2><p>Current members can sign in as usual. For membership questions, contact the Academy team.</p><a className="primary-button wide" href="/">Member sign in <ArrowRight size={17} /></a><a className="membership-contact" href="mailto:hello@dirtyturf.com">Contact the Academy</a></>

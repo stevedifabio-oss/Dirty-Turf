@@ -20,6 +20,8 @@ describe("membership purchase boundaries", () => {
   it("uses configured currency and price without inventing values", () => {
     expect(membershipPrice(plan)).toBe("$125.00");
     expect(membershipPrice({ ...plan, currency: "jpy", amountCents: 1500 })).toBe("¥1,500");
+    expect(membershipPrice({ ...plan, currency: "isk", amountCents: 500 })).toBe("ISK 5");
+    expect(membershipPrice({ ...plan, currency: "ugx", amountCents: 500 })).toBe("UGX 5");
   });
   it("only opens HTTPS Stripe Checkout destinations", () => {
     expect(checkoutDestination("https://checkout.stripe.com/c/pay/cs_test_example")).toContain("checkout.stripe.com");

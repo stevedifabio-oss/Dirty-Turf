@@ -42,7 +42,7 @@ export function parseMembershipCatalog(value: unknown): MembershipCatalog {
 export function membershipPrice(plan: MembershipPlan) {
   // Stripe amounts use currency minor units, including zero-decimal currencies.
   const formatter = new Intl.NumberFormat("en-US", { style: "currency", currency: plan.currency.toUpperCase() });
-  const digits = formatter.resolvedOptions().maximumFractionDigits ?? 2;
+  const digits = ["ISK", "UGX"].includes(plan.currency.toUpperCase()) ? 2 : formatter.resolvedOptions().maximumFractionDigits ?? 2;
   return formatter.format(plan.amountCents / 10 ** digits);
 }
 
@@ -79,6 +79,10 @@ export async function beginMembershipCheckout(planId: string, email: string, req
   if (!response.ok) {
     // Only display a known access-conflict explanation; never leak provider errors.
     const status = response.status;
+    if (status === 409) {
+      const body = await response.json().catch(() => null);
+      if (body?.code === "checkout_in_progress") throw new Error("A checkout is already open for this email. Select your original membership option to resume it, or try a different option after that checkout expires (up to one hour).");
+    }
     if (status === 409) throw new Error("Please sign in or contact support to check your existing access before purchasing.");
     if (status === 503) throw new Error("Online checkout is not available yet. Please try again later.");
     throw new Error("Checkout could not open. Please try again or contact support.");

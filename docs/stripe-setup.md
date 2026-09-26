@@ -89,7 +89,7 @@ Configure Stripe's customer portal in the matching environment. Enable payment-m
 
 - A new web purchase receives access only after verified payment.
 - A cancelled Checkout does not grant access or create a second charge.
-- Refreshing the confirmation page waits for the webhook and reloads actual access.
+- Reaching or refreshing the return page never grants access; subsequent sign-in checks actual membership after the webhook.
 - Duplicate/retried deliveries do not duplicate access or subscriptions.
 - Renewal, failed payment, cancellation, and full refund produce the intended access state.
 - Existing imported/manual access remains available when a separate Stripe grant ends.
