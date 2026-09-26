@@ -76,6 +76,8 @@ function SettingsPanel({ onToast, dataMode, canManage, onSignOut }: { onToast: (
   const [confirmDeletion, setConfirmDeletion] = useState(false);
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences | null>(null);
   const [notificationError, setNotificationError] = useState(false);
+  const [notificationSaving, setNotificationSaving] = useState(false);
+  const notificationSavePending = useRef(false);
   const [settingsRetry, setSettingsRetry] = useState(0);
 
   useEffect(() => {
@@ -183,7 +185,9 @@ function SettingsPanel({ onToast, dataMode, canManage, onSignOut }: { onToast: (
   const canChoosePlan = !billing?.subscription || ["cancelled", "expired"].includes(billing.subscription.status);
 
   const updateNotificationPreference = async (key: keyof NotificationPreferences, value: boolean) => {
-    if (!notificationPreferences) return;
+    if (!notificationPreferences || notificationSavePending.current) return;
+    notificationSavePending.current = true;
+    setNotificationSaving(true);
     const previous = notificationPreferences;
     const next = { ...previous, [key]: value };
     setNotificationPreferences(next);
@@ -193,6 +197,9 @@ function SettingsPanel({ onToast, dataMode, canManage, onSignOut }: { onToast: (
     } catch {
       setNotificationPreferences(previous);
       onToast("Notification preferences could not be saved.");
+    } finally {
+      notificationSavePending.current = false;
+      setNotificationSaving(false);
     }
   };
 
@@ -221,18 +228,18 @@ function SettingsPanel({ onToast, dataMode, canManage, onSignOut }: { onToast: (
     <div className="setting-group notification-settings">
       <h3>Email notifications</h3>
       {notificationPreferences ? <>
-        <NotificationToggle label="Email notifications" detail="Master email switch" checked={notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("emailEnabled", checked)} />
+        <NotificationToggle label="Email notifications" detail="Master email switch" checked={notificationPreferences.emailEnabled} disabled={notificationSaving} onChange={(checked) => void updateNotificationPreference("emailEnabled", checked)} />
         <div className={notificationPreferences.emailEnabled ? "notification-options" : "notification-options disabled"}>
-          <NotificationToggle label="Comments and replies" checked={notificationPreferences.replies} disabled={!notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("replies", checked)} />
-          <NotificationToggle label="Mentions" checked={notificationPreferences.mentions} disabled={!notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("mentions", checked)} />
-          <NotificationToggle label="Likes" checked={notificationPreferences.reactions} disabled={!notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("reactions", checked)} />
-          <NotificationToggle label="New community posts" checked={notificationPreferences.newPosts} disabled={!notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("newPosts", checked)} />
-          <NotificationToggle label="Academy announcements" checked={notificationPreferences.adminAnnouncements} disabled={!notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("adminAnnouncements", checked)} />
-          <NotificationToggle label="Events and reminders" checked={notificationPreferences.eventReminders} disabled={!notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("eventReminders", checked)} />
-          <NotificationToggle label="Course updates" checked={notificationPreferences.courseUpdates} disabled={!notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("courseUpdates", checked)} />
-          <NotificationToggle label="Weekly digest" checked={notificationPreferences.weeklyDigest} disabled={!notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("weeklyDigest", checked)} />
+          <NotificationToggle label="Comments and replies" checked={notificationPreferences.replies} disabled={notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("replies", checked)} />
+          <NotificationToggle label="Mentions" checked={notificationPreferences.mentions} disabled={notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("mentions", checked)} />
+          <NotificationToggle label="Likes" checked={notificationPreferences.reactions} disabled={notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("reactions", checked)} />
+          <NotificationToggle label="New community posts" checked={notificationPreferences.newPosts} disabled={notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("newPosts", checked)} />
+          <NotificationToggle label="Academy announcements" checked={notificationPreferences.adminAnnouncements} disabled={notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("adminAnnouncements", checked)} />
+          <NotificationToggle label="Events and reminders" checked={notificationPreferences.eventReminders} disabled={notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("eventReminders", checked)} />
+          <NotificationToggle label="Course updates" checked={notificationPreferences.courseUpdates} disabled={notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("courseUpdates", checked)} />
+          <NotificationToggle label="Weekly digest" checked={notificationPreferences.weeklyDigest} disabled={notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("weeklyDigest", checked)} />
         </div>
-        <p className="setting-help">In-app alerts stay available in the bell even when email is off.</p>
+        <p className="setting-help" role="status">{notificationSaving ? "Saving notification preferences... " : ""}In-app alerts stay available in the bell even when email is off.</p>
       </> : notificationError ? <div className="settings-loading" role="alert">Notification settings could not load. Changes are unavailable until they do. <button type="button" className="secondary-button" onClick={() => setSettingsRetry((value) => value + 1)}>Try again</button></div> : <div className="settings-loading">Loading notification preferences...</div>}
     </div>
     {billingError && <div className="setting-group billing-group" role="alert"><h3>Billing</h3><p>Billing details could not load.</p><button type="button" className="secondary-button" onClick={() => setSettingsRetry((value) => value + 1)}>Try again</button></div>}

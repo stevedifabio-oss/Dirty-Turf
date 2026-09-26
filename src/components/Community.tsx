@@ -57,6 +57,11 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
   const [blockedMembersError, setBlockedMembersError] = useState(false);
   const [pendingBlockMemberId, setPendingBlockMemberId] = useState<string | null>(null);
   const selected = posts.find((post) => post.id === selectedPostId);
+  const selectThread = (postId: number | null) => {
+    setSelectedPostId(postId);
+    setReplyingTo(null);
+    setCommentText("");
+  };
 
   const reportContent = async (contentType: "post" | "comment" | "member", contentId: string, label: string) => {
     const reason = window.prompt(`Why are you reporting this ${label}?`, "Spam or inappropriate content");
@@ -84,7 +89,7 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
       if (blocked) {
         onPostsChange(withoutMemberContent(posts, memberId));
         onCommentsChange(withoutMemberContent(comments, memberId));
-        setSelectedPostId(null);
+        selectThread(null);
         onToast(`${name} is blocked.`);
       } else {
         onRefreshCommunity();
@@ -116,7 +121,7 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
     if (!requestedPostCloudId) return;
     const requested = posts.find((post) => post.cloudId === requestedPostCloudId);
     if (!requested) return;
-    setSelectedPostId(requested.id);
+    selectThread(requested.id);
     onRequestedPostOpened();
   }, [onRequestedPostOpened, posts, requestedPostCloudId]);
   const channels = useMemo(() => communityChannels(posts), [posts]);
@@ -163,7 +168,7 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
   };
   const openThread = (id: number) => {
     const post = posts.find((candidate) => candidate.id === id);
-    setSelectedPostId(id);
+    selectThread(id);
     setOpenPostMenuId(null);
     syncPostUrl(post?.cloudId);
     document.querySelector(".phone-frame")?.scrollTo({ top: 0 });
@@ -177,7 +182,7 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
     });
   };
   const closeThread = () => {
-    setSelectedPostId(null);
+    selectThread(null);
     setOpenPostMenuId(null);
     syncPostUrl();
   };
@@ -205,8 +210,8 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
     const comment: CommunityComment = {
       id: Date.now(),
       postId: selected.id,
-      parentId: replyingTo?.id,
-      parentCloudId: replyingTo?.cloudId,
+      parentId: replyingTo?.postId === selected.id ? replyingTo.id : undefined,
+      parentCloudId: replyingTo?.postId === selected.id ? replyingTo.cloudId : undefined,
       author: "You",
       body: commentText.trim(),
       age: "Just now",
