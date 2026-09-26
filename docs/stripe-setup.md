@@ -10,6 +10,14 @@
 
 We will connect the Price ID to the Academy plan, configure the webhook, test purchases and access, and complete activation. This hosted Checkout integration does not need a publishable Stripe key in the website or mobile app.
 
+## Pages prepared
+
+- `/membership`: public membership options and email entry, then Stripe-hosted Checkout. Prices come from validated server configuration; enrollment stays closed until activated.
+- `/checkout/return`: request a sign-in link after returning from Checkout. This page never grants access or assumes payment succeeded from its URL.
+- `/billing`: signed-in billing management through Stripe's customer portal. Existing members without connected Stripe billing are directed to support, not another purchase.
+
+All three routes and purchase links are excluded from the native iPhone/Android interface. Signed-in checkout uses the account's existing email. Same-tab checkout retries reuse a request ID; the database reservation prevents simultaneous independent sessions for the same email/community.
+
 ## Implementation and activation checklist
 
 ### Separate testing from live billing
