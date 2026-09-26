@@ -27,6 +27,14 @@ function emptyBatch(manifest, label) {
   };
 }
 
+function sourceSortOrder(value, fallback) {
+  if (value === undefined) return fallback;
+  if (!Number.isInteger(value) || value < 0 || value > 2147483647) {
+    throw new Error("sortOrder must be a nonnegative database integer");
+  }
+  return value;
+}
+
 function courseShell(course, modules = []) {
   return { ...course, modules };
 }
@@ -48,7 +56,19 @@ export function buildAcademyImportBatches(manifest, options = {}) {
 
   const members = manifest.members ?? [];
   const categories = manifest.categories ?? [];
-  const courses = manifest.courses ?? [];
+  // Preserve source positions before constructing subsets for transport.
+  const courses = (manifest.courses ?? []).map((course, courseIndex) => ({
+    ...course,
+    sortOrder: sourceSortOrder(course.sortOrder, courseIndex),
+    modules: (course.modules ?? []).map((module, moduleIndex) => ({
+      ...module,
+      sortOrder: sourceSortOrder(module.sortOrder, moduleIndex),
+      lessons: (module.lessons ?? []).map((lesson, lessonIndex) => ({
+        ...lesson,
+        sortOrder: sourceSortOrder(lesson.sortOrder, lessonIndex),
+      })),
+    })),
+  }));
   const memberById = new Map(members.map((member) => [member.externalId, member]));
   const categoryById = new Map(categories.map((category) => [category.externalId, category]));
   const courseById = new Map(courses.map((course) => [course.externalId, course]));
