@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { ArrowLeft, Award, BadgeCheck, BookOpen, Check, CheckCircle2, ChevronDown, Circle, Download, ExternalLink, FileText, Lock, MessageSquare, Play, Printer, RotateCcw, Trophy, XCircle } from "lucide-react";
 import type { AcademyCertificate, Course, LessonQuiz } from "../domain";
 import { combinedCourseProgress } from "../lib/courseProgress";
+import { academyDurationLabel, hasCarriedOverProgress } from "../lib/coursePresentation";
 import { safeExternalUrl } from "../lib/safeExternalUrl";
 import { SafeRichText } from "./SafeRichText";
 
@@ -100,7 +101,7 @@ export function AcademyView({ courses, certificates, dataMode, onCoursesChange, 
       <div className="view-content lesson-view">
         <button className="back-link" onClick={() => setSelectedLessonId(null)}><ArrowLeft size={17} /> {selected.title}</button>
         <article className="lesson-content">
-          <span className="lesson-type"><BookOpen size={16} /> {selectedLesson.type} · {selectedLesson.duration}</span>
+          <span className="lesson-type"><BookOpen size={16} /> {selectedLesson.type} · {academyDurationLabel(selectedLesson.duration)}</span>
           <h2>{selectedLesson.title}</h2>
           {videoUrl && directVideo && <video className="lesson-video" controls preload="metadata" src={videoUrl} />}
           {videoUrl && !directVideo && <a className="lesson-video-link" href={videoUrl} target="_blank" rel="noopener noreferrer"><Play size={18} /> Open lesson video <ExternalLink size={15} /></a>}
@@ -137,9 +138,10 @@ export function AcademyView({ courses, certificates, dataMode, onCoursesChange, 
           <span>{selected.category} · {selected.instructor}</span>
           <h2>{selected.title}</h2>
           <p>{selected.description}</p>
-          <div className="course-hero-foot"><span>{lessonCount} lessons</span><span>{selected.duration}</span><strong>{selected.progress}% complete</strong></div>
+          <div className="course-hero-foot"><span>{lessonCount} lessons</span><span>{academyDurationLabel(selected.duration)}</span><strong>{selected.progress}% complete</strong></div>
           <div className="progress-track light"><span style={{ width: `${selected.progress}%` }} /></div>
         </section>
+        {hasCarriedOverProgress(selected) && <p className="setting-help course-progress-note">Includes progress carried over from your previous Academy. Lesson checkmarks reflect activity in this app.</p>}
         <section className="module-list">
           {selected.modules.map((module, moduleIndex) => {
             const moduleKey = `${selected.id}-${moduleIndex}`;
@@ -151,7 +153,7 @@ export function AcademyView({ courses, certificates, dataMode, onCoursesChange, 
               </button>
               {expanded && <div className="lesson-list">{module.lessons.map((lesson) => <button className={lesson.completed ? "lesson-row complete" : "lesson-row"} key={lesson.id} onClick={() => lesson.locked ? onToast("Reach the required level to unlock this lesson.") : setSelectedLessonId(lesson.id)}>
                 <span className="lesson-status">{lesson.locked ? <Lock size={15} /> : lesson.completed ? <Check size={15} /> : lesson.type === "video" ? <Play size={14} /> : <FileText size={15} />}</span>
-                <span><strong>{lesson.title}</strong><small>{lesson.type} · {lesson.duration}</small></span>
+                <span><strong>{lesson.title}</strong><small>{lesson.type} · {academyDurationLabel(lesson.duration)}</small></span>
                 {lesson.completed && <CheckCircle2 size={17} />}
               </button>)}</div>}
             </article>;
@@ -181,7 +183,7 @@ export function AcademyView({ courses, certificates, dataMode, onCoursesChange, 
           const count = course.modules.reduce((total, module) => total + module.lessons.length, 0);
           return <button className="course-card course-button" key={course.id} onClick={() => openCourse(course.id)}>
             <span className="play-button"><Play size={15} fill="currentColor" /></span>
-            <span><span className="course-meta"><span>{course.category}</span><span>{count} lessons · {course.duration}</span></span><strong className="course-title">{course.title}</strong><span className="course-description">{course.description}</span><span className="course-foot"><span className="progress-track"><span style={{ width: `${course.progress}%` }} /></span><span>{course.progress}%</span></span></span>
+            <span><span className="course-meta"><span>{course.category}</span><span>{count} lessons · {academyDurationLabel(course.duration)}</span></span><strong className="course-title">{course.title}</strong><span className="course-description">{course.description}</span><span className="course-foot"><span className="progress-track"><span style={{ width: `${course.progress}%` }} /></span><span>{course.progress}%</span></span></span>
           </button>;
         })}
         {visibleCourses.length === 0 && <div className="empty-state"><BookOpen size={24} /><h3>No courses assigned yet</h3><p>Your Academy access is active. Assigned courses will appear here.</p></div>}
@@ -202,7 +204,7 @@ function QuizLesson({ quiz, onSubmit }: { quiz: LessonQuiz; onSubmit: (scorePerc
   const score = answerKeyCount ? Math.round(correctCount / answerKeyCount * 100) : null;
 
   const chooseAnswer = (questionIndex: number, optionIndex: number) => {
-    if (submitted) return;
+    if (submitted || submitting) return;
     setAnswers((current) => ({ ...current, [questionIndex]: optionIndex }));
   };
 
@@ -244,7 +246,7 @@ function QuizLesson({ quiz, onSubmit }: { quiz: LessonQuiz; onSubmit: (scorePerc
               const correct = submitted && hasAnswerKey && question.correctOptionIndex === optionIndex;
               const incorrect = submitted && hasAnswerKey && chosen && !correct;
               const className = ["quiz-option", chosen ? "selected" : "", correct ? "correct" : "", incorrect ? "incorrect" : ""].filter(Boolean).join(" ");
-              return <button type="button" className={className} aria-pressed={chosen} onClick={() => chooseAnswer(questionIndex, optionIndex)} key={`${optionIndex}-${option.text}`}>
+              return <button type="button" className={className} aria-pressed={chosen} disabled={submitting || submitted} onClick={() => chooseAnswer(questionIndex, optionIndex)} key={`${optionIndex}-${option.text}`}>
                 {correct ? <CheckCircle2 size={19} /> : incorrect ? <XCircle size={19} /> : chosen ? <CheckCircle2 size={19} /> : <Circle size={19} />}
                 <SafeRichText html={option.html} fallback={option.text} />
               </button>;

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { CalendarDays, Check, Clock3, ExternalLink, Radio, Users } from "lucide-react";
 import type { AcademyEvent } from "../domain";
 import { academyEventStatus } from "../lib/eventTiming";
@@ -10,6 +11,18 @@ type Props = {
 };
 
 export function EventsView({ events, onEventsChange, onToggleRsvp, onToast }: Props) {
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    const updateTime = () => setNow(Date.now());
+    const timer = window.setInterval(updateTime, 1000);
+    window.addEventListener("focus", updateTime);
+    document.addEventListener("visibilitychange", updateTime);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", updateTime);
+      document.removeEventListener("visibilitychange", updateTime);
+    };
+  }, []);
   const toggleRsvp = async (event: AcademyEvent) => {
     if (academyEventStatus(event) !== "upcoming") return;
     const nextAttending = !event.attending;
@@ -36,7 +49,7 @@ export function EventsView({ events, onEventsChange, onToggleRsvp, onToast }: Pr
       </section>
       <section className="event-list">
         {events.map((event) => {
-          const status = academyEventStatus(event);
+          const status = academyEventStatus(event, now);
           return <article className="event-card" key={event.id}>
           <div className="event-date"><strong>{event.date.split(" ")[1]}</strong><span>{event.date.split(" ")[0]}</span></div>
           <div className="event-content">
