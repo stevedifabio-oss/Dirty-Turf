@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
+import { assertAuthPluginRegistered } from "./lib/native-plugin-registry.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const options = parseArgs(process.argv.slice(2));
@@ -14,6 +15,9 @@ const files = [
 const results = files.map(([label, path]) => ({ label, path, sha256: hashFile(path) }));
 const expectedHash = results[0].sha256;
 const mismatches = results.filter(({ sha256 }) => sha256 !== expectedHash);
+
+assertAuthPluginRegistered(readFileSync(resolve(root, "android/app/src/main/assets/capacitor.plugins.json"), "utf8"), "android", "Android source");
+assertAuthPluginRegistered(readFileSync(resolve(root, "ios/App/App/capacitor.config.json"), "utf8"), "ios", "iOS source");
 
 const androidArtifacts = [
   [
@@ -29,20 +33,24 @@ const androidArtifacts = [
 ];
 
 for (const [label, path, member] of androidArtifacts) {
+  if (options.androidReleaseOnly && !path.endsWith(".aab")) continue;
   if (!existsSync(path)) {
-    if (options.requireAndroidArtifacts) {
+    if (options.requireAndroidArtifacts || options.androidReleaseOnly) {
       throw new Error(`${label} is missing at ${path}`);
     }
     continue;
   }
 
   const sha256 = hashArchiveMember(path, member);
+  const registryMember = member.replace("public/index.html", "capacitor.plugins.json");
+  assertAuthPluginRegistered(execFileSync("unzip", ["-p", path, registryMember], { encoding: "utf8" }), "android", label);
   const result = { label, path: `${path}:${member}`, sha256 };
   results.push(result);
   if (sha256 !== expectedHash) mismatches.push(result);
 }
 
 if (options.iosApp) {
+  assertAuthPluginRegistered(readFileSync(resolve(options.iosApp, "capacitor.config.json"), "utf8"), "ios", "built iOS app");
   const path = resolve(options.iosApp, "public/index.html");
   const result = { label: "built iOS app", path, sha256: hashFile(path) };
   results.push(result);
@@ -76,11 +84,12 @@ function sha256(contents) {
 }
 
 function parseArgs(args) {
-  const values = { iosApp: undefined, requireAndroidArtifacts: false };
+  const values = { iosApp: undefined, requireAndroidArtifacts: false, androidReleaseOnly: false };
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index];
     if (argument === "--ios-app") values.iosApp = requiredValue(args[++index], argument);
     else if (argument === "--require-android-artifacts") values.requireAndroidArtifacts = true;
+    else if (argument === "--android-release-only") values.androidReleaseOnly = true;
     else throw new Error(`Unknown option: ${argument}`);
   }
   return values;

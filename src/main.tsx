@@ -84,6 +84,7 @@ import { hasNativeLiveMeasurement, startNativeLiveMeasurement } from "./lib/live
 import { academyPaymentLink, checkoutReturnNotice } from "./lib/academyPaymentLink";
 import { cloudCollectionOrEmpty } from "./lib/cloudCollection";
 import { createCommunityPostPageGate } from "./lib/communityPostPageGate";
+import { createWorkspaceSession } from "./lib/workspaceSession";
 import { calculateQuote, INFILL_RATES } from "./lib/quote";
 import { useModalDialog } from "./lib/useModalDialog";
 import { AcademyView } from "./components/Academy";
@@ -190,6 +191,9 @@ function App() {
     WorkspaceAccessState | { status: "loading" | "error" }
   >({ status: "loading" });
   const [workspaceRefreshToken, setWorkspaceRefreshToken] = useState(0);
+  const [workspaceContentLoading, setWorkspaceContentLoading] = useState(Boolean(supabase));
+  const workspaceContentReady = useRef(false);
+  const refreshWorkspaceRef = useRef<() => void>(() => undefined);
   const canManage = workspaceAccess.status === "member" && workspaceAccess.canManage;
 
   const clearWorkspaceContent = () => {
@@ -205,31 +209,34 @@ function App() {
 
   useEffect(() => {
     let mounted = true;
-    let refreshId = 0;
-    let disposeNativeAuth: () => void = () => undefined;
+    const session = createWorkspaceSession();
 
     const refreshWorkspace = async () => {
-      const activeRefresh = ++refreshId;
+      if (!mounted) return;
+      const activeRefresh = session.beginRefresh();
       postPageGate.current.refresh();
       setLoadingMorePosts(false);
       setHasMorePosts(false);
       setPostCursor(undefined);
       if (supabase) {
-        setWorkspaceAccess({ status: "loading" });
+        setWorkspaceContentLoading(true);
         setCloudLoadError("");
-        clearWorkspaceContent();
       }
       try {
         const mode = await getDataMode();
         if (mode === "cloud") await claimAcademyMemberships();
         const access = await getWorkspaceAccessState();
-        if (!mounted || activeRefresh !== refreshId) return;
+        if (!mounted || !session.isCurrent(activeRefresh)) return;
         if (access.status === "signed_out" || access.status === "no_access") {
           clearWorkspaceContent();
+          workspaceContentReady.current = false;
+          setWorkspaceContentLoading(false);
           setDataMode(mode);
           setWorkspaceAccess(access);
           return;
         }
+        setDataMode(mode);
+        setWorkspaceAccess(access);
         const results = await Promise.allSettled([
           loadJobs(initialJobs),
           loadCourses(seedCourses),
@@ -240,7 +247,7 @@ function App() {
           loadNotifications(initialNotifications),
           loadAcademyCertificates(),
         ] as const);
-        if (!mounted || activeRefresh !== refreshId) return;
+        if (!mounted || !session.isCurrent(activeRefresh)) return;
         const [jobsResult, coursesResult, postsResult, commentsResult, eventsResult, membersResult, notificationsResult, certificatesResult] = results;
         setJobs(cloudCollectionOrEmpty(jobsResult));
         setCourses(cloudCollectionOrEmpty(coursesResult));
@@ -257,41 +264,82 @@ function App() {
         setCertificates(cloudCollectionOrEmpty(certificatesResult));
         setDataMode(mode);
         setWorkspaceAccess(access);
+        workspaceContentReady.current = true;
+        setWorkspaceContentLoading(false);
         const names = ["jobs", "courses", "posts", "comments", "events", "members", "notifications", "certificates"];
         const failed = results.flatMap((result, index) => result.status === "rejected" ? [names[index]] : []);
         setCloudLoadError(failed.length ? `Could not load ${failed.join(", ")}. This content is unavailable until you retry.` : "");
       } catch {
-        if (mounted && activeRefresh === refreshId) {
-          setWorkspaceAccess(supabase ? { status: "error" } : { status: "preview" });
+        if (mounted && session.isCurrent(activeRefresh)) {
+          setWorkspaceContentLoading(false);
+          if (workspaceContentReady.current) setCloudLoadError("Could not refresh your workspace. Your previously loaded content is still shown. Try again.");
+          else setWorkspaceAccess(supabase ? { status: "error" } : { status: "preview" });
           if (!supabase) setToast("Cloud data is unavailable. Working on this device.");
         }
       }
     };
 
-    void refreshWorkspace();
-    const authSubscription = supabase?.auth.onAuthStateChange((event) => {
-      if (["INITIAL_SESSION", "SIGNED_IN", "SIGNED_OUT", "USER_UPDATED"].includes(event)) {
-        window.setTimeout(() => { void refreshWorkspace(); });
+    refreshWorkspaceRef.current = () => { void refreshWorkspace(); };
+    const authSubscription = supabase?.auth.onAuthStateChange((event, authSession) => {
+      const action = session.authChanged(event, authSession?.user.id ?? null);
+      if (action === "ignore") return;
+      if (action === "reset" || action === "signed_out") {
+        clearWorkspaceContent();
+        workspaceContentReady.current = false;
+        postPageGate.current.refresh();
+        setHasMorePosts(false);
+        setLoadingMorePosts(false);
+        setPostCursor(undefined);
+        setCloudLoadError("");
+        setSelectedJob(null);
+        setQuoteOpen(false);
+        setHubSection(null);
+        setSearchOpen(false);
+        setQuery("");
+        setDataMode(action === "signed_out" ? "device" : "cloud");
+        setWorkspaceContentLoading(action !== "signed_out");
+        setWorkspaceAccess({ status: action === "signed_out" ? "signed_out" : "loading" });
+      }
+      if (action !== "signed_out") {
+        const scheduledGeneration = session.snapshot();
+        window.setTimeout(() => {
+          if (mounted && session.isCurrent(scheduledGeneration)) void refreshWorkspace();
+        });
       }
     }).data.subscription;
-    void initializeNativeAuth((message) => mounted && setToast(message)).then((dispose) => {
-      if (mounted) disposeNativeAuth = dispose;
-      else dispose();
-    });
+    if (!supabase) void refreshWorkspace();
     const disposeNotifications = subscribeToNotifications(() => {
+      const activeGeneration = session.snapshot();
       void loadNotifications(initialNotifications)
-        .then((items) => { if (mounted) setNotifications(items); })
+        .then((items) => { if (mounted && session.isCurrent(activeGeneration)) setNotifications(items); })
         .catch(() => undefined);
     });
 
     return () => {
       mounted = false;
+      session.invalidate();
+      refreshWorkspaceRef.current = () => undefined;
       postPageGate.current.refresh();
       authSubscription?.unsubscribe();
-      disposeNativeAuth();
       disposeNotifications();
     };
+  }, []);
+
+  useEffect(() => {
+    if (workspaceRefreshToken > 0) refreshWorkspaceRef.current();
   }, [workspaceRefreshToken]);
+
+  useEffect(() => {
+    let mounted = true;
+    let disposeNativeAuth: () => void = () => undefined;
+    void initializeNativeAuth((message) => mounted && setToast(message)).then((dispose) => {
+      if (mounted) disposeNativeAuth = dispose;
+      else dispose();
+    }).catch(() => {
+      if (mounted) setToast("The sign-in link could not be opened. Please try again.");
+    });
+    return () => { mounted = false; disposeNativeAuth(); };
+  }, []);
 
   const loadMoreCommunityPosts = async () => {
     if (!hasMorePosts) return;
@@ -462,6 +510,8 @@ function App() {
     }
   };
 
+  const waitingForWorkspace = workspaceContentLoading && !workspaceContentReady.current;
+  const workspaceStatus = workspaceContentLoading ? "Loading workspace..." : cloudLoadError ? "Workspace needs attention" : dataMode === "cloud" ? "Workspace synced" : "Device preview";
   const unreadNotifications = notifications.filter((notification) => !notification.read).length;
 
   if (workspaceAccess.status === "loading" || workspaceAccess.status === "signed_out" || workspaceAccess.status === "no_access" || workspaceAccess.status === "error") {
@@ -488,7 +538,7 @@ function App() {
           {canManage && <DesktopNavItem icon={<ShieldCheck size={19} />} label="Admin Studio" active={activeView === "admin"} onClick={() => changeView("admin")} />}
         </nav>
         <div className="desktop-sidebar-footer">
-          <button className={`desktop-workspace-status ${dataMode}`} onClick={() => setHubSection(dataMode === "cloud" ? "settings" : "access")} aria-label={dataMode === "cloud" ? "Workspace synced" : "Device preview"} title={dataMode === "cloud" ? "Workspace synced" : "Device preview"}>
+          <button className={`desktop-workspace-status ${dataMode}`} onClick={() => setHubSection(dataMode === "cloud" ? "settings" : "access")} aria-label={workspaceStatus} title={workspaceStatus}>
             <span />
           </button>
           <button className="desktop-settings" onClick={() => setHubSection("settings")} aria-label="Workspace settings" title="Workspace settings"><Settings2 size={18} /><span>Workspace settings</span></button>
@@ -499,16 +549,19 @@ function App() {
         <header className="topbar">
           <div className="brand-lockup">
             <img src="/dirty-turf-logo.png" alt="Dirty Turf" />
-            <div><h1>{navTitles[activeView]}</h1><button className={`data-mode ${dataMode}`} onClick={() => setHubSection(dataMode === "cloud" ? "settings" : "access")}>{dataMode === "cloud" ? "Workspace synced" : "Device preview"}</button></div>
+            <div><h1>{navTitles[activeView]}</h1><button className={`data-mode ${dataMode}`} onClick={() => setHubSection(dataMode === "cloud" ? "settings" : "access")}>{workspaceStatus}</button></div>
           </div>
           <div className="topbar-actions">
-            <button className="icon-button notification-button" aria-label={`Open notifications${unreadNotifications ? `, ${unreadNotifications} unread` : ""}`} onClick={() => setHubSection("notifications")}><Bell size={18} />{unreadNotifications > 0 && <span>{Math.min(unreadNotifications, 99)}</span>}</button>
+            <button className="icon-button notification-button" disabled={waitingForWorkspace} aria-label={`Open notifications${unreadNotifications ? `, ${unreadNotifications} unread` : ""}`} onClick={() => setHubSection("notifications")}><Bell size={18} />{unreadNotifications > 0 && <span>{Math.min(unreadNotifications, 99)}</span>}</button>
             <button className={searchOpen ? "icon-button active" : "icon-button"} aria-label={searchOpen ? "Close search" : "Search"} onClick={() => setSearchOpen((open) => !open)}>{searchOpen ? <X size={19} /> : <Search size={19} />}</button>
           </div>
         </header>
 
         {cloudLoadError && <div className="cloud-load-alert" role="alert"><span>{cloudLoadError}</span><button type="button" onClick={() => setWorkspaceRefreshToken((token) => token + 1)}>Try again</button></div>}
 
+        {workspaceContentLoading && <div className="cloud-load-alert" role="status"><span>{waitingForWorkspace ? "Loading your workspace..." : "Updating your workspace..."}</span></div>}
+
+        {!waitingForWorkspace && <>
         {searchOpen && <SearchPanel query={query} setQuery={setQuery} jobs={jobs} onOpenJob={(job) => { setSelectedJob(job); setSearchOpen(false); }} onNavigate={changeView} />}
         {!searchOpen && activeView !== "home" && <AcademyTabs activeView={activeView} canManage={canManage} onNavigate={changeView} />}
         {!searchOpen && activeView === "home" && <HomeView jobs={jobs} openQuote={openQuote} checks={arrivalChecks} setChecks={setArrivalChecks} setToast={setToast} />}
@@ -516,6 +569,8 @@ function App() {
         {!searchOpen && activeView === "community" && <CommunityView posts={posts} comments={comments} members={members} events={events} requestedPostCloudId={requestedPostCloudId} onRequestedPostOpened={() => setRequestedPostCloudId(undefined)} onPostsChange={setPosts} onCommentsChange={setComments} onMembersChange={setMembers} onToggleFollow={(member, following) => member.cloudId ? setAcademyMemberFollow(member.cloudId, following) : Promise.resolve(following)} onLoadMorePosts={loadMoreCommunityPosts} hasMorePosts={hasMorePosts} loadingMorePosts={loadingMorePosts} onCreatePost={savePost} onCreateComment={saveComment} onToggleLike={(post) => post.cloudId ? togglePostReaction(post.cloudId) : Promise.resolve(null)} onToggleCommentLike={(comment) => comment.cloudId ? toggleCommentReaction(comment.cloudId) : Promise.resolve(null)} onToggleBookmark={(post) => post.cloudId ? togglePostBookmark(post.cloudId) : Promise.resolve(null)} onReport={(contentType, contentId, reason) => reportAcademyContent(contentType, contentId, reason).then(() => undefined)} onBlockMember={toggleAcademyMemberBlock} onLoadBlockedMembers={loadBlockedAcademyMemberIds} onRefreshCommunity={() => setWorkspaceRefreshToken((current) => current + 1)} onNavigate={changeView} onToast={setToast} />}
         {!searchOpen && activeView === "events" && <EventsView events={events} onEventsChange={setEvents} onToggleRsvp={(event) => event.cloudId ? toggleAcademyEventRsvp(event.cloudId) : Promise.resolve(null)} onToast={setToast} />}
         {!searchOpen && activeView === "admin" && canManage && <Suspense fallback={<div className="admin-loading" role="status">Loading Admin Studio...</div>}><AdminStudio onToast={setToast} onContentChange={() => setWorkspaceRefreshToken((token) => token + 1)} /></Suspense>}
+
+        </>}
 
         {!quoteOpen && !hubSection && <PrimaryNavigation activeView={activeView} settingsOpen={false} onNavigate={changeView} onOpenSettings={openSettings} />}
 
