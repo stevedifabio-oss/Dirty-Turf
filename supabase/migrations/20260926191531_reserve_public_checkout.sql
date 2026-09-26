@@ -41,13 +41,13 @@ begin
         and g.status = 'active' and g.starts_at <= now() and (g.ends_at is null or g.ends_at > now()))
       and (lower(u.email) = normalized_email or lower(i.email) = normalized_email)
   ) then
-    return jsonb_build_object('blocked', true);
+    return jsonb_build_object('blocked', true, 'reason', 'existing_access');
   end if;
   select * into reservation from public.academy_checkout_reservations
     where academy_community_id = community_id and email = normalized_email;
   if reservation.id is not null and reservation.expires_at > now() then
     if reservation.request_id <> p_request_id or reservation.plan_id <> p_plan_id then
-      return jsonb_build_object('blocked', true);
+      return jsonb_build_object('blocked', true, 'reason', 'checkout_in_progress');
     end if;
   else
     insert into public.academy_checkout_reservations(academy_community_id,email,plan_id,request_id,expires_at)

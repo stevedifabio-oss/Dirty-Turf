@@ -204,7 +204,16 @@ Deno.serve(async (request) => {
       },
     );
     if (reserveError) throw reserveError;
-    if (reservation?.blocked) return blocked();
+    if (reservation?.blocked) {
+      if (reservation.reason === "checkout_in_progress") {
+        return jsonResponse(request, {
+          code: "checkout_in_progress",
+          error:
+            "A checkout is already open. Resume it using the same email and membership option, or wait up to one hour for it to expire.",
+        }, { status: 409 });
+      }
+      return blocked();
+    }
     if (!reservation?.id || !reservation.expiresAt) {
       throw new Error("Checkout reservation failed");
     }

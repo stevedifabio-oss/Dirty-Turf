@@ -85,6 +85,13 @@ describe("public Checkout handler", () => {
     expect((await handler("create-checkout")(checkoutRequest())).status).toBe(409);
     expect(stripe.checkout.sessions.create).not.toHaveBeenCalled();
   });
+  it("distinguishes a pending checkout from existing membership access", async () => {
+    admin.rpc.mockResolvedValue({ data: { blocked: true, reason: "checkout_in_progress" }, error: null });
+    const response = await handler("create-checkout")(checkoutRequest());
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe("checkout_in_progress");
+    expect(stripe.checkout.sessions.create).not.toHaveBeenCalled();
+  });
   it("does not block an unrelated subscription in the same Stripe account", async () => {
     stripe.customers.list.mockResolvedValue({ data: [{ id: "cus_other" }], has_more: false });
     stripe.subscriptions.list.mockResolvedValue({ data: [{ status: "active", metadata: {}, items: { data: [{ price: { id: "price_other_product" } }] } }], has_more: false });

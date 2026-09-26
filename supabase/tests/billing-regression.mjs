@@ -39,13 +39,13 @@ let checks = 0;
 async function reserve(email,request=uid(20),p=plan) { return (await db.query('select reserve_academy_checkout($1,$2,$3) as result',[p,email,request])).rows[0].result; }
 const first = await reserve('new@example.com'); assert.equal(first.blocked,false); checks++;
 const retry = await reserve(' NEW@example.com '); assert.equal(retry.id,first.id); checks++;
-assert.equal((await reserve('new@example.com',uid(21))).blocked,true); checks++;
+assert.equal((await reserve('new@example.com',uid(21))).reason,'checkout_in_progress'); checks++;
 await db.exec(`update academy_checkout_reservations set expires_at=now()-interval '1 minute';`);
 const after = await reserve('new@example.com',uid(21)); assert.equal(after.blocked,false); assert.notEqual(after.id,first.id); checks++;
 await db.exec(`insert into academy_access_grants(academy_community_id,academy_member_id,source_type,source_key,status) values('${community}','${member}','import','legacy-community','active');
 insert into academy_access_grants(academy_community_id,academy_member_id,course_id,source_type,source_key,status) values('${community}','${member}','${course}','import','legacy-course','active');
 insert into course_enrollments(academy_community_id,academy_member_id,course_id,status) values('${community}','${member}','${course}','completed');`);
-assert.equal((await reserve('MEMBER@example.com')).blocked,true); checks++;
+assert.equal((await reserve('MEMBER@example.com')).reason,'existing_access'); checks++;
 await db.exec('set role anon;');
 await assert.rejects(reserve('anon@example.com'), (e)=>e.code==='42501'); checks++;
 await db.exec('reset role;');
