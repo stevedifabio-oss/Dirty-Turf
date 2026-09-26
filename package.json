@@ -36,7 +36,8 @@
     "ghl:verify": "node scripts/verify-ghl.mjs",
     "supabase:start": "supabase start",
     "supabase:reset": "supabase db reset",
-    "supabase:functions": "supabase functions serve --env-file .env.local"
+    "supabase:functions": "supabase functions serve --env-file .env.local",
+    "academy:capture-courses": "node scripts/capture-ghl-courses.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",
