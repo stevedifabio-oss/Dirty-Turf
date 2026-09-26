@@ -109,6 +109,15 @@ begin
     raise exception 'Billing plan and Academy member do not match';
   end if;
 
+  -- Stripe source identity cannot silently move to a different Academy member
+  -- if a customer email is edited later in the Stripe dashboard.
+  if exists (select 1 from public.academy_billing_subscriptions s
+    where s.academy_community_id = member_row.academy_community_id
+      and s.source_type = p_source_type and s.source_key = trim(p_source_key)
+      and s.academy_member_id <> member_row.id) then
+    raise exception 'Billing source belongs to a different Academy identity';
+  end if;
+
   insert into public.academy_billing_customers (
     academy_community_id, academy_member_id, user_id, provider_customer_id, email
   ) values (
