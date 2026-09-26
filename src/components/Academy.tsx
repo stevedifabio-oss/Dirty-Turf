@@ -141,7 +141,7 @@ export function AcademyView({ courses, certificates, dataMode, onCoursesChange, 
           <div className="course-hero-foot"><span>{lessonCount} lessons</span><span>{academyDurationLabel(selected.duration)}</span><strong>{selected.progress}% complete</strong></div>
           <div className="progress-track light"><span style={{ width: `${selected.progress}%` }} /></div>
         </section>
-        {hasCarriedOverProgress(selected) && <p className="setting-help">Includes progress carried over from your previous Academy. Lesson checkmarks reflect activity in this app.</p>}
+        {hasCarriedOverProgress(selected) && <p className="setting-help course-progress-note">Includes progress carried over from your previous Academy. Lesson checkmarks reflect activity in this app.</p>}
         <section className="module-list">
           {selected.modules.map((module, moduleIndex) => {
             const moduleKey = `${selected.id}-${moduleIndex}`;
