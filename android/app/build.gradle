@@ -18,7 +18,7 @@ android {
         applicationId "com.dirtyturf.academy"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 5
+        versionCode 6
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
@@ -58,6 +58,21 @@ android {
 tasks.register('releaseSigningStatus') {
     doLast {
         println releaseSigningConfigured ? 'Android release signing: configured' : 'Android release signing: not configured (unsigned release artifact)'
+    }
+}
+
+// cap copy alone does not generate this registry in a fresh checkout.
+// Without AppPlugin the OS opens the app, but JavaScript never receives the login link.
+tasks.named('preBuild').configure {
+    doFirst {
+        def registry = file('src/main/assets/capacitor.plugins.json')
+        if (!registry.exists()) {
+            throw new GradleException('Native plugin registry is missing. Run npm run native:sync before building.')
+        }
+        def plugins = new groovy.json.JsonSlurper().parse(registry)
+        if (!plugins.any { it.pkg == '@capacitor/app' && it.classpath == 'com.capacitorjs.plugins.app.AppPlugin' }) {
+            throw new GradleException('Native App plugin is unregistered. Run npm run native:sync before building.')
+        }
     }
 }
 
