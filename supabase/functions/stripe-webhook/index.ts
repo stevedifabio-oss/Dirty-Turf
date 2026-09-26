@@ -2,9 +2,9 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import {
   createClient,
   type SupabaseClient,
-  type User,
 } from "npm:@supabase/supabase-js@2.116.0";
 import Stripe from "npm:stripe@22.6.2";
+import { billingConfiguration } from "../_shared/checkout.ts";
 import {
   errorMessage,
   isUuid,
@@ -65,6 +65,18 @@ Deno.serve(async (request) => {
     });
   }
 
+  const config = billingConfiguration(
+    "true",
+    Deno.env.get("STRIPE_MODE"),
+    stripeSecret,
+  );
+  if (!config.enabled || event.livemode !== config.livemode) {
+    return Response.json(
+      { error: "Webhook mode does not match configuration" },
+      { status: 400 },
+    );
+  }
+
   const admin = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false },
   });
@@ -103,6 +115,22 @@ Deno.serve(async (request) => {
       event.type === "customer.subscription.deleted"
     ) {
       await processSubscription(admin, stripe, event.data.object);
+    } else if (
+      event.type === "invoice.paid" || event.type === "invoice.payment_failed"
+    ) {
+      const invoice = await stripe.invoices.retrieve(event.data.object.id);
+      const subscriptionId = stringId(
+        invoice.parent?.subscription_details?.subscription,
+      );
+      if (subscriptionId) {
+        await processSubscription(
+          admin,
+          stripe,
+          { id: subscriptionId } as Stripe.Subscription,
+        );
+      }
+    } else if (event.type === "charge.refunded") {
+      await processRefund(admin, stripe, event.data.object);
     }
 
     const { error } = await admin.from("integration_events").update({
@@ -143,14 +171,16 @@ async function processCheckout(
 
   const priceId = stringId(session.line_items?.data[0]?.price);
   const plan = await resolvePlan(admin, session.metadata?.plan_id, priceId);
-  const email = normalizeBillingEmail(
-    session.customer_details?.email ||
+  if (!plan) return;
+  let email = normalizeBillingEmail(
+    session.metadata?.buyer_email || session.customer_details?.email ||
       (typeof session.customer === "object" && session.customer &&
           !("deleted" in session.customer)
         ? session.customer.email
         : ""),
   );
   const customerId = stringId(session.customer);
+  email = await knownBuyerEmail(admin, customerId, email);
   if (!looksLikeEmail(email) || !customerId) {
     throw new Error("Checkout buyer identity is incomplete");
   }
@@ -164,10 +194,7 @@ async function processCheckout(
   if (session.mode === "subscription") {
     const subscriptionId = stringId(session.subscription);
     if (!subscriptionId) throw new Error("Checkout subscription is missing");
-    const subscription = typeof session.subscription === "object" &&
-        session.subscription
-      ? session.subscription
-      : await stripe.subscriptions.retrieve(subscriptionId);
+    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
     await applyBillingEvent(admin, {
       plan,
       buyer,
@@ -189,7 +216,7 @@ async function processCheckout(
     customerId,
     subscriptionId: "",
     checkoutSessionId: session.id,
-    status: "active",
+    status: await oneTimePaymentStatus(stripe, session),
     cancelAtPeriodEnd: false,
     currentPeriodEnd: null,
     sourceType: "stripe_payment",
@@ -205,15 +232,25 @@ async function processSubscription(
   if (!("id" in object) || typeof object.id !== "string") {
     throw new Error("Subscription event has no ID");
   }
-  const subscription = object as Stripe.Subscription;
+  // Delivery order is not guaranteed. Re-read the authoritative current state.
+  const subscription = await stripe.subscriptions.retrieve(object.id);
   const customerId = stringId(subscription.customer);
   const priceId = stringId(subscription.items.data[0]?.price);
-  const plan = await resolvePlan(admin, subscription.metadata?.plan_id, priceId);
+  const plan = await resolvePlan(
+    admin,
+    subscription.metadata?.plan_id,
+    priceId,
+  );
+  if (!plan) return;
   const customer = await stripe.customers.retrieve(customerId);
   if ("deleted" in customer && customer.deleted) {
     throw new Error("Stripe customer has been deleted");
   }
-  const email = normalizeBillingEmail(customer.email);
+  const email = await knownBuyerEmail(
+    admin,
+    customerId,
+    normalizeBillingEmail(subscription.metadata?.buyer_email || customer.email),
+  );
   if (!looksLikeEmail(email) || !customerId) {
     throw new Error("Subscription customer identity is incomplete");
   }
@@ -241,7 +278,7 @@ async function resolvePlan(
   admin: SupabaseClient,
   metadataPlanId: string | undefined,
   priceId: string,
-): Promise<BillingPlan> {
+): Promise<BillingPlan | null> {
   if (!priceId) throw new Error("Stripe price is missing");
   let query = admin
     .from("academy_billing_plans")
@@ -250,6 +287,7 @@ async function resolvePlan(
     ? query.eq("id", metadataPlanId)
     : query.eq("stripe_price_id", priceId);
   const { data: plan, error } = await query.maybeSingle();
+  if (!error && !plan && !isUuid(metadataPlanId)) return null;
   if (error || !plan || plan.stripe_price_id !== priceId) {
     throw new Error("Stripe price is not mapped to an Academy plan");
   }
@@ -266,7 +304,9 @@ async function ensureBuyer(
   if (!user) {
     const { data, error } = await admin.auth.admin.createUser({
       email,
-      email_confirm: true,
+      // A successful card payment is not proof of email ownership. The buyer
+      // still verifies the address through the normal magic-link sign-in.
+      email_confirm: false,
       user_metadata: { full_name: displayName || email.split("@")[0] },
     });
     if (error) {
@@ -302,7 +342,7 @@ async function ensureBuyer(
       .from("academy_member_invites")
       .select("academy_member_id")
       .eq("academy_community_id", communityId)
-      .ilike("email", email)
+      .eq("email", email)
       .neq("status", "cancelled")
       .limit(1)
       .maybeSingle();
@@ -321,7 +361,8 @@ async function ensureBuyer(
         .select("id")
         .maybeSingle();
       if (claimError || !claimed) {
-        throw claimError || new Error("Imported Academy identity belongs to another account");
+        throw claimError ||
+          new Error("Imported Academy identity belongs to another account");
       }
       memberId = claimed.id;
     }
@@ -345,20 +386,27 @@ async function ensureBuyer(
   if (!memberId) throw new Error("Academy member could not be resolved");
 
   const now = new Date().toISOString();
-  const { error: inviteError } = await admin.from("academy_member_invites")
-    .upsert({
-      academy_community_id: communityId,
-      academy_member_id: memberId,
-      email,
-      status: "provisioned",
-      invited_user_id: user.id,
-      source_provider: "stripe",
-      provisioned_at: now,
-      last_attempt_at: now,
-      last_action: "provision",
-      error_message: null,
-    }, { onConflict: "academy_member_id" });
-  if (inviteError) throw inviteError;
+  const { data: priorInvite, error: priorInviteError } = await admin.from(
+    "academy_member_invites",
+  ).select("id").eq("academy_member_id", memberId).maybeSingle();
+  if (priorInviteError) throw priorInviteError;
+  // Keep imported/manual attribution and invite history intact.
+  if (!priorInvite) {
+    const { error: inviteError } = await admin.from("academy_member_invites")
+      .insert({
+        academy_community_id: communityId,
+        academy_member_id: memberId,
+        email,
+        status: "provisioned",
+        invited_user_id: user.id,
+        source_provider: "stripe",
+        provisioned_at: now,
+        last_attempt_at: now,
+        last_action: "provision",
+        error_message: null,
+      });
+    if (inviteError && inviteError.code !== "23505") throw inviteError;
+  }
   return { userId: user.id, memberId, email };
 }
 
@@ -421,4 +469,58 @@ function subscriptionPeriodEnd(subscription: Stripe.Subscription) {
     )
     .filter((value): value is string => Boolean(value));
   return itemPeriods.sort().at(-1) ?? null;
+}
+
+async function oneTimePaymentStatus(
+  stripe: Stripe,
+  session: Stripe.Checkout.Session,
+) {
+  const paymentId = stringId(session.payment_intent);
+  // Zero-total checkouts (e.g. an approved discount) can lack a payment intent.
+  if (!paymentId) return "active";
+  const payment = await stripe.paymentIntents.retrieve(paymentId, {
+    expand: ["latest_charge"],
+  });
+  const charge = payment.latest_charge;
+  return typeof charge === "object" && charge?.refunded
+    ? "cancelled"
+    : "active";
+}
+
+async function processRefund(
+  admin: SupabaseClient,
+  stripe: Stripe,
+  object: Stripe.Event.Data.Object,
+) {
+  if (!("id" in object) || typeof object.id !== "string") {
+    throw new Error("Refund has no charge ID");
+  }
+  const charge = await stripe.charges.retrieve(object.id);
+  // Partial refunds do not end access. Subscription refunds do not cancel the
+  // subscription; its own current status continues to determine entitlement.
+  if (!charge.refunded) return;
+  const paymentId = stringId(charge.payment_intent);
+  if (!paymentId) return;
+  const sessions = await stripe.checkout.sessions.list({
+    payment_intent: paymentId,
+    limit: 100,
+  });
+  for (const session of sessions.data) {
+    if (session.mode === "payment" && isUuid(session.metadata?.plan_id)) {
+      await processCheckout(admin, stripe, session);
+    }
+  }
+}
+
+async function knownBuyerEmail(
+  admin: SupabaseClient,
+  customerId: string,
+  fallback: string,
+) {
+  const { data, error } = await admin.from("academy_billing_customers").select(
+    "email",
+  ).eq("provider_customer_id", customerId).maybeSingle();
+  if (error) throw error;
+  // A later Stripe dashboard email edit must not move an existing entitlement.
+  return data?.email ? normalizeBillingEmail(data.email) : fallback;
 }
