@@ -18,7 +18,7 @@ export function normalizeAcademyPaymentLink(value: string | null | undefined) {
 
 export function academyPaymentLink(nativePlatform = Capacitor.isNativePlatform()) {
   if (nativePlatform) return undefined;
-  return normalizeAcademyPaymentLink(import.meta.env.VITE_STRIPE_ACADEMY_PAYMENT_LINK);
+  return "/membership";
 }
 
 export function checkoutReturnNotice(search: string) {

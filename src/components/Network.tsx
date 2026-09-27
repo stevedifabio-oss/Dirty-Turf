@@ -182,7 +182,7 @@ function SettingsPanel({ onToast, dataMode, canManage, onSignOut }: { onToast: (
       setDeletionBusy(false);
     }
   };
-  const canChoosePlan = !billing?.subscription || ["cancelled", "expired"].includes(billing.subscription.status);
+  const canChoosePlan = Boolean(billing?.subscription && ["cancelled", "expired"].includes(billing.subscription.status));
 
   const updateNotificationPreference = async (key: keyof NotificationPreferences, value: boolean) => {
     if (!notificationPreferences || notificationSavePending.current) return;

@@ -1,5 +1,6 @@
 import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { Capacitor } from "@capacitor/core";
 import "@fontsource/outfit/latin-600.css";
 import "@fontsource/outfit/latin-700.css";
 import "@fontsource/outfit/latin-800.css";
@@ -82,6 +83,7 @@ import {
 } from "./lib/backend";
 import { hasNativeLiveMeasurement, startNativeLiveMeasurement } from "./lib/liveMeasurement";
 import { academyPaymentLink, checkoutReturnNotice } from "./lib/academyPaymentLink";
+import { billingPageRoute } from "./lib/membershipBilling";
 import { cloudCollectionOrEmpty } from "./lib/cloudCollection";
 import { createCommunityPostPageGate } from "./lib/communityPostPageGate";
 import { createWorkspaceSession } from "./lib/workspaceSession";
@@ -105,6 +107,7 @@ const HubSheet = lazy(() =>
 const AdminStudio = lazy(() =>
   import("./components/AdminStudio").then((module) => ({ default: module.AdminStudio })),
 );
+const MembershipPages = lazy(() => import("./components/MembershipPages").then((module) => ({ default: module.MembershipPages })));
 
 type View = PrimaryNavigationView;
 
@@ -874,7 +877,10 @@ const rootElement = document.getElementById("root")!;
 const appWindow = window as Window & { __dirtyTurfRoot?: ReturnType<typeof createRoot> };
 appWindow.__dirtyTurfRoot ??= createRoot(rootElement);
 const publicCertificateCode = new URLSearchParams(window.location.search).get("certificate");
-appWindow.__dirtyTurfRoot.render(<AppErrorBoundary>{publicCertificateCode ? <CertificateVerificationPage code={publicCertificateCode} /> : <App />}</AppErrorBoundary>);
+const membershipRoute = billingPageRoute(window.location.pathname, Capacitor.isNativePlatform());
+appWindow.__dirtyTurfRoot.render(<AppErrorBoundary>{membershipRoute
+  ? <Suspense fallback={<main className="launch-gate"><section className="launch-card" role="status"><p>Loading membership…</p></section></main>}><MembershipPages route={membershipRoute} /></Suspense>
+  : publicCertificateCode ? <CertificateVerificationPage code={publicCertificateCode} /> : <App />}</AppErrorBoundary>);
 
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {

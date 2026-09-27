@@ -35,7 +35,10 @@ verify_jwt = false
 verify_jwt = true
 
 [functions.create-checkout]
-verify_jwt = true
+verify_jwt = false
+
+[functions.public-billing-plans]
+verify_jwt = false
 
 [functions.create-billing-portal]
 verify_jwt = true
