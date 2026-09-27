@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildAcademyImportBatches } from "./academy-import-batches.mjs";
+import { importSortOrder } from "../../supabase/functions/_shared/import-order.ts";
 
 function fixture() {
   const lessons = Array.from({ length: 5 }, (_, index) => ({ externalId: `lesson-${index + 1}`, title: `Lesson ${index + 1}` }));
@@ -42,5 +43,76 @@ describe("Academy import batching", () => {
     const manifest = fixture();
     manifest.reactions = [{ externalId: "reaction-1" }];
     expect(() => buildAcademyImportBatches(manifest)).toThrow(/relationship-preserving/);
+  });
+});
+
+
+describe("source ordering across Academy transport batches", () => {
+  it("keeps all source positions after lesson, enrollment, progress, and asset subsets are applied", () => {
+    const manifest = fixture();
+    manifest.courses = Array.from({ length: 2 }, (_, courseIndex) => ({
+      externalId: `course-${courseIndex + 1}`,
+      title: "Course",
+      modules: Array.from({ length: 2 }, (_, moduleIndex) => ({
+        externalId: `module-${courseIndex}-${moduleIndex}`,
+        title: "Module",
+        lessons: Array.from({ length: 3 }, (_, lessonIndex) => ({
+          externalId: `lesson-${courseIndex}-${moduleIndex}-${lessonIndex}`,
+          title: "Lesson",
+        })),
+      })),
+    }));
+    manifest.enrollments[0].courseExternalId = "course-2";
+    manifest.progress = [{ externalId: "progress-1", memberExternalId: "member-1", lessonExternalId: "lesson-1-1-2" }];
+    manifest.assets = [{ externalId: "asset-1", courseExternalId: "course-2", lessonExternalId: "lesson-1-1-2", title: "Asset", type: "image" }];
+    const original = structuredClone(manifest);
+    const stored = new Map();
+    const apply = (record, batchIndex) => stored.set(record.externalId,
+      importSortOrder(record.sortOrder, stored.get(record.externalId), batchIndex));
+    for (const { manifest: batch } of buildAcademyImportBatches(manifest, { lessonBatchSize: 2 })) {
+      batch.courses.forEach((course, courseIndex) => {
+        apply(course, courseIndex);
+        course.modules.forEach((module, moduleIndex) => {
+          apply(module, moduleIndex);
+          module.lessons.forEach(apply);
+        });
+      });
+    }
+    original.courses.forEach((course, courseIndex) => {
+      expect(stored.get(course.externalId)).toBe(courseIndex);
+      course.modules.forEach((module, moduleIndex) => {
+        expect(stored.get(module.externalId)).toBe(moduleIndex);
+        module.lessons.forEach((lesson, lessonIndex) => expect(stored.get(lesson.externalId)).toBe(lessonIndex));
+      });
+    });
+    expect(manifest).toEqual(original);
+  });
+
+  it("preserves explicit source positions in every derived batch, including zero", () => {
+    const manifest = fixture();
+    manifest.courses[0].sortOrder = 7;
+    manifest.courses[0].modules[0].sortOrder = 3;
+    manifest.courses[0].modules[0].lessons.forEach((lesson, index) => { lesson.sortOrder = 4 - index; });
+    for (const { manifest: batch } of buildAcademyImportBatches(manifest, { lessonBatchSize: 1, assetBatchSize: 1 })) {
+      for (const course of batch.courses) {
+        expect(course.sortOrder).toBe(7);
+        for (const module of course.modules) {
+          expect(module.sortOrder).toBe(3);
+          for (const lesson of module.lessons) {
+            expect(lesson.sortOrder).toBe(5 - Number(lesson.externalId.split("-")[1]));
+          }
+        }
+      }
+    }
+  });
+
+  it.each([-1, 0.5, null, "1", NaN, Infinity, 2147483648])("rejects invalid source position %s before batching", (value) => {
+    for (const level of ["course", "module", "lesson"]) {
+      const manifest = fixture();
+      const course = manifest.courses[0];
+      const record = level === "course" ? course : level === "module" ? course.modules[0] : course.modules[0].lessons[0];
+      record.sortOrder = value;
+      expect(() => buildAcademyImportBatches(manifest)).toThrow(/sortOrder/);
+    }
   });
 });

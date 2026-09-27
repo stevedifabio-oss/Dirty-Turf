@@ -2,7 +2,7 @@
 
 ## Decision
 
-Dirty Turf will own Academy authentication, courses, lesson progress, community discussions, members, events, and private media in Supabase. HighLevel remains online only during capture, reconciliation, and rollback. The app's Academy, Community, and Events tabs now render the native experience.
+Dirty Turf owns the native Academy experience in Supabase: authentication, courses, lesson progress, community discussions, members, events, and private media. Updated September 26: Steve wants to continue editing imported content in HighLevel and have changes flow one way into the app. Keep HighLevel available as the source for that imported content until a separately agreed cutover; protect app progress, native discussions, moderation and local edits. The app's Academy, Community, and Events tabs render the native experience.
 
 This is a controlled migration, not a screen scrape directly into production. Every source record is written to an import ledger with its HighLevel ID, parent ID, timestamps, source URL, payload hash, and resulting native ID.
 
@@ -17,21 +17,21 @@ The initial native Academy migration completed on September 18, 2026. The ignore
 - The private `academy-assets` bucket contains 117 deduplicated course objects plus 31 imported post objects. The live post records reference only the 7 real post images and preserve 4 external resources; 162 captured profile/avatar artifacts were removed from post media.
 - The owner account, owner organization, Academy community, source ledgers, storage policies, and server-side import/provisioning functions are live.
 
-HighLevel must remain available through the member pilot and final delta capture. Mailgun activation, `app.dirtyturf.com`, a real-member Magic Link pilot, and client approval are still cutover gates.
+HighLevel must remain available while it is the editing source. The earlier cutover checklist included email delivery, `app.dirtyturf.com`, real-member Magic Link login and client approval. Steve now reports successful Android login; store availability and the remaining integration work have separate acceptance gates in `docs/production-priorities.md`.
 
 ## Edits Made in HighLevel During Migration
 
-The September 18 archive is a snapshot, not live synchronization. The signed GHL webhook currently queues events in `integration_events`; it does not update Academy records. HighLevel's documented Social Planner API is not this Academy community, and the public Courses API does not offer a supported course-catalog export. Do not promise that Steve's GHL course or community edits automatically appear in the app.
+The September 18 archive is a snapshot, not live synchronization. The signed GHL webhook currently queues events in `integration_events`; it does not update Academy records. On September 24 HighLevel added documented Courses v3 read endpoints. A September 26 read-only request using the existing integration returned HTTP 200, and the imported course matched the returned catalog. This supersedes the earlier no-course-read-API limitation. HighLevel also documents Group Post Created and Group Comment Created workflow triggers; payload completeness for authors, attachments, parents, edits and deletions must be verified before enabling community sync. See `docs/production-priorities.md`.
 
 For each editing cycle, recapture the exact Academy group, courses, community, events, membership, entitlements, and media through the client-owned authenticated admin session. Keep archives in ignored, access-controlled `output/private/`. Compose and validate a fresh manifest, then compare it with the previous capture using `npm run academy:delta -- <previous-manifest> <fresh-manifest> --report output/private/<new-report-name>.json`. The console prints counts only; the private report contains stable source IDs. A stale or cross-community capture is rejected.
 
 Review additions and updates against HighLevel before applying them. A missing record is not an automatic deletion: it may be a pagination or permission gap. Compare each change with native Admin Studio edits and member progress; replaying a full manifest can overwrite native-authored work. Import approved changes in dependency-ordered batches after a dry run and backup, then reconcile counts, source IDs, media, access, and visual examples in the live app. Record the last successfully applied capture time.
 
-At cutover, freeze GHL edits briefly, run one final reviewed delta, and keep GHL available for rollback until Steve approves native content and real-member sign-in. After cutover, Admin Studio becomes the content source of truth. Fully automatic mirroring remains blocked until a supported GHL content read/export or edit-event source exists for this legacy Academy group.
+If Steve later chooses a full cutover, freeze GHL edits briefly, run one final reviewed delta, and keep GHL available for rollback until he approves native content and real-member sign-in. Only that explicit cutover makes Admin Studio the source for imported content. Automatic course reads are now supported. Automatic application remains disabled until conflict protection, stable identity across lesson moves, media refresh, retries and live reconciliation pass. Full community mirroring additionally requires verified workflow payloads and a supported strategy for edits/deletions.
 
 ## What HighLevel Officially Exposes
 
-- The public Memberships API documents a course **import** endpoint but no supported course catalog export/read endpoint: <https://marketplace.gohighlevel.com/docs/2023-02-21/ghl/courses/import-courses/>
+- Courses v3 now documents course, category and lesson GET endpoints with `courses.readonly`: <https://marketplace.gohighlevel.com/docs/ghl/courses/list-courses/>. Existing access was verified September 26; scope reads to the exact imported course IDs.
 - The public Contacts API can supply CRM contacts, but all location contacts are not the same as members of the paid Academy group: <https://marketplace.gohighlevel.com/docs/ghl/contacts/contacts/>
 - HighLevel's community product includes discussions, learning, events, leaderboards, members, roles, access controls, and paid/private courses. These must be inventoried because there is no single supported public export that contains all of them: <https://help.gohighlevel.com/support/solutions/articles/155000000280>
 

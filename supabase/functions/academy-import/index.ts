@@ -2,6 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { handlePreflight, jsonResponse } from "../_shared/http.ts";
 import { academyImportGrantWindow } from "../_shared/import-access.ts";
+import { importSortOrder, validImportSortOrder } from "../_shared/import-order.ts";
 
 type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
@@ -23,6 +24,7 @@ type MemberInput = {
 
 type LessonInput = {
   externalId: string;
+  sortOrder?: number;
   title: string;
   type?: "video" | "guide" | "quiz";
   body?: Json;
@@ -37,6 +39,7 @@ type LessonInput = {
 
 type ModuleInput = {
   externalId: string;
+  sortOrder?: number;
   title: string;
   groupTitle?: string;
   dripAfterDays?: number;
@@ -46,6 +49,7 @@ type ModuleInput = {
 
 type CourseInput = {
   externalId: string;
+  sortOrder?: number;
   title: string;
   description?: string;
   category?: string;
@@ -353,7 +357,7 @@ async function importContent(admin: SupabaseClient, manifest: ImportManifest, co
   }
 
   for (const [courseIndex, item] of (manifest.courses ?? []).entries()) {
-    let course = await maybeSingle(admin.from("courses").select("id")
+    let course = await maybeSingle(admin.from("courses").select("id,sort_order")
       .eq("academy_community_id", communityId).eq("external_id", item.externalId));
     const courseValues = {
       organization_id: organizationId,
@@ -372,7 +376,7 @@ async function importContent(admin: SupabaseClient, manifest: ImportManifest, co
       access_type: item.accessType ?? "open",
       required_level: item.requiredLevel ?? null,
       price_cents: item.priceCents ?? null,
-      sort_order: courseIndex,
+      sort_order: importSortOrder(item.sortOrder, course?.sort_order, courseIndex),
       published_at: (item.status ?? "published") === "published" ? new Date().toISOString() : null,
     };
     course = course ? await requiredUpdate(admin, "courses", course.id, courseValues) : await requiredInsert(admin, "courses", courseValues);
@@ -381,14 +385,14 @@ async function importContent(admin: SupabaseClient, manifest: ImportManifest, co
     await recordSource(admin, batchId, communityId, "course", item.externalId, item, undefined, undefined, course.id, "courses", item.sourceUrl, item.updatedAt);
 
     for (const [moduleIndex, moduleInput] of (item.modules ?? []).entries()) {
-      let moduleRow = await maybeSingle(admin.from("course_modules").select("id")
+      let moduleRow = await maybeSingle(admin.from("course_modules").select("id,sort_order")
         .eq("course_id", course.id).eq("external_id", moduleInput.externalId));
       const moduleValues = {
         course_id: course.id,
         external_id: moduleInput.externalId,
         title: moduleInput.title,
         group_title: moduleInput.groupTitle ?? null,
-        sort_order: moduleIndex,
+        sort_order: importSortOrder(moduleInput.sortOrder, moduleRow?.sort_order, moduleIndex),
         drip_after_days: moduleInput.dripAfterDays ?? null,
         source_updated_at: moduleInput.updatedAt ?? null,
         source_import_batch_id: batchId,
@@ -398,7 +402,7 @@ async function importContent(admin: SupabaseClient, manifest: ImportManifest, co
       await recordSource(admin, batchId, communityId, "module", moduleInput.externalId, moduleInput, item.externalId, undefined, moduleRow.id, "course_modules", undefined, moduleInput.updatedAt);
 
       for (const [lessonIndex, lessonInput] of (moduleInput.lessons ?? []).entries()) {
-        let lesson = await maybeSingle(admin.from("course_lessons").select("id")
+        let lesson = await maybeSingle(admin.from("course_lessons").select("id,sort_order")
           .eq("module_id", moduleRow.id).eq("external_id", lessonInput.externalId));
         const lessonValues = {
           module_id: moduleRow.id,
@@ -410,7 +414,7 @@ async function importContent(admin: SupabaseClient, manifest: ImportManifest, co
           transcript: lessonInput.transcript ?? null,
           resources: lessonInput.resources ?? [],
           duration_seconds: Math.max(0, lessonInput.durationSeconds ?? 0),
-          sort_order: lessonIndex,
+          sort_order: importSortOrder(lessonInput.sortOrder, lesson?.sort_order, lessonIndex),
           status: lessonInput.status ?? "published",
           source_url: lessonInput.sourceUrl ?? null,
           source_updated_at: lessonInput.updatedAt ?? null,
@@ -755,10 +759,13 @@ function validateManifest(manifest: ImportManifest) {
     if (member.email && !/^\S+@\S+\.\S+$/.test(member.email)) return `Invalid email for member ${member.externalId}`;
   }
   for (const course of manifest.courses ?? []) {
+    if (course.sortOrder !== undefined && !validImportSortOrder(course.sortOrder)) return "Invalid course sortOrder";
     if (!course.externalId || !course.title) return "Every course requires externalId and title";
     for (const module of course.modules ?? []) {
+      if (module.sortOrder !== undefined && !validImportSortOrder(module.sortOrder)) return "Invalid module sortOrder";
       if (!module.externalId || !module.title) return `Every module in ${course.externalId} requires externalId and title`;
       for (const lesson of module.lessons ?? []) {
+        if (lesson.sortOrder !== undefined && !validImportSortOrder(lesson.sortOrder)) return "Invalid lesson sortOrder";
         if (!lesson.externalId || !lesson.title) return `Every lesson in ${module.externalId} requires externalId and title`;
       }
     }
