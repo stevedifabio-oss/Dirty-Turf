@@ -78,32 +78,44 @@ export function buildAcademyEmail(delivery: AcademyEmailDelivery, options: Email
   const safeUnsubscribeUrl = escapeHtml(options.unsubscribeUrl);
   const safeManageUrl = escapeHtml(withQuery(options.appUrl, { panel: "settings", section: "notifications" }));
 
+  const logoUrl = escapeHtml(new URL("/dirty-turf-logo.png", options.appUrl).href);
+  const fontUrl = (file: string) => escapeHtml(new URL(`/email-assets/${file}`, options.appUrl).href);
+  const bodyFont = "'Poppins',Arial,Helvetica,sans-serif";
+  const headingFont = "'Outfit','Poppins',Arial,Helvetica,sans-serif";
+
   const html = `<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(subject)}</title></head>
-<body style="margin:0;background:#eef4ea;color:#122218;font-family:Arial,Helvetica,sans-serif">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(subject)}</title>
+<!--[if !mso]><!--><style>
+@font-face{font-family:'Poppins';font-style:normal;font-weight:400;src:url('${fontUrl("poppins-latin-400-normal.woff2")}') format('woff2')}
+@font-face{font-family:'Poppins';font-style:normal;font-weight:700;src:url('${fontUrl("poppins-latin-700-normal.woff2")}') format('woff2')}
+@font-face{font-family:'Outfit';font-style:normal;font-weight:700;src:url('${fontUrl("outfit-latin-700-normal.woff2")}') format('woff2')}
+</style><!--<![endif]-->
+<!--[if mso]><style>body,table,td,p,a,h1,div{font-family:Arial,Helvetica,sans-serif !important}</style><![endif]-->
+</head>
+<body style="margin:0;background:#f4faee;color:#111f14;font-family:${bodyFont}">
   <div style="display:none;max-height:0;overflow:hidden;opacity:0">${escapeHtml(content.preheader)}</div>
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef4ea;padding:24px 12px">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4faee;padding:24px 12px">
     <tr><td align="center">
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border:1px solid #d8e4d3;border-radius:8px;overflow:hidden">
-        <tr><td style="background:#063f24;padding:22px 28px;color:#ffffff">
-          <div style="font-size:12px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:#8ee02f">Dirty Turf</div>
-          <div style="font-size:22px;font-weight:800;margin-top:4px">Academy &amp; Community</div>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-family:${bodyFont};max-width:620px;background:#ffffff;border:1px solid #e8f5d0;border-radius:8px;overflow:hidden">
+        <tr><td style="background:#003113;padding:24px 28px;color:#ffffff;border-bottom:4px solid #78c12e">
+          <img src="${logoUrl}" alt="Dirty Turf" width="224" height="97" style="display:block;width:224px;max-width:100%;height:auto;border:0;color:#ffffff;font-size:24px;font-weight:700">
+          <div style="font-family:${headingFont};font-size:20px;font-weight:700;line-height:1.3;margin-top:14px">Academy &amp; Community</div>
         </td></tr>
         <tr><td style="padding:30px 28px 12px">
           <p style="margin:0 0 12px;font-size:16px;line-height:1.55">Hi ${escapeHtml(recipientName)},</p>
-          <h1 style="margin:0 0 14px;font-size:25px;line-height:1.25;color:#063f24">${escapeHtml(content.heading)}</h1>
-          <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#384b3e">${escapeHtml(content.body)}</p>
-          ${delivery.detail ? `<div style="margin:0 0 22px;padding:16px 18px;background:#f4f8f1;border-left:4px solid #62c814;color:#203427;font-size:15px;line-height:1.5">${escapeHtml(delivery.detail)}</div>` : ""}
-          ${excerpt ? `<p style="margin:0 0 22px;font-size:15px;line-height:1.6;color:#384b3e">${escapeHtml(excerpt)}</p>` : ""}
+          <h1 style="font-family:${headingFont};font-weight:700;margin:0 0 14px;font-size:25px;line-height:1.25;color:#003113">${escapeHtml(content.heading)}</h1>
+          <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#3d5c44">${escapeHtml(content.body)}</p>
+          ${delivery.detail ? `<div style="margin:0 0 22px;padding:16px 18px;background:#f4faee;border-left:4px solid #78c12e;color:#111f14;font-size:15px;line-height:1.5">${escapeHtml(delivery.detail)}</div>` : ""}
+          ${excerpt ? `<p style="margin:0 0 22px;font-size:15px;line-height:1.6;color:#3d5c44">${escapeHtml(excerpt)}</p>` : ""}
           ${eventDetails.html}
-          <a href="${safeActionUrl}" style="display:inline-block;background:#07833f;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:13px 20px;border-radius:6px">${escapeHtml(content.action)}</a>
+          <a href="${safeActionUrl}" style="display:inline-block;background:#047631;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:13px 20px;border-radius:6px">${escapeHtml(content.action)}</a>
         </td></tr>
         <tr><td style="padding:18px 28px 30px">
-          <p style="margin:0;font-size:13px;line-height:1.55;color:#66756b">Use the same email address that received this message to sign in. Magic links work on the web, iPhone, and Android app.</p>
+          <p style="margin:0;font-size:13px;line-height:1.55;color:#3d5c44">Use the same email address that received this message to sign in. Magic links work on the web, iPhone, and Android app.</p>
         </td></tr>
-        <tr><td style="border-top:1px solid #e3ebe0;padding:18px 28px;font-size:12px;line-height:1.6;color:#728078">
-          Dirty Turf Academy · <a href="${safeManageUrl}" style="color:#287448">Notification settings</a> · <a href="${safeUnsubscribeUrl}" style="color:#287448">Unsubscribe from this type of email</a>
+        <tr><td style="border-top:1px solid #e8f5d0;padding:18px 28px;font-size:12px;line-height:1.6;color:#3d5c44">
+          Dirty Turf Academy · <a href="${safeManageUrl}" style="color:#035f27">Notification settings</a> · <a href="${safeUnsubscribeUrl}" style="color:#035f27">Unsubscribe from this type of email</a>
         </td></tr>
       </table>
     </td></tr>
@@ -409,7 +421,7 @@ function buildEventDetails(delivery: AcademyEmailDelivery) {
   const htmlRows = rows.filter(Boolean).map(row => `<p style="margin:0 0 8px">${escapeHtml(row)}</p>`).join("");
   // Cancelled events never advertise a meeting link.
   return {
-    html: `<div style="margin:0 0 22px;font-size:15px;line-height:1.5">${htmlRows}${meetingUrl && !cancelled ? `<p style="margin:0">Location: <a href="${escapeHtml(meetingUrl)}" style="color:#07833f">${escapeHtml(meetingUrl)}</a></p>` : ""}</div>`,
+    html: `<div style="margin:0 0 22px;font-size:15px;line-height:1.5;overflow-wrap:anywhere;word-break:break-word">${htmlRows}${meetingUrl && !cancelled ? `<p style="margin:0">Location: <a href="${escapeHtml(meetingUrl)}" style="color:#047631">${escapeHtml(meetingUrl)}</a></p>` : ""}</div>`,
     text: [...rows, meetingUrl && !cancelled ? `Location: ${meetingUrl}` : ""].filter(Boolean).join("\n"),
   };
 }

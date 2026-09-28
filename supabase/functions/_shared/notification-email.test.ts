@@ -86,7 +86,8 @@ describe("Community email parity", () => {
   it("escapes community content excerpts", () => {
     const email = buildAcademyEmail({ ...delivery, payload: { excerpt: '<img src=x onerror="alert(1)">' } }, options);
     expect(email.html).toContain("&lt;img");
-    expect(email.html).not.toContain("<img");
+    expect(email.html).not.toContain("<img src=x");
+    expect(email.html).not.toContain('onerror="alert(1)"');
   });
   it("maps lifecycle, event and lesson emails to their preference and unsubscribe sets", async () => {
     const { templatesForPreference, lifecycleEmailTemplates } = await import("./notification-email");

@@ -2,6 +2,12 @@
 
 Nothing in this change has been pushed, deployed, scheduled remotely, or emailed to a member. The preview catalog contains **38 synthetic emails**. Regenerate it with `node scripts/preview-academy-emails.mjs`, then open `output/email-preview/index.html`.
 
+## Brand styling
+
+All 38 templates share the app's actual `public/dirty-turf-logo.png`, turf green `#047631`, dark green `#003113`, lime `#78c12e`, and chalk `#f4faee`. Body text uses Poppins and headings use Outfit. Stable font files and their licenses are under `public/email-assets/`; deploy those assets with the website before enabling delivery. Email clients that block web fonts use Arial/Helvetica; clients that block images see the logo's Dirty Turf alt text. Browser previews are not inbox-client rendering proof.
+
+The preview generator copies the same logo and fonts locally, so unpublished assets can be reviewed without sending email or depending on a production deployment.
+
 ## Evidence and coverage
 
 The supplied September 27 event-launch email includes a personalized greeting, community, event name, date, meeting location and Register button. The local launch template preserves those fields and adds an explicit local time range/timezone. Dirty Turf branding, web/app links, notification settings and per-category unsubscribe appear in every email. Existing signed-in sessions are reused when a link opens; emails do not contain bearer login tokens.

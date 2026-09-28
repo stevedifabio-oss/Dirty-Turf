@@ -1,5 +1,5 @@
 // Synthetic local previews only. This script has no provider or network calls.
-import { mkdir, writeFile } from 'node:fs/promises';
+import { cp, mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createServer } from 'vite';
 const server = await createServer({ configFile: false, optimizeDeps: { noDiscovery: true, include: [] }, server: { middlewareMode: true }, appType: 'custom' });
@@ -7,6 +7,8 @@ try {
  const { buildAcademyEmail, lifecycleEmailTemplates, escapeHtml } = await server.ssrLoadModule('/supabase/functions/_shared/notification-email.ts');
  const templates = ['welcome','new_post','announcement','comment','reply','mention','post_reaction','comment_reaction','new_event','event_reminder','event_updated','event_cancelled','event_rsvp','new_course','course_unlocked','lesson_published','course_certificate','weekly_digest',...Object.keys(lifecycleEmailTemplates)];
  const output = resolve('output/email-preview'); await mkdir(output,{recursive:true});
+ await cp(resolve('public/email-assets'),resolve(output,'email-assets'),{recursive:true});
+ await cp(resolve('public/dirty-turf-logo.png'),resolve(output,'dirty-turf-logo.png'));
  const examples = {
  welcome: ['Welcome to 7 Figure Turf Cleaning', 'Your community and courses are ready.'],
  new_post: ['Steve posted in 7 Figure Turf Cleaning', 'How to price your next turf restoration'],
@@ -45,7 +47,7 @@ try {
  for(const template of templates) {
   const delivery={id:'00000000-0000-4000-8000-000000000001',recipient_member_id:'00000000-0000-4000-8000-000000000002',recipient_email:'preview@example.com',recipient_name:'Taylor Member',template_key:template,title:examples[template][0],detail:examples[template][1],target_type:template.includes('event')?'event':template.includes('course')||template==='lesson_published'?'course':'community',target_id:'00000000-0000-4000-8000-000000000003',idempotency_key:'preview:'+template,payload:{actorName:'Steve',communityName:'7 Figure Turf Cleaning',eventTitle:'Turf Clean call',startsAt:'2026-10-04T20:00:00Z',endsAt:'2026-10-04T21:00:00Z',timezone:'America/Phoenix',meetingUrl:'https://example.com/meeting',hoursBefore:24,rsvpStatus:'going'}};
   const email=buildAcademyEmail(delivery,{appUrl:'https://app.dirtyturf.com',unsubscribeUrl:'https://example.com/unsubscribe-preview'});
-  await writeFile(resolve(output,template+'.html'),email.html);
+  await writeFile(resolve(output,template+'.html'),email.html.replaceAll('https://app.dirtyturf.com/email-assets/', './email-assets/').replaceAll('https://app.dirtyturf.com/dirty-turf-logo.png', './dirty-turf-logo.png'));
   const status = template.includes('payment') || template.includes('subscription') ? 'Awaiting Stripe setup' : prepared.has(template) ? 'Template ready · feature connection pending' : 'Built locally · waiting to publish';
   rows.push(`<li><a href="${template}.html">${escapeHtml(template.replaceAll('_',' ').replace(/\b\w/g, c=>c.toUpperCase()))}</a><small>${escapeHtml(email.subject)}</small><small>${status}</small></li>`);
  }
