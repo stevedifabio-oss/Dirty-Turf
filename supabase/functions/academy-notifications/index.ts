@@ -1,5 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
 import {
   buildAcademyEmail,
   createUnsubscribeToken,
@@ -29,6 +29,7 @@ Deno.serve(async (request) => {
   if (url.pathname.endsWith("/unsubscribe")) return handleUnsubscribe(request, url);
   if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
+  if (Deno.env.get("ACADEMY_EMAIL_DELIVERY_ENABLED") !== "true") return json({ enabled: false, sent: 0 });
   const config = loadConfig();
   if (!config) return json({ error: "Notification delivery is not configured" }, 503);
   if (!safeEqual(request.headers.get("x-notification-secret") ?? "", config.dispatchSecret)) {
@@ -51,9 +52,18 @@ Deno.serve(async (request) => {
   if (error) return json({ error: "Notification deliveries could not be claimed" }, 500);
 
   const deliveries = (Array.isArray(data) ? data : []) as AcademyEmailDelivery[];
-  const results: { id: string; status: "sent" | "retrying" }[] = [];
-  for (const delivery of deliveries) {
+  const results: { id: string; status: "sent" | "retrying" | "cancelled" | "review_required" }[] = [];
+  for (const claimedDelivery of deliveries) {
+    let delivery = claimedDelivery;
+    let providerAttempted = false;
+    let providerAccepted = false;
     try {
+      const { data: prepared, error: prepareError } = await admin.rpc("prepare_academy_email_delivery", {
+        p_delivery_id: delivery.id, p_lock_token: lockToken,
+      });
+      if (prepareError) throw prepareError;
+      if (!Array.isArray(prepared) || !prepared[0]) { results.push({ id: delivery.id, status: "cancelled" }); continue; }
+      delivery = prepared[0] as AcademyEmailDelivery;
       const preference = preferenceForTemplate(delivery.template_key);
       const token = await createUnsubscribeToken(
         delivery.recipient_member_id,
@@ -62,15 +72,25 @@ Deno.serve(async (request) => {
       );
       const unsubscribeUrl = `${config.supabaseUrl}/functions/v1/academy-notifications/unsubscribe?token=${encodeURIComponent(token)}`;
       const email = buildAcademyEmail(delivery, { appUrl: config.appUrl, unsubscribeUrl });
+      providerAttempted = true;
       const providerMessageId = await sendMailgun(config, delivery, email, unsubscribeUrl);
-      const { error: completeError } = await admin.rpc("complete_academy_email_delivery", {
+      providerAccepted = true;
+      const { data: completed, error: completeError } = await admin.rpc("complete_academy_email_delivery", {
         p_delivery_id: delivery.id,
         p_lock_token: lockToken,
         p_provider_message_id: providerMessageId,
       });
-      if (completeError) throw completeError;
+      if (completeError || !completed) throw completeError ?? new Error("Delivery lock lost after provider acceptance");
       results.push({ id: delivery.id, status: "sent" });
     } catch (deliveryError) {
+      // Mailgun does not promise idempotency for messages. A timeout, 5xx, or DB failure
+      // after acceptance requires provider review; automatic resend can duplicate mail.
+      if (providerAccepted || (providerAttempted && !(deliveryError instanceof ProviderRejected))) {
+        await admin.from("academy_email_deliveries").update({ status: "failed", last_error: "Provider result uncertain; review before retry", lock_token: null, locked_at: null })
+          .eq("id", delivery.id).eq("lock_token", lockToken).eq("status", "processing");
+        results.push({ id: delivery.id, status: "review_required" });
+        continue;
+      }
       await admin.rpc("fail_academy_email_delivery", {
         p_delivery_id: delivery.id,
         p_lock_token: lockToken,
@@ -84,6 +104,8 @@ Deno.serve(async (request) => {
     scheduled: scheduled ?? { eventReminders: 0, weeklyDigests: 0 },
     claimed: deliveries.length,
     sent: results.filter((result) => result.status === "sent").length,
+    cancelled: results.filter((result) => result.status === "cancelled").length,
+    reviewRequired: results.filter((result) => result.status === "review_required").length,
     retrying: results.filter((result) => result.status === "retrying").length,
   });
 });
@@ -126,7 +148,7 @@ async function handleUnsubscribe(request: Request, url: URL) {
     .from("academy_email_deliveries")
     .update({ status: "cancelled", last_error: "Recipient unsubscribed" })
     .eq("recipient_member_id", payload.memberId)
-    .eq("status", "pending")
+    .in("status", ["pending", "processing"])
     .in("template_key", templates);
 
   return htmlPage("You are unsubscribed", `${preferenceLabel(payload.preference)} emails are now off. You can turn them back on in notification settings.`, 200, config.appUrl);
@@ -143,13 +165,17 @@ async function sendMailgun(
     : "https://api.mailgun.net";
   const form = new FormData();
   form.set("from", `${config.mailgunFromName} <${config.mailgunFromEmail}>`);
-  form.set("to", `${delivery.recipient_name} <${delivery.recipient_email}>`);
+  // Display names are user-editable; never interpolate them into an address header.
+  form.set("to", delivery.recipient_email);
   form.set("subject", email.subject);
   form.set("html", email.html);
   form.set("text", email.text);
   form.set("o:tag", `academy-${delivery.template_key}`);
   form.set("v:delivery-id", delivery.id);
   form.set("v:idempotency-key", delivery.idempotency_key);
+  form.set("o:tracking", "no");
+  form.set("o:tracking-clicks", "no");
+  form.set("o:tracking-opens", "no");
   form.set("h:List-Unsubscribe", `<${unsubscribeUrl}>`);
   form.set("h:List-Unsubscribe-Post", "List-Unsubscribe=One-Click");
 
@@ -157,11 +183,15 @@ async function sendMailgun(
     method: "POST",
     headers: { authorization: `Basic ${btoa(`api:${config.mailgunApiKey}`)}` },
     body: form,
+    signal: AbortSignal.timeout(20_000),
   });
   const result = await response.json().catch(() => ({})) as { id?: string; message?: string };
-  if (!response.ok || !result.id) throw new Error(`Mailgun ${response.status}: ${result.message || "delivery failed"}`);
+  if (response.status >= 400 && response.status < 500) throw new ProviderRejected(`Mailgun rejected delivery (${response.status})`);
+  if (!response.ok || !result.id) throw new Error("Mailgun delivery result is uncertain");
   return result.id;
 }
+
+class ProviderRejected extends Error {}
 
 function loadConfig(): RuntimeConfig | null {
   const unsubscribe = loadUnsubscribeConfig();

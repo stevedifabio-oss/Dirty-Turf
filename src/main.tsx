@@ -86,6 +86,7 @@ import { academyPaymentLink, checkoutReturnNotice } from "./lib/academyPaymentLi
 import { billingPageRoute } from "./lib/membershipBilling";
 import { cloudCollectionOrEmpty } from "./lib/cloudCollection";
 import { createCommunityPostPageGate } from "./lib/communityPostPageGate";
+import { createCourseRefresh, watchCourseRefresh } from "./lib/courseRefresh";
 import { createWorkspaceSession } from "./lib/workspaceSession";
 import { calculateQuote, INFILL_RATES } from "./lib/quote";
 import { useModalDialog } from "./lib/useModalDialog";
@@ -188,6 +189,8 @@ function App() {
   const [notifications, setNotifications] = useState<AppNotification[]>(supabase ? [] : initialNotifications);
   const [arrivalChecks, setArrivalChecks] = useState<boolean[]>([false, false, false, false]);
   const [certificates, setCertificates] = useState<AcademyCertificate[]>([]);
+  const [requestedCourseCloudId, setRequestedCourseCloudId] = useState(() => new URLSearchParams(window.location.search).get("course") ?? undefined);
+  const [requestedEventCloudId, setRequestedEventCloudId] = useState(() => new URLSearchParams(window.location.search).get("event") ?? undefined);
   const [requestedPostCloudId, setRequestedPostCloudId] = useState(() => new URLSearchParams(window.location.search).get("post") ?? undefined);
   const [dataMode, setDataMode] = useState<DataMode>("device");
   const [workspaceAccess, setWorkspaceAccess] = useState<
@@ -196,6 +199,12 @@ function App() {
   const [workspaceRefreshToken, setWorkspaceRefreshToken] = useState(0);
   const [workspaceContentLoading, setWorkspaceContentLoading] = useState(Boolean(supabase));
   const workspaceContentReady = useRef(false);
+  const courseRevision = useRef(0);
+  const courseAccountGeneration = useRef(0);
+  const workspaceRefreshPending = useRef(false);
+  const courseWritesPending = useRef(0);
+  const refreshCoursesRef = useRef<() => void>(() => undefined);
+  const [courseRefreshError, setCourseRefreshError] = useState(false);
   const refreshWorkspaceRef = useRef<() => void>(() => undefined);
   const canManage = workspaceAccess.status === "member" && workspaceAccess.canManage;
 
@@ -217,6 +226,8 @@ function App() {
     const refreshWorkspace = async () => {
       if (!mounted) return;
       const activeRefresh = session.beginRefresh();
+      workspaceRefreshPending.current = true;
+      courseRevision.current += 1;
       postPageGate.current.refresh();
       setLoadingMorePosts(false);
       setHasMorePosts(false);
@@ -251,6 +262,7 @@ function App() {
           loadAcademyCertificates(),
         ] as const);
         if (!mounted || !session.isCurrent(activeRefresh)) return;
+        courseRevision.current += 1;
         const [jobsResult, coursesResult, postsResult, commentsResult, eventsResult, membersResult, notificationsResult, certificatesResult] = results;
         setJobs(cloudCollectionOrEmpty(jobsResult));
         setCourses(cloudCollectionOrEmpty(coursesResult));
@@ -279,14 +291,38 @@ function App() {
           else setWorkspaceAccess(supabase ? { status: "error" } : { status: "preview" });
           if (!supabase) setToast("Cloud data is unavailable. Working on this device.");
         }
+      } finally {
+        if (session.isCurrent(activeRefresh)) workspaceRefreshPending.current = false;
       }
     };
 
+    const courseRefresh = createCourseRefresh({
+      load: () => loadCourses([]),
+      apply: setCourses,
+      version: () => courseRevision.current,
+      eligible: () => Boolean(supabase) && mounted && workspaceContentReady.current
+        && !workspaceRefreshPending.current && courseWritesPending.current === 0 && document.visibilityState === "visible"
+        // Keep a member’s current reading, paused video and quiz answers stable.
+        && !document.querySelector(".lesson-content"),
+      onError: () => setCourseRefreshError(true),
+      onSuccess: () => setCourseRefreshError(false),
+    });
+    refreshCoursesRef.current = () => { void courseRefresh.refresh(); };
+    const stopCourseRefresh = watchCourseRefresh({
+      refresh: refreshCoursesRef.current, document, window,
+      nativeResume: Capacitor.isNativePlatform() ? async (onResume) => {
+        const { App: NativeApp } = await import("@capacitor/app");
+        return NativeApp.addListener("appStateChange", ({ isActive }) => { if (isActive) onResume(); });
+      } : undefined,
+    });
     refreshWorkspaceRef.current = () => { void refreshWorkspace(); };
     const authSubscription = supabase?.auth.onAuthStateChange((event, authSession) => {
       const action = session.authChanged(event, authSession?.user.id ?? null);
       if (action === "ignore") return;
       if (action === "reset" || action === "signed_out") {
+        courseAccountGeneration.current += 1;
+        courseRevision.current += 1;
+        setCourseRefreshError(false);
         clearWorkspaceContent();
         workspaceContentReady.current = false;
         postPageGate.current.refresh();
@@ -321,6 +357,10 @@ function App() {
     return () => {
       mounted = false;
       session.invalidate();
+      courseRevision.current += 1;
+      courseRefresh.dispose();
+      stopCourseRefresh();
+      refreshCoursesRef.current = () => undefined;
       refreshWorkspaceRef.current = () => undefined;
       postPageGate.current.refresh();
       authSubscription?.unsubscribe();
@@ -343,6 +383,23 @@ function App() {
     });
     return () => { mounted = false; disposeNativeAuth(); };
   }, []);
+
+  useEffect(() => {
+    if (activeView === "learn") refreshCoursesRef.current();
+  }, [activeView]);
+
+  const renderedCourseAccount = courseAccountGeneration.current;
+  const changeCourses = (next: Course[] | ((current: Course[]) => Course[])) => {
+    if (renderedCourseAccount !== courseAccountGeneration.current) return;
+    courseRevision.current += 1;
+    setCourses(next);
+  };
+  const writeCourseProgress = async <T,>(write: () => Promise<T>): Promise<T> => {
+    courseRevision.current += 1;
+    courseWritesPending.current += 1;
+    try { return await write(); }
+    finally { courseWritesPending.current -= 1; courseRevision.current += 1; }
+  };
 
   const loadMoreCommunityPosts = async () => {
     if (!hasMorePosts) return;
@@ -494,8 +551,10 @@ function App() {
       setRequestedPostCloudId(notification.targetCloudId);
       changeView("community");
     } else if (notification.targetType === "event") {
+      setRequestedEventCloudId(notification.targetCloudId);
       changeView("events");
     } else if (notification.targetType === "course") {
+      setRequestedCourseCloudId(notification.targetCloudId);
       changeView("learn");
     } else {
       changeView("community");
@@ -568,9 +627,9 @@ function App() {
         {searchOpen && <SearchPanel query={query} setQuery={setQuery} jobs={jobs} onOpenJob={(job) => { setSelectedJob(job); setSearchOpen(false); }} onNavigate={changeView} />}
         {!searchOpen && activeView !== "home" && <AcademyTabs activeView={activeView} canManage={canManage} onNavigate={changeView} />}
         {!searchOpen && activeView === "home" && <HomeView jobs={jobs} openQuote={openQuote} checks={arrivalChecks} setChecks={setArrivalChecks} setToast={setToast} />}
-        {!searchOpen && activeView === "learn" && <AcademyView courses={courses} certificates={certificates} dataMode={dataMode} onCoursesChange={setCourses} onLessonCompletion={saveLessonCompletion} onQuizAttempt={recordAcademyQuizAttempt} onRequestCertificate={async (courseId) => { await requestAcademyCertificate(courseId); setCertificates(await loadAcademyCertificates()); }} onToast={setToast} onDiscuss={() => changeView("community")} />}
+        {!searchOpen && activeView === "learn" && <AcademyView requestedCourseCloudId={requestedCourseCloudId} onRequestedCourseOpened={() => setRequestedCourseCloudId(undefined)} courses={courses} certificates={certificates} dataMode={dataMode} refreshError={courseRefreshError} onRefresh={() => refreshCoursesRef.current()} onCoursesChange={changeCourses} onLessonCompletion={(id, completed) => writeCourseProgress(() => saveLessonCompletion(id, completed))} onQuizAttempt={(id, score, answers) => writeCourseProgress(() => recordAcademyQuizAttempt(id, score, answers))} onRequestCertificate={async (courseId) => { await requestAcademyCertificate(courseId); setCertificates(await loadAcademyCertificates()); }} onToast={setToast} onDiscuss={() => changeView("community")} />}
         {!searchOpen && activeView === "community" && <CommunityView posts={posts} comments={comments} members={members} events={events} requestedPostCloudId={requestedPostCloudId} onRequestedPostOpened={() => setRequestedPostCloudId(undefined)} onPostsChange={setPosts} onCommentsChange={setComments} onMembersChange={setMembers} onToggleFollow={(member, following) => member.cloudId ? setAcademyMemberFollow(member.cloudId, following) : Promise.resolve(following)} onLoadMorePosts={loadMoreCommunityPosts} hasMorePosts={hasMorePosts} loadingMorePosts={loadingMorePosts} onCreatePost={savePost} onCreateComment={saveComment} onToggleLike={(post) => post.cloudId ? togglePostReaction(post.cloudId) : Promise.resolve(null)} onToggleCommentLike={(comment) => comment.cloudId ? toggleCommentReaction(comment.cloudId) : Promise.resolve(null)} onToggleBookmark={(post) => post.cloudId ? togglePostBookmark(post.cloudId) : Promise.resolve(null)} onReport={(contentType, contentId, reason) => reportAcademyContent(contentType, contentId, reason).then(() => undefined)} onBlockMember={toggleAcademyMemberBlock} onLoadBlockedMembers={loadBlockedAcademyMemberIds} onRefreshCommunity={() => setWorkspaceRefreshToken((current) => current + 1)} onNavigate={changeView} onToast={setToast} />}
-        {!searchOpen && activeView === "events" && <EventsView events={events} onEventsChange={setEvents} onToggleRsvp={(event) => event.cloudId ? toggleAcademyEventRsvp(event.cloudId) : Promise.resolve(null)} onToast={setToast} />}
+        {!searchOpen && activeView === "events" && <EventsView requestedEventCloudId={requestedEventCloudId} onRequestedEventOpened={() => setRequestedEventCloudId(undefined)} events={events} onEventsChange={setEvents} onToggleRsvp={(event) => event.cloudId ? toggleAcademyEventRsvp(event.cloudId) : Promise.resolve(null)} onToast={setToast} />}
         {!searchOpen && activeView === "admin" && canManage && <Suspense fallback={<div className="admin-loading" role="status">Loading Admin Studio...</div>}><AdminStudio onToast={setToast} onContentChange={() => setWorkspaceRefreshToken((token) => token + 1)} /></Suspense>}
 
         </>}

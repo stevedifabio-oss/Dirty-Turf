@@ -681,6 +681,8 @@ export async function loadCourses(seed: Course[]): Promise<Course[]> {
   const { data: moduleRows, error: moduleError } = await supabase!
     .from("course_modules")
     .select("id,course_id,title,group_title,sort_order")
+    .is("source_archived_at", null)
+    .or("source_visibility.eq.published,sync_owner.eq.local")
     .in("course_id", courseIds)
     .order("sort_order");
   if (moduleError) throw moduleError;
@@ -1054,6 +1056,7 @@ export async function saveNotificationPreferences(preferences: NotificationPrefe
     event_reminders: preferences.eventReminders,
     course_updates: preferences.courseUpdates,
     weekly_digest: preferences.weeklyDigest,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
   }, { onConflict: "user_id" });
   if (error) throw error;
   return preferences;

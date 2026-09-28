@@ -57,3 +57,7 @@ verify_jwt = true
 
 [functions.stripe-webhook]
 verify_jwt = false
+
+# Scheduler secret is checked by the function before any work.
+[functions.academy-course-sync]
+verify_jwt = false

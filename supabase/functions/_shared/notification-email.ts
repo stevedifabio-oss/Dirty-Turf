@@ -39,10 +39,10 @@ type UnsubscribePayload = {
 
 export function preferenceForTemplate(templateKey: string): EmailPreferenceKey {
   if (["comment", "reply"].includes(templateKey)) return "replies";
-  if (templateKey === "mention") return "mentions";
+  if (["mention", "mention_everyone_post", "mention_everyone_comment"].includes(templateKey)) return "mentions";
   if (["post_reaction", "comment_reaction"].includes(templateKey)) return "reactions";
-  if (["new_event", "event_reminder"].includes(templateKey)) return "event_reminders";
-  if (["new_course", "course_unlocked"].includes(templateKey)) return "course_updates";
+  if (["new_event", "event_reminder", "event_updated", "event_cancelled", "event_rsvp"].includes(templateKey)) return "event_reminders";
+  if (["new_course", "course_unlocked", "course_certificate", "lesson_published"].includes(templateKey)) return "course_updates";
   if (templateKey === "weekly_digest") return "weekly_digest";
   if (templateKey === "new_post") return "new_posts";
   return "admin_announcements";
@@ -51,13 +51,13 @@ export function preferenceForTemplate(templateKey: string): EmailPreferenceKey {
 export function templatesForPreference(preference: EmailPreferenceKey) {
   const templates: Record<EmailPreferenceKey, string[]> = {
     replies: ["comment", "reply"],
-    mentions: ["mention"],
+    mentions: ["mention", "mention_everyone_post", "mention_everyone_comment"],
     reactions: ["post_reaction", "comment_reaction"],
-    event_reminders: ["new_event", "event_reminder"],
+    event_reminders: ["new_event", "event_reminder", "event_updated", "event_cancelled", "event_rsvp"],
     weekly_digest: ["weekly_digest"],
     new_posts: ["new_post"],
-    course_updates: ["new_course", "course_unlocked"],
-    admin_announcements: ["welcome", "announcement"],
+    course_updates: ["new_course", "course_unlocked", "course_certificate", "lesson_published"],
+    admin_announcements: ["welcome", "announcement", ...Object.keys(lifecycleEmailTemplates).filter(key => !key.startsWith("mention_everyone_"))],
   };
   return templates[preference];
 }
@@ -67,8 +67,12 @@ export function buildAcademyEmail(delivery: AcademyEmailDelivery, options: Email
   const recipientName = firstName(delivery.recipient_name);
   const actorName = stringValue(payload.actorName, "The Dirty Turf team");
   const communityName = stringValue(payload.communityName, "7 Figure Turf Cleaning");
-  const actionUrl = targetUrl(options.appUrl, delivery.target_type, delivery.target_id);
+  const actionUrl = delivery.template_key === "event_cancelled"
+    ? withQuery(options.appUrl, { view: "events" })
+    : targetUrl(options.appUrl, delivery.target_type, delivery.target_id);
   const content = templateContent(delivery, recipientName, actorName, communityName);
+  const eventDetails = buildEventDetails(delivery);
+  const excerpt = stringValue(payload.excerpt, "").slice(0, 500);
   const subject = cleanHeader(content.subject);
   const safeActionUrl = escapeHtml(actionUrl);
   const safeUnsubscribeUrl = escapeHtml(options.unsubscribeUrl);
@@ -91,6 +95,8 @@ export function buildAcademyEmail(delivery: AcademyEmailDelivery, options: Email
           <h1 style="margin:0 0 14px;font-size:25px;line-height:1.25;color:#063f24">${escapeHtml(content.heading)}</h1>
           <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#384b3e">${escapeHtml(content.body)}</p>
           ${delivery.detail ? `<div style="margin:0 0 22px;padding:16px 18px;background:#f4f8f1;border-left:4px solid #62c814;color:#203427;font-size:15px;line-height:1.5">${escapeHtml(delivery.detail)}</div>` : ""}
+          ${excerpt ? `<p style="margin:0 0 22px;font-size:15px;line-height:1.6;color:#384b3e">${escapeHtml(excerpt)}</p>` : ""}
+          ${eventDetails.html}
           <a href="${safeActionUrl}" style="display:inline-block;background:#07833f;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:13px 20px;border-radius:6px">${escapeHtml(content.action)}</a>
         </td></tr>
         <tr><td style="padding:18px 28px 30px">
@@ -111,6 +117,8 @@ export function buildAcademyEmail(delivery: AcademyEmailDelivery, options: Email
     content.heading,
     content.body,
     delivery.detail,
+    excerpt,
+    eventDetails.text,
     "",
     `${content.action}: ${actionUrl}`,
     "",
@@ -245,19 +253,36 @@ function templateContent(
       action: "View the conversation",
     },
     new_event: {
-      subject: `New Academy event: ${delivery.detail || delivery.title}`,
+      subject: `Register Now: ${stringValue(delivery.payload?.eventTitle, delivery.detail || delivery.title)} just Launched! 🎉`,
       preheader: "A new live event has been added.",
       heading: delivery.detail || delivery.title,
-      body: "A new live session is on the Academy calendar.",
-      action: "View the event",
+      body: `Exciting news! A new event is now open for registration in "${communityName}". Secure your spot — we would love to see you there.`,
+      action: "Register",
     },
     event_reminder: {
       subject: delivery.title,
-      preheader: "Your Academy event starts tomorrow.",
+      preheader: `Your Academy event begins in ${delivery.payload?.hoursBefore === 1 ? "1 hour" : "24 hours"}.`,
       heading: delivery.title,
       body: "This is your reminder for an Academy event you marked as going or interested.",
-      action: "View event details",
+      action: "View Event",
     },
+    event_updated: {
+      subject: delivery.title, preheader: "The event details have changed.", heading: delivery.title,
+      body: "An event you are following has been updated. Please review the latest date, time, and location below.", action: "View Event",
+    },
+    event_cancelled: {
+      subject: delivery.title, preheader: "This event has been cancelled.", heading: delivery.title,
+      body: "This event will no longer take place. Check the Academy calendar for other upcoming sessions.", action: "Open the calendar",
+    },
+    event_rsvp: {
+      subject: delivery.title, preheader: "Your event preference is saved.", heading: delivery.title,
+      body: delivery.payload?.rsvpStatus === "going" ? "Your registration is confirmed. Here are your event details." : "You marked this event as interested. Here are the details.", action: "View Event",
+    },
+    course_certificate: {
+      subject: delivery.title, preheader: "Your course certificate is ready.", heading: delivery.title,
+      body: "You have completed the required course work. Open the course to view your certificate.", action: "Open course",
+    },
+    lesson_published: { subject: delivery.title, preheader: delivery.detail, heading: delivery.title, body: "A new lesson is ready in your course. Your existing progress is saved.", action: "Open course" },
     new_course: {
       subject: `New Academy course: ${delivery.detail || delivery.title}`,
       preheader: "New training is ready in your library.",
@@ -280,6 +305,8 @@ function templateContent(
       action: "Catch up now",
     },
   };
+  const lifecycle = lifecycleEmailTemplates[delivery.template_key];
+  if (lifecycle) return { ...fallback, subject: delivery.title, heading: delivery.title, body: lifecycle.body, action: lifecycle.action };
   return templates[delivery.template_key] ?? fallback;
 }
 
@@ -287,6 +314,7 @@ function targetUrl(appUrl: string, targetType: string | null, targetId: string |
   if (targetType === "post" && targetId) return withQuery(appUrl, { view: "community", post: targetId });
   if (targetType === "event" && targetId) return withQuery(appUrl, { view: "events", event: targetId });
   if (targetType === "course" && targetId) return withQuery(appUrl, { view: "learn", course: targetId });
+  if (targetType === "billing") return new URL("/billing", appUrl).toString();
   return withQuery(appUrl, { view: "community" });
 }
 
@@ -337,4 +365,56 @@ function base64UrlDecode(value: string) {
   const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
   const binary = atob(padded);
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+
+/** Evidence-backed message families. Only trusted producers can queue these. */
+export const lifecycleEmailTemplates: Record<string, { body: string; action: string }> = {
+  mention_everyone_post: { body: "Everyone in the community was tagged in a post.", action: "View Post" },
+  mention_everyone_comment: { body: "Everyone in the community was tagged in a comment.", action: "View Comment" },
+  membership_requested: { body: "Your request to join the community has been received. We will let you know when it is reviewed.", action: "View community" },
+  membership_request_admin: { body: "A member has requested to join your community. Review the request before granting access.", action: "Open community" },
+  membership_approved: { body: "Your request to join the community has been approved. Welcome aboard!", action: "Open community" },
+  membership_declined: { body: "Your request to join the community was not approved. Contact the community team if you have questions.", action: "Open community" },
+  membership_removed: { body: "Your community membership is no longer active. Contact the community team if you believe this is a mistake.", action: "Open community" },
+  membership_removed_admin: { body: "A member's community access has been removed or declined.", action: "Open community" },
+  private_channel_added: { body: "You have been added to a private community channel.", action: "Open community" },
+  role_changed: { body: "Your role in the community has changed. Open the community to see your available tools.", action: "Open community" },
+  ownership_transferred: { body: "Community ownership has been transferred. Review your role and community settings.", action: "Open community" },
+  content_reported_admin: { body: "Community content has been reported. Review it using the moderation tools.", action: "Review community" },
+  group_payment_received: { body: "Your payment for community access was confirmed. Your payment provider supplies the receipt.", action: "Manage membership" },
+  group_payment_received_admin: { body: "A member's payment for community access was confirmed.", action: "Open community" },
+  course_payment_received: { body: "Your course payment was confirmed. Your payment provider supplies the receipt.", action: "Open course" },
+  course_payment_received_admin: { body: "A member's payment for a course was confirmed.", action: "Open community" },
+  group_subscription_cancelled: { body: "Your community subscription cancellation is confirmed. Check billing for your remaining access period.", action: "Manage membership" },
+  group_subscription_cancelled_admin: { body: "A member's community subscription was cancelled.", action: "Open community" },
+  course_subscription_cancelled: { body: "Your course subscription cancellation is confirmed. Check billing for your remaining access period.", action: "Manage membership" },
+  course_subscription_cancelled_admin: { body: "A member's course subscription was cancelled.", action: "Open community" },
+};
+
+function buildEventDetails(delivery: AcademyEmailDelivery) {
+  if (!delivery.template_key.startsWith("event_") && delivery.template_key !== "new_event") return { html: "", text: "" };
+  const payload = delivery.payload ?? {};
+  const start = typeof payload.startsAt === "string" ? new Date(payload.startsAt) : null;
+  const end = typeof payload.endsAt === "string" ? new Date(payload.endsAt) : null;
+  let timezone = stringValue(payload.timezone, "UTC");
+  try { new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(); } catch { timezone = "UTC"; }
+  const validStart = start && !Number.isNaN(start.getTime());
+  const date = validStart ? new Intl.DateTimeFormat("en-US", { timeZone: timezone, weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(start) : "";
+  const formatTime = (value: Date) => new Intl.DateTimeFormat("en-US", { timeZone: timezone, hour: "numeric", minute: "2-digit" }).format(value);
+  const time = validStart ? `${formatTime(start)}${end && !Number.isNaN(end.getTime()) ? ` – ${formatTime(end)}` : ""} (${timezone})` : "";
+  const meetingUrl = safeMeetingUrl(payload.meetingUrl);
+  const cancelled = delivery.template_key === "event_cancelled";
+  const rows = [date ? `Date: ${date}` : "", time ? `Time: ${time}` : ""];
+  const htmlRows = rows.filter(Boolean).map(row => `<p style="margin:0 0 8px">${escapeHtml(row)}</p>`).join("");
+  // Cancelled events never advertise a meeting link.
+  return {
+    html: `<div style="margin:0 0 22px;font-size:15px;line-height:1.5">${htmlRows}${meetingUrl && !cancelled ? `<p style="margin:0">Location: <a href="${escapeHtml(meetingUrl)}" style="color:#07833f">${escapeHtml(meetingUrl)}</a></p>` : ""}</div>`,
+    text: [...rows, meetingUrl && !cancelled ? `Location: ${meetingUrl}` : ""].filter(Boolean).join("\n"),
+  };
+}
+
+function safeMeetingUrl(value: unknown) {
+  if (typeof value !== "string") return null;
+  try { const url = new URL(value); return url.protocol === "https:" && !url.username && !url.password ? url.toString() : null; } catch { return null; }
 }

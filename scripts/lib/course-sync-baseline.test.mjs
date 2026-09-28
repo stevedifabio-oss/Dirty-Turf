@@ -1,0 +1,9 @@
+import {describe,it,expect} from 'vitest';
+import {prepareCourseSyncBaseline,baselineEnrollmentSql} from './course-sync-baseline.mjs';
+const source={location_id:'location',course_ids:['course'],courses:[{external_id:'course',title:'Course',description:'Body',cover_url:null,instructor_name:'Steve',modules:[],lessons:[]}]};
+const database=()=>({community_id:'community',courses:[{id:'uuid',academy_community_id:'community',external_id:'course',source_provider:'highlevel',title:'Course',description:'Body',cover_url:null,instructor_name:'Steve',status:'published'}],modules:[],lessons:[]});
+describe('held baseline enrollment preparation',()=>{
+  it('writes guarded SQL with disabled configuration only for reviewed source-owned records',()=>{const report=prepareCourseSyncBaseline(database(),source);expect(report.conflict_count).toBe(0);const sql=baselineEnrollmentSql(report);expect(sql).toContain('jsonb_build_object');expect(sql).toContain("false) on conflict");expect(sql).toContain('Baseline changed since review');});
+  it('requires the exact review hash to prepare enrollment for different content',()=>{const d=database();d.courses[0].description='Local edit';const r=prepareCourseSyncBaseline(d,source);expect(r.conflict_count).toBe(1);expect(()=>baselineEnrollmentSql(r)).toThrow(/review/);expect(()=>baselineEnrollmentSql(r,'wrong')).toThrow(/review/);expect(baselineEnrollmentSql(r,r.review_hash)).toContain('Local edit');});
+  it('does not enroll an unrelated local course and rejects duplicate source course identity',()=>{const d=database();d.courses[0].source_provider=null;expect(()=>prepareCourseSyncBaseline(d,source)).toThrow(/imported/);const duplicate=database();duplicate.courses.push({...duplicate.courses[0]});expect(()=>prepareCourseSyncBaseline(duplicate,source)).toThrow();});
+});

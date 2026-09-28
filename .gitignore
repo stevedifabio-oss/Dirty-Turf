@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 dist/
 output/deploy/
 output/private/
@@ -7,6 +7,7 @@ output/ios/
 .gstack/
 output/DerivedData/
 output/qa/
+output/email-preview/
 output/release/
 android/.idea/
 tmp/

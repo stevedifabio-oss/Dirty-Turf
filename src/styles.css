@@ -466,3 +466,5 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 @media print { body * { visibility:hidden !important; }.academy-certificate,.academy-certificate * { visibility:visible !important; }.academy-certificate { position:fixed; inset:20mm; margin:0; }.academy-certificate button { display:none; } }
 
 .course-progress-note { margin: 0 16px 14px; }
+
+.event-card.requested-event { outline: 2px solid var(--lime); outline-offset: 3px; }

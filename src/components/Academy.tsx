@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Award, BadgeCheck, BookOpen, Check, CheckCircle2, ChevronDown, Circle, Download, ExternalLink, FileText, Lock, MessageSquare, Play, Printer, RotateCcw, Trophy, XCircle } from "lucide-react";
 import type { AcademyCertificate, Course, LessonQuiz } from "../domain";
 import { combinedCourseProgress } from "../lib/courseProgress";
@@ -8,9 +8,13 @@ import { SafeRichText } from "./SafeRichText";
 
 type Props = {
   courses: Course[];
+  requestedCourseCloudId?: string;
+  onRequestedCourseOpened?: () => void;
+  refreshError?: boolean;
+  onRefresh?: () => void;
   certificates: AcademyCertificate[];
   dataMode: "device" | "cloud";
-  onCoursesChange: (courses: Course[]) => void;
+  onCoursesChange: (courses: Course[] | ((current: Course[]) => Course[])) => void;
   onLessonCompletion: (lessonId: string, completed: boolean) => Promise<void>;
   onQuizAttempt: (lessonId: string, scorePercent: number, answers: number[]) => Promise<{ passed: boolean; requiredScore: number }>;
   onRequestCertificate: (courseId: string) => Promise<void>;
@@ -18,13 +22,22 @@ type Props = {
   onDiscuss: () => void;
 };
 
-export function AcademyView({ courses, certificates, dataMode, onCoursesChange, onLessonCompletion, onQuizAttempt, onRequestCertificate, onToast, onDiscuss }: Props) {
+export function AcademyView({ courses, requestedCourseCloudId, onRequestedCourseOpened, refreshError, onRefresh, certificates, dataMode, onCoursesChange, onLessonCompletion, onQuizAttempt, onRequestCertificate, onToast, onDiscuss }: Props) {
   const [filter, setFilter] = useState("All");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null);
   const [openModules, setOpenModules] = useState<Record<string, boolean>>({});
   const [passedQuizIds, setPassedQuizIds] = useState<Set<string>>(() => new Set());
   const [certificateBusy, setCertificateBusy] = useState(false);
+  const [completionBusy, setCompletionBusy] = useState(false);
+  const completionPending = useRef(false);
+  useEffect(() => {
+    const requested = courses.find((course) => (course.cloudId ?? course.id) === requestedCourseCloudId);
+    if (!requested) return;
+    setSelectedId(requested.id);
+    setSelectedLessonId(null);
+    onRequestedCourseOpened?.();
+  }, [requestedCourseCloudId, courses, onRequestedCourseOpened]);
   const selected = courses.find((course) => course.id === selectedId);
   const visibleCourses = filter === "All" ? courses : courses.filter((course) => course.category === filter);
   const overall = useMemo(() => {
@@ -42,12 +55,15 @@ export function AcademyView({ courses, certificates, dataMode, onCoursesChange, 
   };
 
   const completeLesson = async (lessonId: string) => {
+    if (completionPending.current) return;
+    completionPending.current = true;
+    setCompletionBusy(true);
     const currentLesson = courses.flatMap((course) => course.modules.flatMap((module) => module.lessons)).find((lesson) => lesson.id === lessonId);
     const completed = !currentLesson?.completed;
-    const next = courses.map((course) => {
+    const updateCompletion = (current: Course[], value: boolean) => current.map((course) => {
       const modules = course.modules.map((module) => ({
         ...module,
-        lessons: module.lessons.map((lesson) => lesson.id === lessonId ? { ...lesson, completed } : lesson),
+        lessons: module.lessons.map((lesson) => lesson.id === lessonId ? { ...lesson, completed: value } : lesson),
       }));
       const allLessons = modules.flatMap((module) => module.lessons);
       return {
@@ -56,15 +72,20 @@ export function AcademyView({ courses, certificates, dataMode, onCoursesChange, 
         progress: combinedCourseProgress(allLessons.filter((lesson) => lesson.completed).length, allLessons.length, course.importedProgress),
       };
     });
-    onCoursesChange(next);
+    onCoursesChange((current) => updateCompletion(current, completed));
     try {
       await onLessonCompletion(currentLesson?.cloudId ?? lessonId, completed);
       onToast(completed ? "Lesson marked complete." : "Lesson moved back to in progress.");
     } catch {
-      onCoursesChange(courses);
+      onCoursesChange((current) => updateCompletion(current, Boolean(currentLesson?.completed)));
       onToast("Lesson progress could not be saved.");
+    } finally {
+      completionPending.current = false;
+      setCompletionBusy(false);
     }
   };
+
+  const refreshNotice = refreshError && <p className="setting-help" role="status">Could not check for course updates. Your loaded lessons are still available. <button className="text-button" onClick={onRefresh}>Try again</button></p>;
 
   const selectedLesson = selected?.modules.flatMap((module) => module.lessons).find((lesson) => lesson.id === selectedLessonId);
 
@@ -86,7 +107,7 @@ export function AcademyView({ courses, certificates, dataMode, onCoursesChange, 
       const result = await onQuizAttempt(selectedLesson.cloudId ?? selectedLesson.id, scorePercent, answers);
       if (result.passed) {
         setPassedQuizIds((current) => new Set(current).add(selectedLesson.id));
-        onCoursesChange(courses.map((course) => {
+        onCoursesChange((current) => current.map((course) => {
           const modules = course.modules.map((module) => ({ ...module, lessons: module.lessons.map((lesson) => lesson.id === selectedLesson.id ? { ...lesson, completed: true } : lesson) }));
           const allLessons = modules.flatMap((module) => module.lessons);
           return { ...course, modules, progress: combinedCourseProgress(allLessons.filter((lesson) => lesson.completed).length, allLessons.length, course.importedProgress) };
@@ -99,6 +120,7 @@ export function AcademyView({ courses, certificates, dataMode, onCoursesChange, 
     };
     return (
       <div className="view-content lesson-view">
+        {refreshNotice}
         <button className="back-link" onClick={() => setSelectedLessonId(null)}><ArrowLeft size={17} /> {selected.title}</button>
         <article className="lesson-content">
           <span className="lesson-type"><BookOpen size={16} /> {selectedLesson.type} · {academyDurationLabel(selectedLesson.duration)}</span>
@@ -111,7 +133,7 @@ export function AcademyView({ courses, certificates, dataMode, onCoursesChange, 
           {!!resources.length && <section className="lesson-resources"><h3>Resources</h3>{resources.map((resource) => <a href={resource.url} target="_blank" rel="noopener noreferrer" key={`${resource.title}-${resource.url}`}><Download size={17} /><span><strong>{resource.title}</strong><small>{resource.type ?? "Download"}</small></span><ExternalLink size={15} /></a>)}</section>}
           {!hasContent && <div className="empty-state"><XCircle size={24} /><h3>Lesson content unavailable</h3><p>This published lesson does not currently contain readable lesson text or media.</p></div>}
         </article>
-        {hasContent && <button disabled={!canComplete} className={selectedLesson.completed ? "secondary-button wide" : "primary-button wide"} onClick={() => void completeLesson(selectedLesson.id)}>{selectedLesson.completed ? <Check size={18} /> : canComplete ? <CheckCircle2 size={18} /> : <Lock size={18} />}{selectedLesson.completed ? "Completed" : canComplete ? "Mark lesson complete" : "Pass quiz to complete"}</button>}
+        {hasContent && <button disabled={completionBusy || !canComplete} className={selectedLesson.completed ? "secondary-button wide" : "primary-button wide"} onClick={() => void completeLesson(selectedLesson.id)}>{selectedLesson.completed ? <Check size={18} /> : canComplete ? <CheckCircle2 size={18} /> : <Lock size={18} />}{completionBusy ? "Saving…" : selectedLesson.completed ? "Completed" : canComplete ? "Mark lesson complete" : "Pass quiz to complete"}</button>}
       </div>
     );
   }
@@ -132,6 +154,7 @@ export function AcademyView({ courses, certificates, dataMode, onCoursesChange, 
     };
     return (
       <div className="view-content lesson-view">
+        {refreshNotice}
         <button className="back-link" onClick={() => setSelectedId(null)}><ArrowLeft size={17} /> Academy</button>
         <section className="course-hero">
           <div className="course-hero-mark"><BookOpen size={25} /></div>
@@ -166,11 +189,12 @@ export function AcademyView({ courses, certificates, dataMode, onCoursesChange, 
   }
 
   if (!courses.length) {
-    return <div className="view-content academy-view"><div className="empty-state"><BookOpen size={24} /><h3>No published courses available</h3><p>The Academy library is connected, but no published course content is available for this account.</p></div></div>;
+    return <div className="view-content academy-view">{refreshNotice}<div className="empty-state"><BookOpen size={24} /><h3>No published courses available</h3><p>The Academy library is connected, but no published course content is available for this account.</p></div></div>;
   }
 
   return (
     <div className="view-content academy-view">
+      {refreshNotice}
       <section className="academy-banner">
         <div className="academy-mark"><Trophy size={24} /></div>
         <div><p>Operator certification</p><h2>Turf Cleaning Operator</h2><span>{overall}% overall progress</span></div>
