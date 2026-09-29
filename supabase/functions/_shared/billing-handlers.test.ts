@@ -9,7 +9,7 @@ import * as billing from "./billing";
 // No Stripe account or Supabase project is contacted by these tests.
 const planId = "4b2fb554-266e-4e86-8c2e-1707be98b6a4";
 const requestId = "4b2fb554-266e-4e86-8c2e-1707be98b6a5";
-const plan = { id: planId, academy_community_id: "community", name: "Academy", description: "", stripe_price_id: "price_1", billing_type: "subscription", billing_interval: "month", amount_cents: 9900, currency: "usd", trial_days: 0 };
+const plan = { id: planId, academy_community_id: "community", name: "Academy", description: "", stripe_price_id: "price_1", billing_type: "subscription", billing_interval: "month", amount_cents: 9900, currency: "usd", trial_days: 0, offer_kind: "membership", requires_membership: false, community_access: true, academy_billing_plan_courses: [{ course_id: "certification" }], academy_billing_plan_features: [] };
 const price = { id: "price_1", active: true, livemode: false, unit_amount: 9900, currency: "usd", type: "recurring", billing_scheme: "per_unit", recurring: { interval: "month", interval_count: 1, usage_type: "licensed" } };
 let env: Record<string, string>;
 let rows: Record<string, unknown>;
@@ -18,7 +18,7 @@ let admin: any;
 let event: any;
 function query(table: string) {
   const result = () => Promise.resolve({ data: rows[table] ?? null, error: null });
-  const listResult = () => Promise.resolve({ data: table === "academy_billing_plans" ? [rows[table]] : rows[table] ?? null, error: null });
+  const listResult = () => Promise.resolve({ data: table === "academy_billing_plans" ? (rows.catalog ?? [rows[table]]) : rows[table] ?? null, error: null });
   const builder: any = { then: (resolve: any, reject: any) => listResult().then(resolve, reject), maybeSingle: result, single: result };
   for (const name of ["select", "eq", "neq", "in", "or", "order", "limit", "insert", "update", "upsert"]) builder[name] = () => builder;
   return builder;
@@ -45,11 +45,11 @@ const webhookRequest = () => new Request("https://edge.test/stripe-webhook", { m
 beforeEach(() => {
   env = { STRIPE_CHECKOUT_ENABLED: "true", STRIPE_MODE: "test", STRIPE_SECRET_KEY: "rk_test_fixture", STRIPE_WEBHOOK_SECRET: "fixture", APP_URL: "https://app.dirtyturf.com", SUPABASE_URL: "https://db.test", SUPABASE_SERVICE_ROLE_KEY: "fixture" };
   rows = { academy_billing_plans: { ...plan }, academy_members: { id: "member", user_id: "user", status: "pending" }, academy_member_invites: { id: "invite" } };
-  admin = { from: query, auth: { getUser: vi.fn(async () => ({ data: { user: { id: "user", email: "buyer@example.com" } }, error: null })), admin: { listUsers: vi.fn(async () => ({ data: { users: [{ id: "user", email: "buyer@example.com" }] }, error: null })) } }, rpc: vi.fn(async (name: string) => ({ data: name === "reserve_academy_checkout" ? { id: "reservation", expiresAt: 2000000000 } : null, error: null })) };
+  admin = { from: query, auth: { getUser: vi.fn(async () => ({ data: { user: { id: "user", email: "buyer@example.com" } }, error: null })), admin: { listUsers: vi.fn(async () => ({ data: { users: [{ id: "user", email: "buyer@example.com" }] }, error: null })) } }, rpc: vi.fn(async (name: string) => ({ data: name === "reserve_academy_checkout" ? { id: "reservation", expiresAt: 2000000000 } : name === "get_academy_checkout_eligibility" ? { allowed: true, memberId: "member" } : null, error: null })) };
   stripe = {
     prices: { retrieve: vi.fn(async () => price) },
-    customers: { list: vi.fn(async () => ({ data: [], has_more: false })), retrieve: vi.fn(async () => ({ id: "cus_1", email: "buyer@example.com" })) },
-    subscriptions: { list: vi.fn(async () => ({ data: [], has_more: false })), retrieve: vi.fn(async () => ({ id: "sub_1", customer: "cus_1", status: "canceled", metadata: { plan_id: planId }, items: { data: [{ price: { id: "price_1" } }] }, cancel_at_period_end: false })) },
+    customers: { list: vi.fn(async () => ({ data: [], has_more: false })), retrieve: vi.fn(async () => ({ id: "cus_1", email: "buyer@example.com", livemode: false })) },
+    subscriptions: { list: vi.fn(async () => ({ data: [], has_more: false })), retrieve: vi.fn(async () => ({ id: "sub_1", customer: "cus_1", status: "canceled", metadata: { plan_id: planId }, items: { data: [{ price: { id: "price_1" }, quantity: 1 }] }, cancel_at_period_end: false })) },
     checkout: { sessions: { create: vi.fn(async () => ({ url: "https://checkout.stripe.com/test", id: "cs_1" })), list: vi.fn(async () => ({ data: [], has_more: false })), retrieve: vi.fn() } },
     paymentIntents: { retrieve: vi.fn(async () => ({ latest_charge: { refunded: true } })) },
     webhooks: { constructEventAsync: vi.fn(async () => event) },
@@ -86,7 +86,7 @@ describe("public Checkout handler", () => {
     expect(stripe.checkout.sessions.create).not.toHaveBeenCalled();
   });
   it("distinguishes a pending checkout from existing membership access", async () => {
-    admin.rpc.mockResolvedValue({ data: { blocked: true, reason: "checkout_in_progress" }, error: null });
+    admin.rpc.mockImplementation(async (name: string) => ({ data: name === "get_academy_checkout_eligibility" ? { allowed: true } : { blocked: true, reason: "checkout_in_progress" }, error: null }));
     const response = await handler("create-checkout")(checkoutRequest());
     expect(response.status).toBe(409);
     expect((await response.json()).code).toBe("checkout_in_progress");
@@ -99,7 +99,7 @@ describe("public Checkout handler", () => {
   });
   it("blocks an active Academy subscription before its webhook arrives", async () => {
     stripe.customers.list.mockResolvedValue({ data: [{ id: "cus_1" }], has_more: false });
-    stripe.subscriptions.list.mockResolvedValue({ data: [{ status: "active", metadata: {}, items: { data: [{ price: { id: "price_1" } }] } }], has_more: false });
+    stripe.subscriptions.list.mockResolvedValue({ data: [{ status: "active", metadata: {}, items: { data: [{ price: { id: "price_1" }, quantity: 1 }] } }], has_more: false });
     expect((await handler("create-checkout")(checkoutRequest())).status).toBe(409);
     expect(stripe.checkout.sessions.create).not.toHaveBeenCalled();
   });
@@ -117,7 +117,86 @@ describe("public Checkout handler", () => {
   });
 });
 
+describe("upgrade Checkout and catalog", () => {
+  const course = { ...plan, offer_kind: "course", community_access: false, academy_billing_plan_courses: [{ course_id: "course_turf" }] };
+  it("allows a grandfathered member to buy a distinct upgrade using their signed-in identity", async () => {
+    rows.academy_billing_plans = course;
+    rows.academy_members = { id: "member", user_id: "user", status: "active" };
+    rows.academy_access_grants = [{ id: "free_membership" }];
+    const response = await handler("create-checkout")(checkoutRequest({ email: "attacker@example.com" }, { Authorization: "Bearer valid" }));
+    expect(response.status).toBe(200);
+    expect(stripe.checkout.sessions.create.mock.calls[0][0].metadata.buyer_email).toBe("buyer@example.com");
+    expect(admin.rpc).toHaveBeenCalledWith("get_academy_checkout_eligibility", { p_plan_id: planId, p_email: "buyer@example.com", p_user_id: "user" });
+    expect(admin.rpc).toHaveBeenCalledWith("reserve_academy_checkout", expect.objectContaining({ p_user_id: "user" }));
+  });
+  it("requires sign-in and rejects unmapped upgrade products", async () => {
+    rows.academy_billing_plans = course;
+    expect((await handler("create-checkout")(checkoutRequest())).status).toBe(401);
+    rows.academy_billing_plans = { ...course, academy_billing_plan_courses: [] };
+    expect((await handler("create-checkout")(checkoutRequest({}, { Authorization: "Bearer valid" }))).status).toBe(503);
+    expect(stripe.checkout.sessions.create).not.toHaveBeenCalled();
+  });
+  it("keeps an existing mapped membership from blocking a different course", async () => {
+    rows.academy_billing_plans = course;
+    const membership = { ...plan, id: "membership", stripe_price_id: "price_membership" };
+    rows.catalog = [course, membership];
+    stripe.customers.list.mockResolvedValue({ data: [{ id: "cus_old" }], has_more: false });
+    stripe.subscriptions.list.mockResolvedValue({ data: [{ status: "active", metadata: { academy_community_id: "community", plan_id: "membership" }, items: { data: [{ price: { id: "price_membership" } }] } }], has_more: false });
+    expect((await handler("create-checkout")(checkoutRequest({}, { Authorization: "Bearer valid" }))).status).toBe(200);
+    expect(stripe.checkout.sessions.create.mock.calls[0][0].customer).toBeUndefined();
+  });
+  it("reuses only the authenticated member's mapped customer for later upgrades", async () => {
+    rows.academy_billing_plans = course;
+    rows.academy_billing_customers = { provider_customer_id: "cus_1" };
+    expect((await handler("create-checkout")(checkoutRequest({}, { Authorization: "Bearer valid" }))).status).toBe(200);
+    const params = stripe.checkout.sessions.create.mock.calls[0][0];
+    expect(params.customer).toBe("cus_1");
+    expect(params.customer_email).toBeUndefined();
+    expect(stripe.subscriptions.list).toHaveBeenCalledWith(expect.objectContaining({ customer: "cus_1" }));
+  });
+  it("allows a separate paid course while blocking a duplicate course in flight", async () => {
+    rows.academy_billing_plans = course;
+    rows.catalog = [course, { ...course, id: "tile", stripe_price_id: "price_tile", academy_billing_plan_courses: [{ course_id: "course_tile" }] }];
+    stripe.customers.list.mockResolvedValue({ data: [{ id: "cus_1" }], has_more: false });
+    stripe.checkout.sessions.list.mockResolvedValue({ data: [{ mode: "payment", status: "complete", metadata: { academy_community_id: "community", plan_id: "tile" }, payment_status: "paid", payment_intent: "pi_tile" }], has_more: false });
+    expect((await handler("create-checkout")(checkoutRequest({}, { Authorization: "Bearer valid" }))).status).toBe(200);
+    expect(stripe.paymentIntents.retrieve).not.toHaveBeenCalled();
+    stripe.checkout.sessions.list.mockResolvedValue({ data: [{ mode: "payment", status: "complete", metadata: { academy_community_id: "community", plan_id: planId }, payment_status: "unpaid", payment_intent: "pi_turf" }], has_more: false });
+    stripe.paymentIntents.retrieve.mockResolvedValue({ status: "processing", latest_charge: null });
+    expect((await handler("create-checkout")(checkoutRequest({}, { Authorization: "Bearer valid" }))).status).toBe(409);
+  });
+  it("does not reuse a customer from the wrong Stripe environment", async () => {
+    rows.academy_billing_plans = course;
+    rows.academy_billing_customers = { provider_customer_id: "cus_1" };
+    stripe.customers.retrieve.mockResolvedValue({ id: "cus_1", livemode: true });
+    expect((await handler("create-checkout")(checkoutRequest({}, { Authorization: "Bearer valid" }))).status).toBe(502);
+    expect(stripe.checkout.sessions.create).not.toHaveBeenCalled();
+  });
+  it("blocks a paid overlapping bundle before the webhook grants it", async () => {
+    rows.academy_billing_plans = course;
+    rows.catalog = [course, { ...course, id: "bundle", stripe_price_id: "price_bundle" }];
+    stripe.customers.list.mockResolvedValue({ data: [{ id: "cus_1" }], has_more: false });
+    stripe.checkout.sessions.list.mockResolvedValue({ data: [{ mode: "payment", status: "complete", metadata: { academy_community_id: "community", plan_id: "bundle" }, payment_status: "paid", payment_intent: "pi_old" }], has_more: false });
+    stripe.paymentIntents.retrieve.mockResolvedValue({ status: "succeeded", latest_charge: { refunded: false } });
+    expect((await handler("create-checkout")(checkoutRequest({}, { Authorization: "Bearer valid" }))).status).toBe(409);
+    expect(stripe.checkout.sessions.create).not.toHaveBeenCalled();
+  });
+  it("returns mapped offer kinds and resources without exposing Stripe identifiers", async () => {
+    rows.academy_billing_plans = course;
+    const response = await handler("public-billing-plans")(new Request("https://edge.test/public-billing-plans"));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.plans[0]).toMatchObject({ offerKind: "course", courseIds: ["course_turf"], featureKeys: [], requiresMembership: false });
+    expect(body.plans[0].stripe_price_id).toBeUndefined();
+  });
+});
+
 describe("Stripe webhook handler", () => {
+  it("rejects unsupported mixed Academy subscriptions without partial fulfillment", async () => {
+    stripe.subscriptions.retrieve.mockResolvedValue({ id: "sub_1", customer: "cus_1", metadata: { plan_id: planId }, items: { data: [{ price: { id: "price_1" }, quantity: 1 }, { price: { id: "price_other" }, quantity: 1 }] } });
+    expect((await handler("stripe-webhook")(webhookRequest())).status).toBe(500);
+    expect(admin.rpc).not.toHaveBeenCalledWith("apply_academy_billing_event", expect.anything());
+  });
   it("rejects invalid signatures without processing any database event", async () => {
     stripe.webhooks.constructEventAsync.mockRejectedValue(new Error("Invalid signature"));
     expect((await handler("stripe-webhook")(webhookRequest())).status).toBe(400);
@@ -138,7 +217,7 @@ describe("Stripe webhook handler", () => {
   it("does not regrant a refunded payment on delayed checkout completion", async () => {
     rows.academy_billing_plans = { ...plan, billing_type: "one_time" };
     event = { ...event, type: "checkout.session.completed", data: { object: { id: "cs_1" } } };
-    stripe.checkout.sessions.retrieve.mockResolvedValue({ id: "cs_1", mode: "payment", payment_status: "paid", payment_intent: "pi_1", customer: "cus_1", customer_details: { email: "buyer@example.com" }, metadata: { plan_id: planId, buyer_email: "buyer@example.com" }, line_items: { data: [{ price: { id: "price_1" } }] } });
+    stripe.checkout.sessions.retrieve.mockResolvedValue({ id: "cs_1", mode: "payment", payment_status: "paid", payment_intent: "pi_1", customer: "cus_1", customer_details: { email: "buyer@example.com" }, metadata: { plan_id: planId, buyer_email: "buyer@example.com" }, line_items: { data: [{ price: { id: "price_1" }, quantity: 1 }] } });
     expect((await handler("stripe-webhook")(webhookRequest())).status).toBe(200);
     const apply = admin.rpc.mock.calls.find(([name]: [string]) => name === "apply_academy_billing_event");
     expect(apply?.[1].p_status).toBe("cancelled");

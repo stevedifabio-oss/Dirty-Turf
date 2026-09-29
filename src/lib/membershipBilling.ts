@@ -1,4 +1,5 @@
 import { Capacitor } from "@capacitor/core";
+import type { AccessState } from "./academyAccess";
 import { supabase } from "./backend";
 
 export type MembershipPlan = {
@@ -9,6 +10,10 @@ export type MembershipPlan = {
   currency: string;
   billingInterval: "month" | "year" | "one_time";
   trialDays: number;
+  offerKind?: "membership" | "course" | "tool";
+  requiresMembership?: boolean;
+  courseIds?: string[];
+  featureKeys?: string[];
 };
 export type MembershipCatalog = { enabled: boolean; plans: MembershipPlan[] };
 export type BillingPageRoute = "membership" | "return" | "billing";
@@ -36,7 +41,15 @@ export function parseMembershipCatalog(value: unknown): MembershipCatalog {
     new Set(plans.map((plan) => plan.id)).size !== plans.length) {
     throw new Error("Membership plans could not be loaded.");
   }
-  return { enabled: raw.enabled, plans: raw.enabled ? plans : [] };
+  for (const plan of plans) {
+    if (plan.offerKind !== undefined && !["membership", "course", "tool"].includes(plan.offerKind)) throw new Error("Invalid offer type.");
+    for (const values of [plan.courseIds, plan.featureKeys]) if (values !== undefined && (!Array.isArray(values) || values.some((id) => typeof id !== "string" || !id))) throw new Error("Invalid offer access.");
+    if (plan.requiresMembership !== undefined && typeof plan.requiresMembership !== "boolean") throw new Error("Invalid offer requirement.");
+    if (plan.offerKind === "course" && !plan.courseIds?.length) throw new Error("Course access has not been configured.");
+    if (plan.offerKind === "tool" && !plan.featureKeys?.length) throw new Error("Tool access has not been configured.");
+  }
+  // Only expose tools that are actually implemented in this app.
+  return { enabled: raw.enabled, plans: raw.enabled ? plans.filter((plan) => plan.offerKind !== "tool" || plan.featureKeys?.every((key) => key === "measuring_tool")) : [] };
 }
 
 export function membershipPrice(plan: MembershipPlan) {
@@ -102,4 +115,20 @@ export async function membershipRequestId(planId: string, email: string, storage
   const id = crypto.randomUUID();
   try { storage?.setItem(key, JSON.stringify({ id, createdAt: Date.now() })); } catch { /* Checkout still works without storage. */ }
   return id;
+}
+
+export function planOwned(plan: MembershipPlan, access: AccessState) {
+  if (access.status !== "member") return false;
+  if ((plan.offerKind ?? "membership") === "membership") return !access.pricingGatesEnabled || access.communityAccess || access.canManage;
+  if (!access.pricingGatesEnabled) return true; // Legacy access cannot safely establish separate upgrade ownership.
+  const courses = plan.courseIds ?? [];
+  const features = plan.featureKeys ?? [];
+  return access.canManage || ((courses.length + features.length > 0) && courses.every((id) => access.courseIds.includes(id)) && features.every((key) => access.features.includes(key)));
+}
+export function planPurchaseState(plan: MembershipPlan, access: AccessState): "available" | "owned" | "sign_in" | "membership_required" | "unavailable" {
+  if (access.status === "error" || access.status === "loading") return "unavailable";
+  if (planOwned(plan, access)) return "owned";
+  if ((plan.offerKind ?? "membership") !== "membership" && access.status !== "member" && !(access.status === "no_access" && access.hasMemberIdentity)) return access.status === "no_access" ? "unavailable" : "sign_in";
+  if (plan.requiresMembership && (access.status !== "member" || !access.communityAccess)) return "membership_required";
+  return "available";
 }

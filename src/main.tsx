@@ -1,3 +1,5 @@
+import { communityAvailable, featureAvailable, courseAvailable, type AccessState } from "./lib/academyAccess";
+import { AccessRequired, AvailableUpgrades } from "./components/AccessOffers";
 import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Capacitor } from "@capacitor/core";
@@ -206,6 +208,9 @@ function App() {
   const refreshCoursesRef = useRef<() => void>(() => undefined);
   const [courseRefreshError, setCourseRefreshError] = useState(false);
   const refreshWorkspaceRef = useRef<() => void>(() => undefined);
+  const hasCommunity = communityAvailable(workspaceAccess);
+  const canMeasure = featureAvailable(workspaceAccess, "measuring_tool");
+  const visibleCourses = courses.filter((course) => courseAvailable(workspaceAccess, course.cloudId));
   const canManage = workspaceAccess.status === "member" && workspaceAccess.canManage;
 
   const clearWorkspaceContent = () => {
@@ -222,6 +227,8 @@ function App() {
   useEffect(() => {
     let mounted = true;
     const session = createWorkspaceSession();
+    let lastAccess: WorkspaceAccessState | null = null;
+    let accessRefreshPending = false;
 
     const refreshWorkspace = async () => {
       if (!mounted) return;
@@ -249,15 +256,17 @@ function App() {
           setWorkspaceAccess(access);
           return;
         }
+        lastAccess = access;
         setDataMode(mode);
         setWorkspaceAccess(access);
+        const community = communityAvailable(access);
         const results = await Promise.allSettled([
           loadJobs(initialJobs),
           loadCourses(seedCourses),
-          loadPosts(initialPosts),
-          loadComments(initialComments),
-          loadEvents(initialEvents),
-          loadMembers(initialMembers),
+          community ? loadPosts(initialPosts) : Promise.resolve({ posts: [], hasMore: false, nextCursor: undefined }),
+          community ? loadComments(initialComments) : Promise.resolve([]),
+          community ? loadEvents(initialEvents) : Promise.resolve([]),
+          community ? loadMembers(initialMembers) : Promise.resolve([]),
           loadNotifications(initialNotifications),
           loadAcademyCertificates(),
         ] as const);
@@ -287,8 +296,11 @@ function App() {
       } catch {
         if (mounted && session.isCurrent(activeRefresh)) {
           setWorkspaceContentLoading(false);
-          if (workspaceContentReady.current) setCloudLoadError("Could not refresh your workspace. Your previously loaded content is still shown. Try again.");
-          else setWorkspaceAccess(supabase ? { status: "error" } : { status: "preview" });
+          clearWorkspaceContent();
+          workspaceContentReady.current = false;
+          setQuoteOpen(false);
+          setSelectedJob(null);
+          setWorkspaceAccess(supabase ? { status: "error" } : { status: "preview" });
           if (!supabase) setToast("Cloud data is unavailable. Working on this device.");
         }
       } finally {
@@ -308,8 +320,33 @@ function App() {
       onSuccess: () => setCourseRefreshError(false),
     });
     refreshCoursesRef.current = () => { void courseRefresh.refresh(); };
+    const refreshAccess = async () => {
+      if (!supabase || !mounted || accessRefreshPending || workspaceRefreshPending.current) return;
+      accessRefreshPending = true;
+      const generation = session.snapshot();
+      try {
+        const access = await getWorkspaceAccessState();
+        if (!mounted || !session.isCurrent(generation)) return;
+        if (JSON.stringify(access) !== JSON.stringify(lastAccess) || !workspaceContentReady.current) {
+          courseRevision.current += 1;
+          setQuoteOpen(false);
+          clearWorkspaceContent();
+          workspaceContentReady.current = false;
+          setWorkspaceAccess(access);
+          void refreshWorkspace();
+        } else refreshCoursesRef.current();
+      } catch {
+        if (mounted && session.isCurrent(generation)) {
+          courseRevision.current += 1;
+          clearWorkspaceContent();
+          workspaceContentReady.current = false;
+          setQuoteOpen(false); setSelectedJob(null);
+          setWorkspaceAccess({ status: "error" });
+        }
+      } finally { accessRefreshPending = false; }
+    };
     const stopCourseRefresh = watchCourseRefresh({
-      refresh: refreshCoursesRef.current, document, window,
+      refresh: () => { void refreshAccess(); }, document, window,
       nativeResume: Capacitor.isNativePlatform() ? async (onResume) => {
         const { App: NativeApp } = await import("@capacitor/app");
         return NativeApp.addListener("appStateChange", ({ isActive }) => { if (isActive) onResume(); });
@@ -320,6 +357,7 @@ function App() {
       const action = session.authChanged(event, authSession?.user.id ?? null);
       if (action === "ignore") return;
       if (action === "reset" || action === "signed_out") {
+        lastAccess = null;
         courseAccountGeneration.current += 1;
         courseRevision.current += 1;
         setCourseRefreshError(false);
@@ -453,6 +491,7 @@ function App() {
   };
 
   const saveQuote = async () => {
+    if (draft.mode !== "manual" && !canMeasure) { setToast("Measuring tool access is required."); return; }
     if (quote.area <= 0) {
       setToast("Measure a turf area before saving.");
       return;
@@ -625,18 +664,20 @@ function App() {
 
         {!waitingForWorkspace && <>
         {searchOpen && <SearchPanel query={query} setQuery={setQuery} jobs={jobs} onOpenJob={(job) => { setSelectedJob(job); setSearchOpen(false); }} onNavigate={changeView} />}
-        {!searchOpen && activeView !== "home" && <AcademyTabs activeView={activeView} canManage={canManage} onNavigate={changeView} />}
+        {!searchOpen && activeView !== "home" && <AcademyTabs activeView={activeView} canManage={canManage} hasCommunity={hasCommunity} onNavigate={changeView} />}
         {!searchOpen && activeView === "home" && <HomeView jobs={jobs} openQuote={openQuote} checks={arrivalChecks} setChecks={setArrivalChecks} setToast={setToast} />}
-        {!searchOpen && activeView === "learn" && <AcademyView requestedCourseCloudId={requestedCourseCloudId} onRequestedCourseOpened={() => setRequestedCourseCloudId(undefined)} courses={courses} certificates={certificates} dataMode={dataMode} refreshError={courseRefreshError} onRefresh={() => refreshCoursesRef.current()} onCoursesChange={changeCourses} onLessonCompletion={(id, completed) => writeCourseProgress(() => saveLessonCompletion(id, completed))} onQuizAttempt={(id, score, answers) => writeCourseProgress(() => recordAcademyQuizAttempt(id, score, answers))} onRequestCertificate={async (courseId) => { await requestAcademyCertificate(courseId); setCertificates(await loadAcademyCertificates()); }} onToast={setToast} onDiscuss={() => changeView("community")} />}
-        {!searchOpen && activeView === "community" && <CommunityView posts={posts} comments={comments} members={members} events={events} requestedPostCloudId={requestedPostCloudId} onRequestedPostOpened={() => setRequestedPostCloudId(undefined)} onPostsChange={setPosts} onCommentsChange={setComments} onMembersChange={setMembers} onToggleFollow={(member, following) => member.cloudId ? setAcademyMemberFollow(member.cloudId, following) : Promise.resolve(following)} onLoadMorePosts={loadMoreCommunityPosts} hasMorePosts={hasMorePosts} loadingMorePosts={loadingMorePosts} onCreatePost={savePost} onCreateComment={saveComment} onToggleLike={(post) => post.cloudId ? togglePostReaction(post.cloudId) : Promise.resolve(null)} onToggleCommentLike={(comment) => comment.cloudId ? toggleCommentReaction(comment.cloudId) : Promise.resolve(null)} onToggleBookmark={(post) => post.cloudId ? togglePostBookmark(post.cloudId) : Promise.resolve(null)} onReport={(contentType, contentId, reason) => reportAcademyContent(contentType, contentId, reason).then(() => undefined)} onBlockMember={toggleAcademyMemberBlock} onLoadBlockedMembers={loadBlockedAcademyMemberIds} onRefreshCommunity={() => setWorkspaceRefreshToken((current) => current + 1)} onNavigate={changeView} onToast={setToast} />}
-        {!searchOpen && activeView === "events" && <EventsView requestedEventCloudId={requestedEventCloudId} onRequestedEventOpened={() => setRequestedEventCloudId(undefined)} events={events} onEventsChange={setEvents} onToggleRsvp={(event) => event.cloudId ? toggleAcademyEventRsvp(event.cloudId) : Promise.resolve(null)} onToast={setToast} />}
+        {!searchOpen && activeView === "learn" && <AcademyView requestedCourseCloudId={requestedCourseCloudId} onRequestedCourseOpened={() => setRequestedCourseCloudId(undefined)} courses={visibleCourses} certificates={certificates} dataMode={dataMode} refreshError={courseRefreshError} onRefresh={() => refreshCoursesRef.current()} onCoursesChange={changeCourses} onLessonCompletion={(id, completed) => writeCourseProgress(() => saveLessonCompletion(id, completed))} onQuizAttempt={(id, score, answers) => writeCourseProgress(() => recordAcademyQuizAttempt(id, score, answers))} onRequestCertificate={async (courseId) => { await requestAcademyCertificate(courseId); setCertificates(await loadAcademyCertificates()); }} onToast={setToast} onDiscuss={() => changeView("community")} />}
+        {!searchOpen && activeView === "community" && hasCommunity && <CommunityView posts={posts} comments={comments} members={members} events={events} requestedPostCloudId={requestedPostCloudId} onRequestedPostOpened={() => setRequestedPostCloudId(undefined)} onPostsChange={setPosts} onCommentsChange={setComments} onMembersChange={setMembers} onToggleFollow={(member, following) => member.cloudId ? setAcademyMemberFollow(member.cloudId, following) : Promise.resolve(following)} onLoadMorePosts={loadMoreCommunityPosts} hasMorePosts={hasMorePosts} loadingMorePosts={loadingMorePosts} onCreatePost={savePost} onCreateComment={saveComment} onToggleLike={(post) => post.cloudId ? togglePostReaction(post.cloudId) : Promise.resolve(null)} onToggleCommentLike={(comment) => comment.cloudId ? toggleCommentReaction(comment.cloudId) : Promise.resolve(null)} onToggleBookmark={(post) => post.cloudId ? togglePostBookmark(post.cloudId) : Promise.resolve(null)} onReport={(contentType, contentId, reason) => reportAcademyContent(contentType, contentId, reason).then(() => undefined)} onBlockMember={toggleAcademyMemberBlock} onLoadBlockedMembers={loadBlockedAcademyMemberIds} onRefreshCommunity={() => setWorkspaceRefreshToken((current) => current + 1)} onNavigate={changeView} onToast={setToast} />}
+        {!searchOpen && activeView === "events" && hasCommunity && <EventsView requestedEventCloudId={requestedEventCloudId} onRequestedEventOpened={() => setRequestedEventCloudId(undefined)} events={events} onEventsChange={setEvents} onToggleRsvp={(event) => event.cloudId ? toggleAcademyEventRsvp(event.cloudId) : Promise.resolve(null)} onToast={setToast} />}
+        {!searchOpen && ["community", "events"].includes(activeView) && !hasCommunity && <><AccessRequired title="Community access required">This account does not currently have access to community conversations and events.</AccessRequired><AvailableUpgrades access={workspaceAccess} kind="membership" /></>}
+        {!searchOpen && activeView === "learn" && <AvailableUpgrades access={workspaceAccess} kind="course" />}
         {!searchOpen && activeView === "admin" && canManage && <Suspense fallback={<div className="admin-loading" role="status">Loading Admin Studio...</div>}><AdminStudio onToast={setToast} onContentChange={() => setWorkspaceRefreshToken((token) => token + 1)} /></Suspense>}
 
         </>}
 
         {!quoteOpen && !hubSection && <PrimaryNavigation activeView={activeView} settingsOpen={false} onNavigate={changeView} onOpenSettings={openSettings} />}
 
-        {quoteOpen && <QuoteSheet draft={draft} setDraft={setDraft} quote={quote} photoUrl={photoUrl} setPhotoUrl={setPhotoUrl} setPhotoFile={setPhotoFile} onClose={() => setQuoteOpen(false)} onSave={saveQuote} onError={setToast} primaryNavigation={<PrimaryNavigation activeView={activeView} settingsOpen={false} onNavigate={changeView} onOpenSettings={openSettings} />} />}
+        {quoteOpen && <QuoteSheet canMeasure={canMeasure} access={workspaceAccess} draft={draft} setDraft={setDraft} quote={quote} photoUrl={photoUrl} setPhotoUrl={setPhotoUrl} setPhotoFile={setPhotoFile} onClose={() => setQuoteOpen(false)} onSave={saveQuote} onError={setToast} primaryNavigation={<PrimaryNavigation activeView={activeView} settingsOpen={false} onNavigate={changeView} onOpenSettings={openSettings} />} />}
         {selectedJob && <SavedJobSheet job={selectedJob} onClose={() => setSelectedJob(null)} />}
         {hubSection && <Suspense fallback={<div className="sheet-loading" role="status">Loading workspace...</div>}><HubSheet section={hubSection} onClose={() => setHubSection(null)} onToast={setToast} onRequestMagicLink={sendMagicLink} onSignOut={handleSignOut} dataMode={dataMode} canManage={canManage} notifications={notifications} onOpenNotification={openNotification} onMarkAllNotificationsRead={markEveryNotificationRead} primaryNavigation={<PrimaryNavigation activeView={activeView} settingsOpen onNavigate={changeView} onOpenSettings={openSettings} />} /></Suspense>}
         {toast && <div className="toast" role="status"><CheckCircle2 size={18} />{toast}</div>}
@@ -746,11 +787,11 @@ function LaunchAccessGate({
   </main>;
 }
 
-function AcademyTabs({ activeView, canManage, onNavigate }: { activeView: Exclude<View, "home">; canManage: boolean; onNavigate: (view: View) => void }) {
+function AcademyTabs({ activeView, canManage, hasCommunity, onNavigate }: { activeView: Exclude<View, "home">; canManage: boolean; hasCommunity: boolean; onNavigate: (view: View) => void }) {
   return <nav className={canManage ? "academy-tabs manage" : "academy-tabs"} aria-label="Academy sections">
     <button className={activeView === "learn" ? "active" : ""} aria-current={activeView === "learn" ? "page" : undefined} onClick={() => onNavigate("learn")}><BookOpen size={16} /> Courses</button>
-    <button className={activeView === "community" ? "active" : ""} aria-current={activeView === "community" ? "page" : undefined} onClick={() => onNavigate("community")}><Users size={16} /> Community</button>
-    <button className={activeView === "events" ? "active" : ""} aria-current={activeView === "events" ? "page" : undefined} onClick={() => onNavigate("events")}><CalendarDays size={16} /> Events</button>
+    <button className={activeView === "community" ? "active" : ""} aria-current={activeView === "community" ? "page" : undefined} onClick={() => onNavigate("community")}><Users size={16} /> Community{!hasCommunity && <LockKeyhole size={12} aria-label="Access required" />}</button>
+    <button className={activeView === "events" ? "active" : ""} aria-current={activeView === "events" ? "page" : undefined} onClick={() => onNavigate("events")}><CalendarDays size={16} /> Events{!hasCommunity && <LockKeyhole size={12} aria-label="Access required" />}</button>
     {canManage && <button className={activeView === "admin" ? "active" : ""} aria-current={activeView === "admin" ? "page" : undefined} onClick={() => onNavigate("admin")}><ShieldCheck size={16} /> Admin</button>}
   </nav>;
 }
@@ -831,7 +872,7 @@ function SavedJobSheet({ job, onClose }: { job: Job; onClose: () => void }) {
   </div>;
 }
 
-function QuoteSheet({ draft, setDraft, quote, photoUrl, setPhotoUrl, setPhotoFile, onClose, onSave, onError, primaryNavigation }: { draft: QuoteDraft; setDraft: React.Dispatch<React.SetStateAction<QuoteDraft>>; quote: QuoteTotals; photoUrl: string; setPhotoUrl: (url: string) => void; setPhotoFile: (file: File | null) => void; onClose: () => void; onSave: () => void | Promise<void>; onError: (message: string) => void; primaryNavigation: React.ReactNode }) {
+function QuoteSheet({ canMeasure, access, draft, setDraft, quote, photoUrl, setPhotoUrl, setPhotoFile, onClose, onSave, onError, primaryNavigation }: { canMeasure: boolean; access: AccessState;  draft: QuoteDraft; setDraft: React.Dispatch<React.SetStateAction<QuoteDraft>>; quote: QuoteTotals; photoUrl: string; setPhotoUrl: (url: string) => void; setPhotoFile: (file: File | null) => void; onClose: () => void; onSave: () => void | Promise<void>; onError: (message: string) => void; primaryNavigation: React.ReactNode }) {
   const dialogRef = useRef<HTMLElement>(null);
   useModalDialog(dialogRef, onClose);
   const update = <K extends keyof QuoteDraft>(key: K, value: QuoteDraft[K]) => setDraft((current) => ({ ...current, [key]: value }));
@@ -854,16 +895,17 @@ function QuoteSheet({ draft, setDraft, quote, photoUrl, setPhotoUrl, setPhotoFil
   return (
     <div className="sheet-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section ref={dialogRef} className="quote-sheet" role="dialog" aria-modal="true" aria-labelledby="quote-title">
-        <header className="sheet-header"><button className="bare-icon" aria-label="Close infill calculator" onClick={onClose} data-dialog-autofocus><ArrowLeft size={20} /></button><div><p>Measurement</p><h2 id="quote-title">Infill calculator</h2></div><button className="save-link" onClick={onSave}>Save</button></header>
+        <header className="sheet-header"><button className="bare-icon" aria-label="Close infill calculator" onClick={onClose} data-dialog-autofocus><ArrowLeft size={20} /></button><div><p>Measurement</p><h2 id="quote-title">Infill calculator</h2></div><button className="save-link" disabled={draft.mode !== "manual" && !canMeasure} onClick={onSave}>Save</button></header>
         <div className="sheet-body">
           <fieldset className="mode-fieldset"><legend>Measurement method</legend><div className="segmented-control"><ModeButton icon={<Camera size={17} />} label="Camera" active={draft.mode === "camera"} onClick={() => update("mode", "camera")} /><ModeButton icon={<Map size={17} />} label="Map" active={draft.mode === "map"} onClick={() => update("mode", "map")} /><ModeButton icon={<Ruler size={17} />} label="Manual" active={draft.mode === "manual"} onClick={() => update("mode", "manual")} /></div></fieldset>
-          {draft.mode === "camera" && <LiveCameraMeasurement area={draft.cameraArea} onAreaChange={(value) => update("cameraArea", value)} photoUrl={photoUrl} changePhoto={changePhoto} />}
+          {draft.mode === "camera" && canMeasure && <LiveCameraMeasurement area={draft.cameraArea} onAreaChange={(value) => update("cameraArea", value)} photoUrl={photoUrl} changePhoto={changePhoto} />}
           {draft.mode === "manual" && <DimensionInputs draft={draft} update={update} />}
-          {draft.mode === "map" && <Suspense fallback={<div className="map-loading" role="status">Loading property map...</div>}><MapMeasurement address={draft.address} area={draft.mapArea} onAddressChange={(value) => update("address", value)} onAreaChange={(value) => update("mapArea", value)} /></Suspense>}
-          <section className="infill-controls"><label className="field-label">Infill rate<select value={draft.infillRate} onChange={(event) => update("infillRate", numberValue(event.target.value))}>{INFILL_RATES.map((rate) => <option key={rate} value={rate}>{rate.toFixed(2)} lb / sq ft</option>)}</select></label><NumberField label="What you charge" value={draft.serviceRate} prefix="$" suffix="/ sq ft" step={0.01} update={(value) => update("serviceRate", value)} /></section>
-          <section className="infill-summary" aria-label="Infill calculation results"><div className="area-total"><span>Total turf area</span><strong>{formatNumber(quote.area)}</strong><small>square feet</small></div><div className="infill-result-grid"><div><span>Total infill</span><strong>{formatNumber(quote.infillPounds)} lb</strong></div><div><span>40-lb bags</span><strong>{quote.bags40}</strong></div><div><span>50-lb bags</span><strong>{quote.bags50}</strong></div></div><div className="customer-price"><span>Customer price</span><strong>{formatCurrency(quote.serviceTotal)}</strong></div></section>
+          {draft.mode === "map" && canMeasure && <Suspense fallback={<div className="map-loading" role="status">Loading property map...</div>}><MapMeasurement address={draft.address} area={draft.mapArea} onAddressChange={(value) => update("address", value)} onAreaChange={(value) => update("mapArea", value)} /></Suspense>}
+          {draft.mode !== "manual" && !canMeasure && <><AccessRequired title="Measuring tool access required">Camera and map measurements are not available with your current access. You can still enter dimensions manually.</AccessRequired><AvailableUpgrades access={access} kind="tool" feature="measuring_tool" /><button className="secondary-button wide" onClick={() => update("mode", "manual")}>Enter dimensions manually</button></>}
+          {(draft.mode === "manual" || canMeasure) && <><section className="infill-controls"><label className="field-label">Infill rate<select value={draft.infillRate} onChange={(event) => update("infillRate", numberValue(event.target.value))}>{INFILL_RATES.map((rate) => <option key={rate} value={rate}>{rate.toFixed(2)} lb / sq ft</option>)}</select></label><NumberField label="What you charge" value={draft.serviceRate} prefix="$" suffix="/ sq ft" step={0.01} update={(value) => update("serviceRate", value)} /></section>
+          <section className="infill-summary" aria-label="Infill calculation results"><div className="area-total"><span>Total turf area</span><strong>{formatNumber(quote.area)}</strong><small>square feet</small></div><div className="infill-result-grid"><div><span>Total infill</span><strong>{formatNumber(quote.infillPounds)} lb</strong></div><div><span>40-lb bags</span><strong>{quote.bags40}</strong></div><div><span>50-lb bags</span><strong>{quote.bags50}</strong></div></div><div className="customer-price"><span>Customer price</span><strong>{formatCurrency(quote.serviceTotal)}</strong></div></section></>}
         </div>
-        <div className="sheet-footer"><button className="primary-button wide" onClick={onSave}><CheckCircle2 size={18} /> Save calculation</button></div>
+        <div className="sheet-footer"><button className="primary-button wide" disabled={draft.mode !== "manual" && !canMeasure} onClick={onSave}><CheckCircle2 size={18} /> Save calculation</button></div>
         {primaryNavigation}
       </section>
     </div>

@@ -10,7 +10,6 @@ import {
   provisionAcademyMemberAccounts,
   requestAccountDeletion,
   saveNotificationPreferences,
-  startAcademyCheckout,
   webBillingAvailable,
   type AcademyBillingOverview,
   type AccountDeletionRequest,
@@ -146,16 +145,6 @@ function SettingsPanel({ onToast, dataMode, canManage, onSignOut }: { onToast: (
     }
   };
 
-  const beginCheckout = async (planId: string) => {
-    setBillingBusy(true);
-    try {
-      await startAcademyCheckout(planId);
-    } catch {
-      onToast("Secure checkout could not be opened. Try again from the Academy website.");
-      setBillingBusy(false);
-    }
-  };
-
   const manageBilling = async () => {
     setBillingBusy(true);
     try {
@@ -182,7 +171,7 @@ function SettingsPanel({ onToast, dataMode, canManage, onSignOut }: { onToast: (
       setDeletionBusy(false);
     }
   };
-  const canChoosePlan = Boolean(billing?.subscription && ["cancelled", "expired"].includes(billing.subscription.status));
+  const subscriptions = billing?.subscriptions ?? (billing?.subscription ? [billing.subscription] : []);
 
   const updateNotificationPreference = async (key: keyof NotificationPreferences, value: boolean) => {
     if (!notificationPreferences || notificationSavePending.current) return;
@@ -243,18 +232,14 @@ function SettingsPanel({ onToast, dataMode, canManage, onSignOut }: { onToast: (
       </> : notificationError ? <div className="settings-loading" role="alert">Notification settings could not load. Changes are unavailable until they do. <button type="button" className="secondary-button" onClick={() => setSettingsRetry((value) => value + 1)}>Try again</button></div> : <div className="settings-loading">Loading notification preferences...</div>}
     </div>
     {billingError && <div className="setting-group billing-group" role="alert"><h3>Billing</h3><p>Billing details could not load.</p><button type="button" className="secondary-button" onClick={() => setSettingsRetry((value) => value + 1)}>Try again</button></div>}
-    {billing && (billing.subscription || billing.plans.length > 0) && <div className="setting-group billing-group">
-      <h3>Billing</h3>
-      {billing.subscription && <div className="billing-current">
+    {billing && <div className="setting-group billing-group">
+      <h3>Billing and access</h3>
+      {subscriptions.map((subscription, index) => <div className="billing-current" key={index}>
         <span><CreditCard size={18} /></span>
-        <span><strong>{billing.subscription.planName}</strong><small>{billingStatusLabel(billing.subscription.status, billing.subscription.cancelAtPeriodEnd, billing.subscription.currentPeriodEnd)}</small></span>
-        <button className="icon-plain" aria-label="Manage billing" disabled={billingBusy} onClick={() => void manageBilling()}><ExternalLink size={17} /></button>
-      </div>}
-      {canChoosePlan && billing.plans.map((plan) => <article className="billing-plan" key={plan.id}>
-        <div><strong>{plan.name}</strong><small>{plan.description}</small></div>
-        <span>{formatPlanPrice(plan.amountCents, plan.currency, plan.billingInterval)}</span>
-        <button className="secondary-button" disabled={billingBusy} onClick={() => void beginCheckout(plan.id)}>{billingBusy ? "Opening..." : "Choose plan"}</button>
-      </article>)}
+        <span><strong>{subscription.planName}</strong><small>{billingStatusLabel(subscription.status, subscription.cancelAtPeriodEnd, subscription.currentPeriodEnd)}</small></span>
+      </div>)}
+      {subscriptions.length > 0 && <button className="secondary-button" disabled={billingBusy} onClick={() => void manageBilling()}><ExternalLink size={17} /> Manage billing</button>}
+      <a className="setting-row setting-link" href="/membership"><span><BookOpen size={18} /></span><span><strong>Membership and upgrades</strong><small>Review your access and available options</small></span><ChevronRight size={16} /></a>
     </div>}
     <div className="setting-group account-controls">
       <h3>Privacy and account</h3>
@@ -287,15 +272,6 @@ function deletionStatusLabel(request: AccountDeletionRequest) {
   if (request.status === "declined") return `Needs follow-up · requested ${date}`;
   if (request.status === "in_review") return `Under review · requested ${date}`;
   return `Received ${date}`;
-}
-
-function formatPlanPrice(amountCents: number, currency: string, interval: string) {
-  const amount = new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: currency.toUpperCase(),
-    maximumFractionDigits: amountCents % 100 === 0 ? 0 : 2,
-  }).format(amountCents / 100);
-  return interval === "one_time" ? amount : `${amount}/${interval}`;
 }
 
 function billingStatusLabel(status: string, cancelAtPeriodEnd: boolean, periodEnd: string | null) {

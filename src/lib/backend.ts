@@ -1,3 +1,5 @@
+import { parseAcademyAccess, type WorkspaceAccessState } from "./academyAccess";
+export type { WorkspaceAccessState } from "./academyAccess";
 import { Capacitor } from "@capacitor/core";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { AcademyCertificate, AcademyEvent, AppNotification, CommunityComment, CommunityPost, Course, Job, LessonQuiz, Member, NotificationPreferences } from "../domain";
@@ -37,12 +39,6 @@ export const supabase = supabaseUrl && supabasePublishableKey
 
 export type DataMode = "device" | "cloud";
 
-export type WorkspaceAccessState =
-  | { status: "preview" }
-  | { status: "signed_out" }
-  | { status: "member"; canManage: boolean }
-  | { status: "no_access" };
-
 export type AcademyBillingPlan = {
   id: string;
   name: string;
@@ -56,14 +52,17 @@ export type AcademyBillingPlan = {
 
 export type AcademyBillingOverview = {
   plans: AcademyBillingPlan[];
-  subscription: {
+  subscriptions?: AcademyBillingSubscription[];
+  subscription: AcademyBillingSubscription | null;
+};
+
+export type AcademyBillingSubscription = {
     status: string;
     cancelAtPeriodEnd: boolean;
     currentPeriodEnd: string | null;
     planName: string;
     billingType: "subscription" | "one_time";
-  } | null;
-};
+  };
 
 type AcademyContext = {
   memberId: string;
@@ -151,12 +150,7 @@ export async function getWorkspaceAccessState(): Promise<WorkspaceAccessState> {
   if (!sessionData.session) return { status: "signed_out" };
   const { data, error } = await supabase.rpc("get_academy_access_state");
   if (error) throw error;
-  const value = data && typeof data === "object"
-    ? data as Record<string, unknown>
-    : {};
-  return value.hasAccess === true
-    ? { status: "member", canManage: value.canManage === true }
-    : { status: "no_access" };
+  return parseAcademyAccess(data);
 }
 
 export async function loadAcademyBillingOverview(): Promise<AcademyBillingOverview> {
@@ -172,7 +166,8 @@ export async function loadAcademyBillingOverview(): Promise<AcademyBillingOvervi
   const subscription = isBillingSubscription(value.subscription)
     ? value.subscription
     : null;
-  return { plans, subscription };
+  const subscriptions = Array.isArray(value.subscriptions) ? value.subscriptions.filter(isBillingSubscription) : subscription ? [subscription] : [];
+  return { plans, subscription, subscriptions };
 }
 
 export function webBillingAvailable() {

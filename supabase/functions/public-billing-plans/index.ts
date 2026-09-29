@@ -5,6 +5,7 @@ import {
   billingConfiguration,
   type CheckoutPlan,
   checkoutPlanColumns,
+  checkoutPlanIsMapped,
   priceMatchesPlan,
 } from "../_shared/checkout.ts";
 import { handlePreflight, jsonResponse } from "../_shared/http.ts";
@@ -42,7 +43,9 @@ Deno.serve(async (request) => {
     const stripe = new Stripe(secret);
     const plans = await Promise.all(
       (data as CheckoutPlan[]).map(async (plan) => {
-        if (!plan.stripe_price_id) throw new Error("Unmapped plan");
+        if (!plan.stripe_price_id || !checkoutPlanIsMapped(plan)) {
+          throw new Error("Unmapped plan");
+        }
         const price = await stripe.prices.retrieve(plan.stripe_price_id);
         if (!priceMatchesPlan(plan, price, config.livemode)) {
           throw new Error("Plan and Stripe price do not match");
@@ -55,6 +58,14 @@ Deno.serve(async (request) => {
           currency: plan.currency,
           billingInterval: plan.billing_interval,
           trialDays: plan.trial_days,
+          offerKind: plan.offer_kind,
+          requiresMembership: plan.requires_membership,
+          courseIds: plan.academy_billing_plan_courses.map((course) =>
+            course.course_id
+          ),
+          featureKeys: plan.academy_billing_plan_features.map((feature) =>
+            feature.feature_key
+          ),
         };
       }),
     );

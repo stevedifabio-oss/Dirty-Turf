@@ -28,7 +28,8 @@
       "blockers": [
         "certification_content_scope",
         "existing_member_roster",
-        "stripe_price_selection"
+        "stripe_price_selection",
+        "sandbox_payment_access_verification"
       ]
     },
     {
@@ -46,7 +47,7 @@
         "certification_content_scope",
         "course_mapping",
         "stripe_price_creation",
-        "existing_member_upgrade_checkout"
+        "sandbox_payment_access_verification"
       ]
     },
     {
@@ -63,7 +64,7 @@
       "blockers": [
         "course_mapping",
         "stripe_price_creation",
-        "existing_member_upgrade_checkout"
+        "sandbox_payment_access_verification"
       ]
     },
     {
@@ -80,7 +81,7 @@
       "blockers": [
         "course_mapping",
         "stripe_price_creation",
-        "existing_member_upgrade_checkout"
+        "sandbox_payment_access_verification"
       ]
     },
     {
@@ -95,9 +96,8 @@
       "stripePriceId": null,
       "active": false,
       "blockers": [
-        "tool_entitlement_enforcement",
         "stripe_price_creation",
-        "existing_member_upgrade_checkout"
+        "sandbox_payment_access_verification"
       ]
     },
     {
@@ -113,9 +113,8 @@
       "active": false,
       "blockers": [
         "tool_scope_and_readiness",
-        "tool_entitlement_enforcement",
         "stripe_price_creation",
-        "existing_member_upgrade_checkout"
+        "sandbox_payment_access_verification"
       ]
     },
     {

@@ -55,8 +55,11 @@ Deno.serve(async (request) => {
   const access = accessData && typeof accessData === "object"
     ? accessData as Record<string, unknown>
     : {};
-  if (accessError || access.hasAccess !== true) {
-    return jsonResponse(request, { error: "Academy membership is required" }, { status: 403 });
+  if (accessError) {
+    return jsonResponse(request, { error: "Your tool access could not be checked. Please try again." }, { status: 503 });
+  }
+  if (access.hasAccess !== true || !Array.isArray(access.features) || !access.features.includes("measuring_tool")) {
+    return jsonResponse(request, { error: "Measuring tool access is required" }, { status: 403 });
   }
 
   const admin = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false } });
