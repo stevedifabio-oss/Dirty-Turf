@@ -1,6 +1,10 @@
 # Dirty Turf production priorities
 
-Updated September 26, 2026. User explicitly asked to retain and complete this list.
+Updated September 29, 2026. User explicitly asked to retain and complete this list.
+
+## Current release snapshot (September 29)
+
+See `release-status-2026-09-29.md` for live console findings. Google internal build 6 is available to testers; production build 5 was rejected because reviewers could not sign in. The publishing overview also shows a build-5 review entry, so treat the rejection as unresolved until Google confirms otherwise. Apple build 10 is Waiting for Review; TestFlight build 11 is Ready to Submit for internal testers. Google reviewer instructions were corrected to 372/500 characters and saved, preserving supplied credentials. Signed Android build 7 is prepared locally, not uploaded.
 
 ## Confirmed
 - Steve reports Android login now works on his phone.
@@ -12,7 +16,7 @@ Updated September 26, 2026. User explicitly asked to retain and complete this li
 |---|---|---|
 |1|Automatic GHL course/community updates|Active investigation and implementation. Existing import is a snapshot; Sept 24 documented course-read APIs now work with existing token. Exact-course reader implemented and live-verified: 1 course, 36 source categories, 128 lessons. All 128 existing lesson IDs present. Conflict-safe application and scheduler pending. GHL draft post trigger scoped to 7 Figure Turf Cleaning saved inactive; visible post variables are title/content/group/channel only, with no ID or attachment field. Need actual payload verification for stable identities, replies and media before enablement.|
 |2|Apple/Android update containing PR 18 UI fixes|Pending new store binaries and installed-device acceptance. Android login separately confirmed by Steve. Apple11 upload previously completed, TestFlight availability needs verification.|
-|3|Stripe payment integration|Waiting on Steve account access/activation and confirmed offer pricing/current billing arrangement. Then test purchase, access, failed renewal, cancellation, refund and duplicate webhooks. Never create duplicate subscriptions for existing members.|
+|3|Stripe payment integration|Live account connected and five inactive products/prices, portal, branding and Google Pay configured. Checkout stays disabled pending course mapping, bank account, runtime/webhook deployment and payment/access verification. Never create duplicate subscriptions for existing members.|
 |4|Member access reconciliation|Live Sept 26 read-only check: 62 active memberships; 1 active manually-added member has pending invite, no auth account and 1 active enrollment. Separate cancelled historical record has no enrollment. This is not an unlinked imported GHL member. Identify intended pending invite before provision.|
 |5|Upcoming events|Live calendar has 5 past events. Need real next date/time/timezone/meeting details before publishing.|
 |6|All course media/downloads|Check every published lesson and imported asset, not just samples. Preserve existing private media during source updates.|
@@ -23,7 +27,7 @@ GHL owns imported course content. App member progress, native discussions, moder
 Acceptance: create/edit/reorder/move lesson, replace attachment, new post/comment/reply, duplicate/out-of-order webhook, local edit conflict, disabled access and failed-run retry; show last successful sync and actionable errors. No automatic production application is enabled yet.
 
 ## Stripe text for Steve — draft only
-Hey Steve, glad the login worked! To finish payments, please sign in to Dirty Turf’s Stripe account and complete any business or payout verification Stripe asks for. Let me know when it’s ready, and confirm the Academy price and whether it’s monthly, yearly, or a one-time payment. Also let me know how current members are paying so we can keep their billing intact and avoid charging anyone twice. We’ll handle the app connection and testing.
+Hey Steve, the Stripe products, prices, billing portal and branding are set up. Stripe still needs your payout bank account: open Settings → Business → Account status → Provide an external account → Start. Please complete that directly in Stripe. We’re keeping existing members’ billing intact and will finish payment/access verification before turning on sales.
 
 ## References
 - https://marketplace.gohighlevel.com/docs/Changelog/ (September 24 course read APIs)

@@ -169,8 +169,12 @@ async function processCheckout(
     throw new Error("Checkout is not paid");
   }
 
-  const priceId = stringId(session.line_items?.data[0]?.price);
-  const plan = await resolvePlan(admin, session.metadata?.plan_id, priceId);
+  const plan = await resolveSinglePlan(
+    admin,
+    session.metadata?.plan_id,
+    session.line_items?.data || [],
+    Boolean(session.line_items?.has_more),
+  );
   if (!plan) return;
   let email = normalizeBillingEmail(
     session.metadata?.buyer_email || session.customer_details?.email ||
@@ -235,11 +239,11 @@ async function processSubscription(
   // Delivery order is not guaranteed. Re-read the authoritative current state.
   const subscription = await stripe.subscriptions.retrieve(object.id);
   const customerId = stringId(subscription.customer);
-  const priceId = stringId(subscription.items.data[0]?.price);
-  const plan = await resolvePlan(
+  const plan = await resolveSinglePlan(
     admin,
     subscription.metadata?.plan_id,
-    priceId,
+    subscription.items.data,
+    subscription.items.has_more,
   );
   if (!plan) return;
   const customer = await stripe.customers.retrieve(customerId);
@@ -272,6 +276,36 @@ async function processSubscription(
     sourceType: "stripe_subscription",
     sourceKey: subscription.id,
   });
+}
+
+// App checkouts contain exactly one mapped item. Dashboard-created mixed
+// subscriptions need review rather than silently granting only their first item.
+async function resolveSinglePlan(
+  admin: SupabaseClient,
+  metadataPlanId: string | undefined,
+  items: { price: unknown; quantity?: number | null }[],
+  hasMore: boolean,
+): Promise<BillingPlan | null> {
+  if (items.length !== 1 || hasMore) {
+    if (isUuid(metadataPlanId)) {
+      throw new Error("Academy checkout must contain one item");
+    }
+    for (const item of items) {
+      if (await resolvePlan(admin, undefined, stringId(item.price))) {
+        throw new Error("Mixed Academy billing requires review");
+      }
+    }
+    return null;
+  }
+  const plan = await resolvePlan(
+    admin,
+    metadataPlanId,
+    stringId(items[0].price),
+  );
+  if (plan && items[0].quantity !== 1) {
+    throw new Error("Academy billing quantity must be one");
+  }
+  return plan;
 }
 
 async function resolvePlan(

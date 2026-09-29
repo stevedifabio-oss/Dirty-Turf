@@ -1,14 +1,20 @@
 # Stripe setup for Dirty Turf Academy
 
-## What Steve needs to do
+The September 28 owner pricing is captured in [Academy pricing](academy-pricing.md) and `academy-pricing.draft.json`. Keep that catalog inactive until the included certification content, paid upgrades, tool entitlements and Stripe mappings are verified.
 
-1. Sign in to **Dirty Turf's Stripe account** and finish any business or payout verification Stripe requests.
-2. Confirm the Academy price, currency, and whether it is monthly, yearly, or one-time. Confirm which courses are included and whether current members already pay through GHL or Stripe. Existing memberships must be reconciled before another subscription is offered.
-3. Create or select a **sandbox** in Stripe for testing. Open **Product catalog**, add the Academy product and its price, then copy the **Price ID** beginning with `price_`. This ID and the pricing terms can be shared normally. [Products and prices](https://docs.stripe.com/products-prices/manage-prices)
-4. Open **Developers → API keys** (or search Stripe for “API keys”). Create a restricted server key named **Dirty Turf Academy test**. The implementation checklist below lists the permissions. Keep the key private. [Stripe key instructions](https://docs.stripe.com/keys/restricted-api-keys)
-5. Put that key directly into the selected **Supabase test project's Edge Functions → Secrets** under `STRIPE_SECRET_KEY`. After the webhook below is created, add its signing secret as `STRIPE_WEBHOOK_SECRET`. Tell us the secrets are saved; do not paste them into chat, email, GitHub, or a page. [Supabase secret settings](https://supabase.com/docs/guides/functions/secrets)
+## Prepared live resources — checkout remains closed
 
-We will connect the Price ID to the Academy plan, configure the webhook, test purchases and access, and complete activation. This hosted Checkout integration does not need a publishable Stripe key in the website or mobile app.
+The Stripe plugin prepared five dedicated, inactive app products and their prices in Dirty Turf's live account on September 29. Their IDs are recorded in `academy-pricing.draft.json`. They cover the $39.99/month membership, three $149.95 one-time courses, and the $29.95/month measuring tool. Existing GHL products and subscriptions are unchanged. SEO and the future CRM are not offered for sale.
+
+The dedicated live customer portal configuration is `bpc_1UL6a1RfnCxS2laIDBqD3Sxt`. It allows invoice history, payment-method updates, and cancellation at the end of the billing period. Product switching and shared portal login links are disabled.
+
+## Remaining owner input
+
+1. Finish any business or payout verification Stripe requests in Dirty Turf's account.
+2. Connect a **separate Stripe sandbox** through the Stripe plugin so payment tests can run without real charges. Sandbox products, prices, portal configuration, keys and webhook secrets must be created separately; the live IDs above do not work there.
+3. Confirm which imported Turf Cleaning Academy lessons belong to the included certification versus the $149.95 full course. Reconcile the existing-member roster and existing billing agreements before activation.
+
+We will configure the matching sandbox catalog, webhook and server settings, then test payment, access and cancellation. Server keys belong in the selected Supabase environment's secrets; do not send them in chat. This hosted Checkout integration does not need a publishable Stripe key in the website or mobile app.
 
 ## Pages prepared
 
@@ -24,7 +30,7 @@ All three routes and purchase links are excluded from the native iPhone/Android 
 
 - Use a Stripe sandbox with a local or staging Supabase database. Sandbox transactions must never change real members' production access.
 - Set `STRIPE_CHECKOUT_ENABLED=false` until the matching mode, endpoint, product mapping, and tests are verified. Set `STRIPE_MODE=test` for sandbox or `live` for production; the API key and Stripe Price must match that mode.
-- Stripe sandbox and live resources are separate. Live activation needs the live API key, live Price ID, and the live destination's signing secret together. [Stripe test and live environments](https://docs.stripe.com/keys)
+- Stripe sandbox and live resources are separate. Live activation needs the live API key, live Price IDs, live portal configuration ID, and the live destination's signing secret together. [Stripe test and live environments](https://docs.stripe.com/keys)
 - Leave existing GHL billing in place until each existing subscription is identified and a cutover is approved. Importing course/community data does not migrate billing agreements.
 
 ### Server credentials
@@ -83,7 +89,9 @@ Full refunds of one-time purchases revoke the related Stripe access. Refunding a
 
 ### Customer billing portal
 
-Configure Stripe's customer portal in the matching environment. Enable payment-method updates, invoice viewing, and the agreed cancellation behavior. Keep switching to unrelated products disabled. The app creates the portal session for the signed-in member; no public portal link is required. [Stripe portal setup](https://docs.stripe.com/customer-management/activate-no-code-customer-portal)
+Set `STRIPE_PORTAL_CONFIGURATION_ID` in Supabase Edge Function secrets to the dedicated portal configuration for the same Stripe account and mode. For the held live setup, use `bpc_1UL6a1RfnCxS2laIDBqD3Sxt`; create a separate configuration for the sandbox. The backend requires a valid `bpc_` ID and passes it explicitly to Stripe, so it never silently falls back to the account's default/GHL portal settings.
+
+Enable payment-method updates, invoice viewing, and cancellation at the end of the billing period. Keep product switching and shared portal login links disabled. The app creates the portal session for the signed-in member. [Stripe portal setup](https://docs.stripe.com/customer-management/activate-no-code-customer-portal)
 
 ### Acceptance checks before live activation
 

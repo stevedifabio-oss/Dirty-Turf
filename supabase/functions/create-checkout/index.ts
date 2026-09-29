@@ -8,7 +8,9 @@ import {
   checkoutEmail,
   type CheckoutPlan,
   checkoutPlanColumns,
+  checkoutPlanIsMapped,
   priceMatchesPlan,
+  stripePurchaseOverlaps,
 } from "../_shared/checkout.ts";
 import { handlePreflight, jsonResponse } from "../_shared/http.ts";
 
@@ -99,41 +101,53 @@ Deno.serve(async (request) => {
     if (!priceMatchesPlan(plan as CheckoutPlan, price, config.livemode)) {
       throw new Error("Price configuration mismatch");
     }
-    const { data: invite, error: inviteError } = await admin.from(
-      "academy_member_invites",
-    ).select("academy_member_id").eq(
-      "academy_community_id",
-      plan.academy_community_id,
-    ).eq("email", email).neq("status", "cancelled").limit(1).maybeSingle();
-    if (inviteError) throw inviteError;
-    const { data: customer, error: customerError } = await admin.from(
-      "academy_billing_customers",
-    ).select("academy_member_id,provider_customer_id").eq(
-      "academy_community_id",
-      plan.academy_community_id,
-    ).eq("email", email).limit(1).maybeSingle();
-    if (customerError) throw customerError;
-    const memberId = customer?.academy_member_id || invite?.academy_member_id;
-    if (memberId || userId) {
-      let memberQuery = admin.from("academy_members").select("id,status").eq(
+    if (!checkoutPlanIsMapped(plan as CheckoutPlan)) {
+      return jsonResponse(request, {
+        error: "This option is not ready for purchase",
+      }, { status: 503 });
+    }
+    if (
+      (plan.offer_kind !== "membership" || plan.requires_membership) && !userId
+    ) {
+      return jsonResponse(request, {
+        code: "sign_in_required",
+        error: "Sign in to purchase an upgrade",
+      }, { status: 401 });
+    }
+    const { data: eligibility, error: eligibilityError } = await admin.rpc(
+      "get_academy_checkout_eligibility",
+      {
+        p_plan_id: plan.id,
+        p_email: email,
+        p_user_id: userId || null,
+      },
+    );
+    if (eligibilityError) throw eligibilityError;
+    if (!eligibility?.allowed) return blocked();
+    // Reuse only the customer bound to this authenticated member. An email
+    // match alone must never expose somebody else's saved payment methods.
+    let customerId: string | undefined;
+    if (userId && eligibility.memberId) {
+      const { data: customer, error: customerError } = await admin.from(
+        "academy_billing_customers",
+      ).select("provider_customer_id").eq(
         "academy_community_id",
         plan.academy_community_id,
-      );
-      memberQuery = memberId
-        ? memberQuery.eq("id", memberId)
-        : memberQuery.eq("user_id", userId!);
-      const { data: member, error: memberError } = await memberQuery.limit(1)
+      )
+        .eq("academy_member_id", eligibility.memberId).eq("user_id", userId)
         .maybeSingle();
-      if (memberError) throw memberError;
-      if (member?.status === "active") {
-        const { data: grants, error: grantsError } = await admin.from(
-          "academy_access_grants",
-        ).select("id").eq("academy_member_id", member.id).eq("status", "active")
-          .or(`ends_at.is.null,ends_at.gt.${new Date().toISOString()}`).limit(
-            1,
-          );
-        if (grantsError) throw grantsError;
-        if (grants?.length) return blocked();
+      if (customerError) throw customerError;
+      if (customer?.provider_customer_id) {
+        const verified = await stripe.customers.retrieve(
+          customer.provider_customer_id,
+        );
+        if ("deleted" in verified && verified.deleted) {
+          throw new Error("Customer unavailable");
+        }
+        if (verified.livemode !== config.livemode) {
+          throw new Error("Customer mode mismatch");
+        }
+        customerId = verified.id;
       }
     }
     // Check Stripe as well: its payment may precede webhook provisioning.
@@ -141,39 +155,46 @@ Deno.serve(async (request) => {
     const matches = await stripe.customers.list({ email, limit: 100 });
     if (matches.has_more) throw new Error("Customer lookup requires review");
     const { data: communityPlans, error: communityPlansError } = await admin
-      .from("academy_billing_plans").select("stripe_price_id").eq(
+      .from("academy_billing_plans").select(checkoutPlanColumns).eq(
         "academy_community_id",
         plan.academy_community_id,
       );
     if (communityPlansError) throw communityPlansError;
-    const academyPrices = new Set(
-      (communityPlans || []).map((p: { stripe_price_id: string }) =>
-        p.stripe_price_id
-      ),
-    );
-    for (const existing of matches.data) {
+    const knownPlans = (communityPlans || []) as CheckoutPlan[];
+    const customerIds = new Set(matches.data.map((customer) => customer.id));
+    if (customerId) customerIds.add(customerId);
+    for (const existingId of customerIds) {
       const subscriptions = await stripe.subscriptions.list({
-        customer: existing.id,
+        customer: existingId,
         status: "all",
         limit: 100,
       });
       if (
         subscriptions.has_more ||
         subscriptions.data.some((s) =>
-          (s.metadata?.academy_community_id === plan.academy_community_id ||
-            s.items.data.some((item) => academyPrices.has(item.price.id))) &&
+          stripePurchaseOverlaps(
+            plan as CheckoutPlan,
+            knownPlans,
+            s.metadata,
+            s.items.data.map((item) => item.price.id),
+          ) &&
           !["canceled", "incomplete_expired"].includes(s.status)
         )
       ) return blocked();
       const sessions = await stripe.checkout.sessions.list({
-        customer: existing.id,
+        customer: existingId,
         limit: 100,
       });
       if (sessions.has_more) return blocked();
       for (const previous of sessions.data) {
         if (
           previous.mode !== "payment" || previous.status !== "complete" ||
-          previous.metadata?.academy_community_id !== plan.academy_community_id
+          !stripePurchaseOverlaps(
+            plan as CheckoutPlan,
+            knownPlans,
+            previous.metadata,
+            [],
+          )
         ) continue;
         const paymentId = typeof previous.payment_intent === "string"
           ? previous.payment_intent
@@ -201,6 +222,7 @@ Deno.serve(async (request) => {
         p_plan_id: plan.id,
         p_email: email,
         p_request_id: body.requestId,
+        p_user_id: userId || null,
       },
     );
     if (reserveError) throw reserveError;
@@ -232,10 +254,23 @@ Deno.serve(async (request) => {
       line_items: [{ price: plan.stripe_price_id, quantity: 1 }],
       success_url: `${appUrl}/checkout/return?checkout=success`,
       cancel_url: `${appUrl}/membership?checkout=cancelled`,
-      customer_email: email,
+      integration_identifier: "dirty_turf_academy_qmvrxhtn",
+      branding_settings: {
+        display_name: "Dirty Turf Academy",
+        background_color: "#f4faee",
+        button_color: "#047631",
+        border_style: "rounded",
+        // Stripe-hosted Checkout does not support the app's Poppins/Outfit fonts.
+        font_family: "montserrat",
+        logo: {
+          type: "url",
+          url: "https://app.dirtyturf.com/dirty-turf-logo.png",
+        },
+      },
+      ...(customerId ? { customer: customerId } : { customer_email: email }),
       ...(plan.billing_type === "one_time"
         ? {
-          customer_creation: "always" as const,
+          ...(!customerId ? { customer_creation: "always" as const } : {}),
           payment_intent_data: { metadata },
         }
         : {

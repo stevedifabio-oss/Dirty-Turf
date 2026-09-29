@@ -162,6 +162,47 @@ describe("Member interaction regressions", () => {
     expect(text(lesson.render())).toContain("Passed · 100%");
   });
 
+  it("opens a course email target once content has loaded", () => {
+    let courses: any[] = [];
+    let requested: string | undefined = "course-target";
+    const opened = vi.fn(() => { requested = undefined; });
+    const academy = harness(() => AcademyView({ courses, requestedCourseCloudId: requested, onRequestedCourseOpened: opened,
+      certificates: [], dataMode: "cloud", onCoursesChange: vi.fn(), onLessonCompletion: vi.fn(), onQuizAttempt: vi.fn(),
+      onRequestCertificate: vi.fn(), onToast: vi.fn(), onDiscuss: vi.fn() }));
+    academy.render(); academy.effects();
+    expect(opened).not.toHaveBeenCalled();
+    courses = [{ id: "course-target", title: "Email-linked training", description: "Lesson details", category: "Core", instructor: "Steve", progress: 0, duration: "1 min", access: "open", modules: [] }];
+    academy.render(); academy.effects();
+    expect(opened).toHaveBeenCalledOnce();
+    expect(find(academy.render(), (e) => e.type === "h2").props.children).toBe("Email-linked training");
+    academy.effects();
+    expect(opened).toHaveBeenCalledOnce();
+    academy.dispose();
+  });
+
+  it("rolls back only the failed lesson and prevents duplicate completion writes", async () => {
+    const request = deferred<void>();
+    const onLessonCompletion = vi.fn(() => request.promise);
+    let courses: any[] = [{ id: "course", title: "Training", description: "", category: "Core", instructor: "Steve", progress: 0, duration: "1 min", access: "open", modules: [{ title: "Module", lessons: [
+      { id: "lesson-1", title: "First", type: "guide", duration: "1 min", completed: false, body: "Read this" },
+      { id: "lesson-2", title: "Second", type: "guide", duration: "1 min", completed: false, body: "Read that" },
+    ] }] }];
+    const academy = harness(() => AcademyView({ courses, certificates: [], dataMode: "cloud",
+      onCoursesChange: (next) => { courses = typeof next === "function" ? next(courses) : next; },
+      onLessonCompletion, onQuizAttempt: vi.fn(), onRequestCertificate: vi.fn(), onToast: vi.fn(), onDiscuss: vi.fn() }));
+    find(academy.render(), (e) => e.props.className === "course-card course-button").props.onClick();
+    find(academy.render(), (e) => e.props.className === "lesson-row").props.onClick();
+    const button = find(academy.render(), (e) => e.type === "button" && text(e.props.children).includes("Mark lesson complete"));
+    button.props.onClick(); button.props.onClick();
+    expect(onLessonCompletion).toHaveBeenCalledOnce();
+    // A separate server action has updated another lesson while this save waits.
+    courses[0].modules[0].lessons[1].completed = true;
+    request.reject(new Error("Offline")); await request.promise.catch(() => {}); await Promise.resolve();
+    expect(courses[0].modules[0].lessons[0].completed).toBe(false);
+    expect(courses[0].modules[0].lessons[1].completed).toBe(true);
+    academy.dispose();
+  });
+
   it("reveals Join at event start and removes it after end or resuming later", () => {
     vi.useFakeTimers();
     const start = Date.parse("2026-09-27T15:00:00Z");

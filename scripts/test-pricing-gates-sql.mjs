@@ -1,0 +1,185 @@
+// Actual repository migrations in isolated PostgreSQL; no hosted database or Storage calls.
+// PGLITE_MODULE=/absolute/path/to/pglite/dist/index.js node scripts/test-pricing-gates-sql.mjs
+import { readFile, readdir } from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const { PGlite } = await import(process.env.PGLITE_MODULE || '@electric-sql/pglite');
+process.on('uncaughtException', error => { console.error(error.message, error.where || '', error.query || ''); process.exit(1); });
+const db = new PGlite();
+await db.exec(`
+create role anon; create role authenticated; create role service_role bypassrls;
+create schema auth; create table auth.users(id uuid primary key,email text,raw_user_meta_data jsonb default '{}');
+create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
+create function auth.role() returns text language sql stable as $$ select current_user::text $$;
+create schema storage; create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
+create table storage.objects(id uuid primary key,bucket_id text,name text,owner uuid);
+alter table storage.objects enable row level security;
+create function storage.foldername(text) returns text[] language sql as $$ select (string_to_array($1,'/'))[1:array_length(string_to_array($1,'/'),1)-1] $$;
+create function public.rls_auto_enable() returns event_trigger language plpgsql as $$ begin return; end $$;
+create publication supabase_realtime;
+grant usage on schema public,auth,storage to anon,authenticated,service_role;
+grant select,insert,update,delete on storage.objects to anon,authenticated,service_role;
+alter default privileges in schema public grant select,insert,update,delete on tables to anon,authenticated,service_role;
+`);
+const migrations=(await readdir(new URL('../supabase/migrations/',import.meta.url))).filter(name=>name.endsWith('.sql')).sort();
+for(const name of migrations) {
+ const sql=(await readFile(new URL('../supabase/migrations/'+name,import.meta.url),'utf8')).replace('create extension if not exists pgcrypto;','');
+ try { await db.exec(sql); } catch(error) { throw new Error(`Migration ${name}: ${error.message}`,{cause:error}); }
+}
+const uuid=()=>crypto.randomUUID();
+let assertions=0;
+const eq=(actual,expected,label)=>{assert.deepEqual(actual,expected,label);assertions++;};
+const as=async(role,user,query,params=[])=>{
+ await db.query("select set_config('request.jwt.claim.sub',$1,false)",[user??'']); await db.exec(`set role ${role}`);
+ try { return (await db.query(query,params)).rows; } finally { await db.exec('reset role'); }
+};
+const reject=async(p,label)=>{await assert.rejects(p,undefined,label);assertions++;};
+const owner=uuid(),user=uuid(),other=uuid(),community=uuid(),member=uuid(),otherMember=uuid();
+for(const id of [owner,user,other]) await db.query('insert into auth.users(id,email) values($1,$2)',[id,id+'@example.test']);
+const org=(await db.query('select id from organizations where created_by=$1',[owner])).rows[0].id;
+const userOrg=(await db.query('select id from organizations where created_by=$1',[user])).rows[0].id;
+await db.query("insert into academy_communities(id,owner_organization_id,name,slug,portal_url) values($1,$2,'Pricing test','pricing-test','https://example.test')",[community,org]);
+for(const [id,uid] of [[member,user],[otherMember,other]]) await db.query("insert into academy_members(id,academy_community_id,user_id,display_name,status,role) values($1,$2,$3,'Member','active','member')",[id,community,uid]);
+// Real offline catalog preparation remains inactive and refuses duplicate application.
+const {pricingCatalogSql}=await import('./lib/pricing-catalog.mjs');
+const draft=JSON.parse(await readFile(new URL('../docs/academy-pricing.draft.json',import.meta.url),'utf8'));
+const catalogSQL=pricingCatalogSql(draft,community);
+await db.exec(catalogSQL);
+eq((await db.query('select count(*)::int n from academy_billing_plans')).rows[0].n,5,'catalog inserts exactly five sale candidates');
+eq((await db.query('select count(*)::int n from academy_billing_plans where active')).rows[0].n,0,'catalog cannot activate payments');
+eq((await db.query('select slug,stripe_price_id from academy_billing_plans order by slug')).rows, draft.offers.filter(o=>o.kind!=='future'&&o.slug!=='seo-tools').map(o=>({slug:o.slug,stripe_price_id:o.stripePriceId})).sort((a,b)=>a.slug.localeCompare(b.slug)), 'catalog preserves held Stripe price mappings');
+eq((await db.query("select count(*)::int n from academy_billing_plan_features where feature_key='measuring_tool'")).rows[0].n,1,'catalog maps only measuring feature');
+eq((await db.query('select amount_cents,offer_kind from academy_billing_plans order by amount_cents,offer_kind')).rows,
+ [{amount_cents:2995,offer_kind:'tool'},{amount_cents:3999,offer_kind:'membership'},...Array.from({length:3},()=>({amount_cents:14995,offer_kind:'course'}))],'catalog preserves approved amounts and independent kinds');
+await reject(db.exec(catalogSQL),'catalog rejects accidental overwrite'); await db.exec('rollback');
+const certification=uuid(),course=uuid(),course2=uuid();
+for(const id of [certification,course,course2]) await db.query("insert into courses(id,organization_id,academy_community_id,title,status,access_type,external_id) values($1::uuid,$2,$3,'Course','published','purchase',$1::text)",[id,org,community]);
+const membership=uuid(),upgrade=uuid(),tool=uuid(),seo=uuid(),bundle=uuid(),unmapped=uuid();
+for(const [id,kind,amount] of [[membership,'membership',3999],[upgrade,'course',14995],[tool,'tool',2995],[seo,'tool',14995],[bundle,'course',14995],[unmapped,'course',14995]]) {
+ await db.query("insert into academy_billing_plans(id,academy_community_id,slug,name,stripe_price_id,offer_kind,amount_cents,community_access,active) values($1::uuid,$2,$1::text,$3,'price_'||$1::text,$3,$4,$5,true)",[id,community,kind,amount,kind==='membership']);
+}
+for(const [pid,cid] of [[membership,certification],[upgrade,course],[bundle,course],[bundle,course2]]) await db.query('insert into academy_billing_plan_courses(plan_id,course_id) values($1,$2)',[pid,cid]);
+for(const [pid,key] of [[tool,'measuring_tool'],[seo,'seo_tools']]) await db.query('insert into academy_billing_plan_features(plan_id,feature_key) values($1,$2)',[pid,key]);
+const grant=async(mid,cid,source='import',key=uuid())=>db.query('insert into academy_access_grants(academy_community_id,academy_member_id,course_id,source_type,source_key) values($1,$2,$3,$4,$5)',[community,mid,cid,source,key]);
+await grant(member,null);await grant(member,certification);
+const eligibility=async(pid,uid=user,email=uid+'@example.test')=>(await as('service_role',null,'select get_academy_checkout_eligibility($1,$2,$3) r',[pid,email,uid]))[0].r;
+const state=async(uid=user)=>(await as('authenticated',uid,'select get_academy_access_state() r'))[0].r;
+eq((await state(other)).memberId,otherMember,'active identity without grants can reach independent upgrade checkout');
+eq((await state(other)).hasAccess,false,'active identity without grants has no paid app access');
+eq((await state()).features,['measuring_tool','seo_tools'],'cutover disabled preserves tools for existing access');
+eq((await state()).communityAccess,true,'imported community remains free');
+eq((await state()).courseIds,[certification],'course list contains actual authorized course');
+eq((await eligibility(membership)).reason,'existing_access','existing members cannot rebuy base');
+eq((await eligibility(upgrade)).allowed,true,'existing members can buy a new course');
+eq((await eligibility(tool)).allowed,true,'existing members can buy tool entitlement before gated cutover');
+eq((await eligibility(tool,null,user+'@example.test')).reason,'sign_in_required','anonymous add-on blocked');
+eq((await eligibility(tool,other,user+'@example.test')).reason,'invalid_identity','spoofed user/email blocked');
+eq((await eligibility(unmapped)).reason,'invalid_plan','unmapped course cannot be billed');
+eq((await eligibility(membership,null,'new@example.test')).allowed,true,'new member may subscribe to base');
+await db.query('update academy_billing_plans set requires_membership=true where id=$1',[tool]);
+eq((await eligibility(tool,other)).reason,'membership_required','configured active base prerequisite enforced');
+await db.query('update academy_billing_plans set requires_membership=false where id=$1',[tool]);
+eq((await eligibility(tool,other)).allowed,true,'unconfirmed base prerequisite is not invented');
+await db.query('update academy_communities set pricing_gates_enabled=true where id=$1',[community]);
+eq((await state()).features,[],'activation enforces feature grants only');
+const apply=async(pid,mid,status,source,key,end=null)=>(await as('service_role',null,'select apply_academy_billing_event($1,$2,$3,$4,$5,$6,false,$7,$8,$9,$10) r',[pid,mid,'cus_'+mid,source==='stripe_subscription'?key:null,'cs_'+key,status,end,source,key,(mid===member?user:other)+'@example.test']))[0].r;
+await apply(tool,member,'active','stripe_subscription','sub_measure',new Date(Date.now()+86400000).toISOString());
+eq((await state()).features,['measuring_tool'],'measurement subscription grants only measurement');
+eq((await eligibility(tool)).reason,'existing_access','duplicate tool denied');
+await apply(seo,member,'active','stripe_subscription','sub_seo',new Date(Date.now()+86400000).toISOString());
+await apply(upgrade,member,'active','stripe_payment','pi_course');
+eq((await state()).features,['measuring_tool','seo_tools'],'separate subscriptions combine');
+eq((await eligibility(bundle)).reason,'existing_access','bundle overlap fails closed');
+await apply(tool,member,'cancelled','stripe_subscription','sub_measure');
+eq((await state()).features,['seo_tools'],'cancel affects only its own feature source');
+eq((await state()).communityAccess,true,'cancel preserves imported community');
+eq((await state()).courseIds.sort(),[course,certification].sort(),'cancel preserves imported certification and independent course');
+await db.query("insert into academy_feature_grants(academy_community_id,academy_member_id,feature_key,source_type,source_key) values($1,$2,'measuring_tool','manual','comped')",[community,member]);
+await apply(tool,member,'past_due','stripe_subscription','sub_measure');
+eq((await state()).features,['measuring_tool','seo_tools'],'past due does not revoke manual feature grant');
+await apply(tool,member,'active','stripe_subscription','sub_seo',new Date(Date.now()+86400000).toISOString());
+eq((await state()).features,['measuring_tool'],'subscription plan switch retires former source feature');
+await apply(tool,member,'active','stripe_subscription','sub_late',new Date(Date.now()-86400000).toISOString());
+eq((await db.query("select status from academy_feature_grants where source_key='sub_late'")).rows[0].status,'expired','late already-ended event grants no access');
+await apply(tool,otherMember,'active','stripe_subscription','sub_other',new Date(Date.now()+86400000).toISOString());
+eq((await state(other)).hasAccess,true,'feature-only account enters app');
+eq((await state(other)).communityAccess,false,'feature-only account cannot enter community');
+eq((await state(other)).features,['measuring_tool'],'feature-only features are scoped');
+await apply(membership,otherMember,'active','stripe_subscription','sub_base',new Date(Date.now()+86400000).toISOString());
+eq((await state(other)).communityAccess,true,'base membership payment enables community');
+eq((await state(other)).courseIds,[certification],'base membership enables only certification');
+await apply(membership,otherMember,'cancelled','stripe_subscription','sub_base');
+eq((await state(other)).communityAccess,false,'base cancellation removes its community grant');
+eq((await state(other)).courseIds,[],'base cancellation removes only its bundled certification');
+eq((await state(other)).features,['measuring_tool'],'independent tool survives base cancellation when no prerequisite configured');
+eq((await state(other)).hasAccess,true,'tool-only subscriber still enters app after base cancellation');
+await apply(tool,otherMember,'active','stripe_subscription','sub_other',new Date(Date.now()+86400000).toISOString());
+eq((await db.query("select count(*)::int n from academy_feature_grants where source_key='sub_other'")).rows[0].n,1,'repeated webhook does not duplicate grant');
+await reject(apply(tool,otherMember,'active','stripe_subscription','sub_measure'),'source cannot move across members');
+await reject(apply(unmapped,member,'active','stripe_payment','pi_unmapped'),'webhook cannot grant unmapped offer');
+const overview=(await as('authenticated',user,'select get_academy_billing_overview() r'))[0].r;
+eq(overview.subscriptions.length,4,'overview retains independent purchase histories');
+eq(overview.subscription.id,overview.subscriptions[0].id,'legacy single purchase field remains compatible');
+eq(overview.plans.find(p=>p.id===tool).canPurchase,false,'overview marks owned upgrades unavailable');
+for(const fn of ['get_academy_checkout_eligibility(uuid,text,uuid)','reserve_academy_checkout(uuid,text,uuid,uuid)','apply_academy_billing_event(uuid,uuid,text,text,text,text,boolean,timestamptz,text,text,text)']) for(const role of ['anon','authenticated']) {
+ eq((await db.query('select has_function_privilege($1,$2,\'execute\') allowed',[role,fn])).rows[0].allowed,false,'service RPC authorization');
+}
+for(const table of ['academy_feature_grants','academy_billing_plan_features']) for(const role of ['anon','authenticated']) {
+ await reject(as(role,user,`insert into ${table} default values`),'clients cannot self-grant paid access');
+}
+const request=uuid();
+const reserve=async(pid,rid=request,uid=user)=>(await as('service_role',null,'select reserve_academy_checkout($1,$2,$3,$4) r',[pid,uid+'@example.test',rid,uid]))[0].r;
+await db.query('delete from academy_access_grants where course_id=$1 and source_type=\'stripe_payment\'',[course]);
+eq((await reserve(upgrade)).blocked,false,'reservation allows upgrade for imported member');
+eq((await reserve(upgrade)).blocked,false,'same checkout request is idempotent');
+eq((await reserve(upgrade,uuid())).reason,'checkout_in_progress','independent open checkout cannot duplicate charge');
+await db.query('update academy_checkout_reservations set checkout_session_id=$1 where request_id=$2',['cs_pi_fulfill',request]);
+await apply(upgrade,member,'active','stripe_payment','pi_fulfill');
+eq((await db.query('select count(*)::int n from academy_checkout_reservations where request_id=$1',[request])).rows[0].n,0,'paid checkout releases exact reservation');
+const nextRequest=uuid();
+eq((await reserve(seo,nextRequest)).blocked,false,'member can immediately buy an independent upgrade after payment');
+await db.query("update academy_checkout_reservations set checkout_session_id='cs_newer' where request_id=$1",[nextRequest]);
+await apply(upgrade,member,'active','stripe_payment','pi_fulfill');
+eq((await db.query('select count(*)::int n from academy_checkout_reservations where request_id=$1',[nextRequest])).rows[0].n,1,'replayed old payment cannot erase newer reservation');
+await grant(member,course);
+eq((await reserve(upgrade)).reason,'existing_access','reservation rechecks entitlement even for resumed checkout');
+await db.query("update courses set status='draft' where id=$1",[course2]);
+eq((await eligibility(bundle)).reason,'invalid_plan','unpublished mapped content unavailable');
+await db.query("update courses set status='published' where id=$1",[course2]);
+await db.query('insert into academy_course_access_denials(academy_community_id,academy_member_id,course_id) values($1,$2,$3)',[community,member,course]);
+eq((await eligibility(upgrade)).reason,'resource_unavailable','denied member cannot pay to bypass course restriction');
+// Measurement writes cover the direct Data API and saved estimate RPC.
+const property=uuid();
+await db.query("insert into properties(id,organization_id,name,created_by) values($1,$2,'Test property',$3)",[property,userOrg,user]);
+const measurement=uuid();
+await as('authenticated',user,"insert into measurements(id,organization_id,property_id,method,square_feet,created_by) values($1,$2,$3,'map',100,$4)",[measurement,userOrg,property,user]);
+eq((await as('authenticated',user,'select id from measurements where id=$1',[measurement])).length,1,'entitled member can save map measurement');
+await db.query("update academy_feature_grants set status='expired' where academy_member_id=$1",[member]);
+await reject(as('authenticated',user,"insert into measurements(organization_id,property_id,method,square_feet,created_by) values($1,$2,'camera',100,$3)",[userOrg,property,user]),'expired camera blocked at table');
+await reject(as('authenticated',user,'update measurements set square_feet=200 where id=$1',[measurement]),'expired map modification blocked at table');
+await reject(as('authenticated',user,"update measurements set method='manual' where id=$1",[measurement]),'method flip cannot bypass expired measured record guard');
+await reject(as('authenticated',user,"select create_infill_calculation('Map',100,0.25,1,'map')"),'estimate RPC rolls back without measuring entitlement');
+eq((await as('authenticated',user,'select id from measurements where id=$1',[measurement])).length,1,'saved measurements remain readable');
+await as('authenticated',user,"select create_infill_calculation('Manual',100,0.25,1,'manual')");assertions++;
+await db.query('update academy_communities set pricing_gates_enabled=false where id=$1',[community]);
+await as('authenticated',user,"select create_infill_calculation('Map',100,0.25,1,'map')");assertions++;
+await db.query('update academy_communities set pricing_gates_enabled=true where id=$1',[community]);
+await db.query("update academy_members set status='suspended' where id=$1",[member]);
+eq((await state()).hasAccess,false,'suspended member has no app access');
+eq((await state()).memberId,null,'suspended identity does not expose upgrade checkout eligibility');
+eq((await state()).pricingGatesEnabled,true,'suspension cannot erase pricing context');
+await reject(as('authenticated',user,"select create_infill_calculation('Map',100,0.25,1,'map')"),'suspended member cannot bypass measurement gate');
+eq((await eligibility(tool)).reason,'invalid_identity','suspended member cannot purchase around suspension');
+const unclaimedUser=uuid();
+await db.query('insert into auth.users(id,email) values($1,$2)',[unclaimedUser,unclaimedUser+'@example.test']);
+const standaloneOrg=(await db.query('select id from organizations where created_by=$1',[unclaimedUser])).rows[0].id;
+const standaloneProperty=uuid();
+await db.query("insert into properties(id,organization_id,name,created_by) values($1,$2,'No Academy',$3)",[standaloneProperty,standaloneOrg,unclaimedUser]);
+eq((await state(unclaimedUser)).pricingGatesEnabled,true,'missing Academy identity does not imply disabled billing after cutover');
+await reject(as('authenticated',unclaimedUser,"insert into measurements(organization_id,property_id,method,square_feet,created_by) values($1,$2,'map',100,$3)",[standaloneOrg,standaloneProperty,unclaimedUser]),'standalone organization identity cannot bypass gated measurements');
+await reject(as('authenticated',unclaimedUser,"insert into academy_communities(owner_organization_id,name,slug,portal_url) values($1,'Spoofed Academy','self-created-free-tools','https://example.test')",[standaloneOrg]),'personal organization owner cannot mint Academy manager feature access');
+const anotherCommunity=uuid();
+await db.query("insert into academy_communities(id,owner_organization_id,name,slug,portal_url) values($1,$2,'Other','other-test','https://example.test')",[anotherCommunity,org]);
+await reject(db.query("insert into academy_feature_grants(academy_community_id,academy_member_id,feature_key,source_type,source_key) values($1,$2,'measuring_tool','manual','wrong-community')",[anotherCommunity,member]),'feature grants enforce community scope');
+eq((await state(owner)).features,['measuring_tool','seo_tools'],'community manager retains administrative preview access');
+await db.close();
+console.log(`Pricing gates SQL: ${assertions} assertions passed against ${migrations.length} actual migrations. No live changes.`);

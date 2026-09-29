@@ -39,3 +39,37 @@ describe("membership purchase boundaries", () => {
     expect(await membershipRequestId("plan-1", "member@example.com", storage)).not.toBe(first);
   });
 });
+
+import { planOwned, planPurchaseState } from "./membershipBilling";
+import type { AccessState } from "./academyAccess";
+const member: AccessState = { status: "member", canManage: false, pricingGatesEnabled: true, communityAccess: true, courseIds: ["cert"], features: [] };
+const courseOffer = { ...plan, offerKind: "course" as const, billingInterval: "one_time" as const, courseIds: ["full"], featureKeys: [] };
+const toolOffer = { ...plan, offerKind: "tool" as const, courseIds: [], featureKeys: ["measuring_tool"] };
+describe("independent offers", () => {
+  it("recognizes free existing membership without granting the paid upgrades", () => {
+    expect(planOwned({ ...plan, offerKind: "membership" }, member)).toBe(true);
+    expect(planPurchaseState(courseOffer, member)).toBe("available");
+    expect(planPurchaseState(toolOffer, member)).toBe("available");
+    expect(planPurchaseState({ ...courseOffer, courseIds: ["cert"] }, member)).toBe("owned");
+    expect(planPurchaseState(toolOffer, { ...member, features: ["measuring_tool"] })).toBe("owned");
+  });
+  it("requires account verification for upgrades and never sells on a lookup failure", () => {
+    expect(planPurchaseState(courseOffer, { status: "signed_out" })).toBe("sign_in");
+    expect(planPurchaseState(plan, { status: "signed_out" })).toBe("available");
+    expect(planPurchaseState(plan, { status: "error" })).toBe("unavailable");
+    expect(planPurchaseState(toolOffer, { status: "loading" })).toBe("unavailable");
+    expect(planPurchaseState({ ...toolOffer, requiresMembership: true }, { ...member, communityAccess: false })).toBe("membership_required");
+  });
+  it("allows independent upgrades for verified members without an active base subscription", () => {
+    const identity: AccessState = { status: "no_access", hasMemberIdentity: true };
+    expect(planPurchaseState(courseOffer, identity)).toBe("available");
+    expect(planPurchaseState(toolOffer, identity)).toBe("available");
+    expect(planPurchaseState({ ...toolOffer, requiresMembership: true }, identity)).toBe("membership_required");
+    expect(planPurchaseState(courseOffer, { status: "no_access" })).toBe("unavailable");
+  });
+  it("requires course/tool mappings and hides unbuilt SEO tools", () => {
+    for (const malformed of [{ ...courseOffer, courseIds: [] }, { ...toolOffer, featureKeys: [] }, { ...courseOffer, requiresMembership: "yes" }]) expect(() => parseMembershipCatalog({ enabled: true, plans: [malformed] })).toThrow();
+    expect(parseMembershipCatalog({ enabled: true, plans: [{ ...toolOffer, featureKeys: ["seo_tools"] }] }).plans).toEqual([]);
+    expect(parseMembershipCatalog({ enabled: true, plans: [toolOffer] }).plans).toEqual([toolOffer]);
+  });
+});

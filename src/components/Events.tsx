@@ -1,17 +1,26 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CalendarDays, Check, Clock3, ExternalLink, Radio, Users } from "lucide-react";
 import type { AcademyEvent } from "../domain";
 import { academyEventStatus } from "../lib/eventTiming";
 
 type Props = {
   events: AcademyEvent[];
+  requestedEventCloudId?: string;
+  onRequestedEventOpened?: () => void;
   onEventsChange: (events: AcademyEvent[]) => void;
   onToggleRsvp: (event: AcademyEvent) => Promise<boolean | null>;
   onToast: (message: string) => void;
 };
 
-export function EventsView({ events, onEventsChange, onToggleRsvp, onToast }: Props) {
+export function EventsView({ events, requestedEventCloudId, onRequestedEventOpened, onEventsChange, onToggleRsvp, onToast }: Props) {
   const [now, setNow] = useState(Date.now);
+  const requestedEventRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!requestedEventCloudId || !requestedEventRef.current) return;
+    requestedEventRef.current.scrollIntoView({ block: "center" });
+    requestedEventRef.current.focus({ preventScroll: true });
+    onRequestedEventOpened?.();
+  }, [requestedEventCloudId, events, onRequestedEventOpened]);
   useEffect(() => {
     const updateTime = () => setNow(Date.now());
     const timer = window.setInterval(updateTime, 1000);
@@ -50,7 +59,8 @@ export function EventsView({ events, onEventsChange, onToggleRsvp, onToast }: Pr
       <section className="event-list">
         {events.map((event) => {
           const status = academyEventStatus(event, now);
-          return <article className="event-card" key={event.id}>
+          const requested = event.cloudId === requestedEventCloudId && Boolean(requestedEventCloudId);
+          return <article className={requested ? "event-card requested-event" : "event-card"} key={event.id} ref={requested ? requestedEventRef : undefined} tabIndex={requested ? -1 : undefined} aria-label={requested ? `Selected event: ${event.title}` : undefined}>
           <div className="event-date"><strong>{event.date.split(" ")[1]}</strong><span>{event.date.split(" ")[0]}</span></div>
           <div className="event-content">
             <span className="event-kind"><Radio size={13} /> {status === "past" ? "Past session" : status === "live" ? "Live now" : event.kind.replace("-", " ")}</span>

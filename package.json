@@ -37,7 +37,9 @@
     "supabase:start": "supabase start",
     "supabase:reset": "supabase db reset",
     "supabase:functions": "supabase functions serve --env-file .env.local",
-    "academy:capture-courses": "node scripts/capture-ghl-courses.mjs"
+    "academy:capture-courses": "node scripts/capture-ghl-courses.mjs",
+    "academy:sync-baseline": "node scripts/prepare-course-sync-baseline.mjs",
+    "academy:email-previews": "node scripts/preview-academy-emails.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",
