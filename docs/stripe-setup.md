@@ -1,5 +1,7 @@
 # Stripe setup for Dirty Turf Academy
 
+The September 28 owner pricing is captured in [Academy pricing](academy-pricing.md) and `academy-pricing.draft.json`. Keep that catalog inactive until the included certification content, paid upgrades, tool entitlements and Stripe mappings are verified.
+
 ## What Steve needs to do
 
 1. Sign in to **Dirty Turf's Stripe account** and finish any business or payout verification Stripe requests.
