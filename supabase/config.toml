@@ -61,3 +61,7 @@ verify_jwt = false
 # Scheduler secret is checked by the function before any work.
 [functions.academy-course-sync]
 verify_jwt = false
+
+# Outbound GHL workflow secret is checked before reading or storing payloads.
+[functions.academy-community-sync]
+verify_jwt = false

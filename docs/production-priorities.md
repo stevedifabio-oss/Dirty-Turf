@@ -1,43 +1,36 @@
 # Dirty Turf production priorities
 
-> Later activation update: see [activation-status-2026-09-29.md](activation-status-2026-09-29.md). Course sync, whole-Academy membership checkout and measuring-tool checkout are now active; earlier disabled-state observations below are historical.
+Updated September 29, 2026. Retained at the owner's request.
 
-Updated September 29, 2026. User explicitly asked to retain and complete this list.
+## Current state
 
-## Current release snapshot (September 29)
+- Automatic GHL course updates run every five minutes: 1 course,36 modules,128 lessons. Eleven production runs observed: one applied,ten unchanged. All109 published lessons have content.
+- Stripe membership ($39.99/month,whole current Academy) and measuring tool ($29.95/month) checkout are active. Existing members retain their free Academy/community access. No paid transaction has been executed.
+- Branded community email delivery is enabled through the existing GHL/Mailgun connection. No new Mailgun login is required. No test or bulk email has been sent; inbox receipt remains unverified.
+- Community sync storage/receiver are deployed; native GHL post/comment triggers now capture privately. Actual content application awaits a real payload adapter. See [community-sync.md](community-sync.md).
+- Apple build12 is Testing in TestFlight; Android build7 is available to internal testers. Public releases were submitted for review and configured for automatic release on approval. Store approval and newest-build physical-device acceptance remain separate gates.
+- GitHub merge triggers the web deployment. Never request a separate manual Netlify deployment.
 
-See `release-status-2026-09-29.md` for verified evidence. PR 21 is merged and the latest web app is live through the automatic GitHub/Netlify build. Android build 7 is available to internal testers and submitted for public production review. Apple build 12 is Testing in both TestFlight groups and Waiting for Review for the public App Store. Both stores are set to release automatically after approval. Five database migrations and seven Edge Functions are deployed through the Supabase connector; payments, automatic GHL source sync and member email delivery remain disabled pending their activation checks.
+## Remaining work
 
-## Confirmed
-- Steve reports Android login now works on his phone.
-- Latest UI, pricing infrastructure, course refresh and email infrastructure shipped through PR 21; 291 tests passed. Public live smoke checks passed.
-- Continue releases through GitHub; do not request manual Netlify deployments.
-
-## Work queue
-| Priority | Work | Status / next acceptance gate |
+| Priority | Work | Exact acceptance gate |
 |---|---|---|
-|1|Automatic GHL course/community updates|Active investigation and implementation. Existing import is a snapshot; Sept 24 documented course-read APIs now work with existing token. Exact-course reader implemented and live-verified: 1 course, 36 source categories, 128 lessons. All 128 existing lesson IDs present. Conflict-aware sync infrastructure is deployed, but baseline validation, configuration and scheduler activation remain pending. GHL draft post trigger scoped to 7 Figure Turf Cleaning saved inactive; visible post variables are title/content/group/channel only, with no ID or attachment field. Need actual payload verification for stable identities, replies and media before enablement.|
-|2|Latest Apple/Android releases|Android 7 available internally and submitted for production review; Apple 12 Testing in TestFlight and Waiting for Review. Matching web assets verified in both binaries. Installed-device acceptance of these newest builds remains pending.|
-|3|Stripe payment integration|Live account connected and five inactive products/prices, portal, branding and Google Pay configured. Checkout stays disabled pending course mapping, bank account, runtime secrets, webhook registration and payment/access verification; backend functions are deployed. Never create duplicate subscriptions for existing members.|
-|4|Member access reconciliation|Live Sept 26 read-only check: 62 active memberships; 1 active manually-added member has pending invite, no auth account and 1 active enrollment. Separate cancelled historical record has no enrollment. This is not an unlinked imported GHL member. Identify intended pending invite before provision.|
-|5|Upcoming events|Live calendar has 5 past events. Need real next date/time/timezone/meeting details before publishing.|
-|6|All course media/downloads|Check every published lesson and imported asset, not just samples. Preserve existing private media during source updates.|
+|1|Community post/comment synchronization|Capture real native post/comment/reply events, map stable IDs and media, then verify app appearance and duplicate suppression. Backend tests and private transport pass; source payload mapping is pending. Edit/delete support is not established.|
+|2|Store releases and installed devices|Check approval of Apple12/Android7; verify current builds on the owner's iPhone and Steve's Android. Backend content updates already use their shared database.|
+|3|Stripe fulfillment|Owner must complete the payout bank requirement. Controlled paid purchase/access/cancellation and refund verification remain pending; no charge is authorized. Preserve existing subscriptions and imported grants.|
+|4|Email delivery acceptance|One authorized internal notification, inbox rendering, unsubscribe and app destination verification. Three unmapped accounts require deliberate GHL contact mapping before delivery.|
+|5|Media/download audit|All published lessons have content; complete authenticated playback/download verification is still needed. Preserve private mirrored assets during sync.|
+|6|Upcoming events|Five imported events are past. Publish only after real upcoming date,time,timezone and meeting details are supplied.|
+|7|Additional paid courses/tools|Tile/grout and pavers/travertine courses are absent. Keep their offers unavailable. SEO/CRM remain future products. Whole current Turf Academy is included in membership, so do not sell a duplicate course upgrade.|
 
-## Sync design
-GHL owns imported course content. App member progress, native discussions, moderation and app-owned fields remain protected. One-way GHL -> app is the initial design; two-way mirroring is not enabled. Imported posts/comments keep stable source IDs and parents. Poll course data on a server schedule; use documented community workflow triggers for new activity where payloads are sufficient. Hold edit/delete/media coverage gaps and conflicts for review; do not guess missing records are deletions.
+## Ownership rules
 
-Acceptance: create/edit/reorder/move lesson, replace attachment, new post/comment/reply, duplicate/out-of-order webhook, local edit conflict, disabled access and failed-run retry; show last successful sync and actionable errors. No automatic production application is enabled yet.
+One-way GHL to app only. Member progress, app discussions, moderation, account access and existing billing stay protected. Unsupported or conflicting source content is held for review. Receiving a webhook is not proof of a working mirror.
 
 ## Stripe text for Steve — draft only
-Hey Steve, the Stripe products, prices, billing portal and branding are set up. Stripe still needs your payout bank account: open Settings → Business → Account status → Provide an external account → Start. Please complete that directly in Stripe. We’re keeping existing members’ billing intact and will finish payment/access verification before turning on sales.
 
-## References
-- https://marketplace.gohighlevel.com/docs/Changelog/ (September 24 course read APIs)
-- https://marketplace.gohighlevel.com/docs/ghl/courses/list-courses/
-- https://ideas.gohighlevel.com/changelog/new-communities-triggers-in-workflows-automate-more-faster
+Hey Steve, the $39.99/month Academy membership and $29.95/month measuring tool checkout are connected. Existing members keep their free Academy/community access. Stripe still needs your payout bank account: open Settings → Business → Account status → Provide an external account → Start, and complete that directly in Stripe. We still need to verify one paid purchase and cancellation end to end.
 
-## Implemented sync foundation (September 26)
-- `npm run academy:capture-courses -- --env-file <protected-env> --manifest <existing-private-import.json> --output output/private/<new-name>.json` reads only allowlisted courses from official endpoints and saves owner-only snapshots. It never applies changes.
-- Reader validates pagination, duplicates and missing imported lessons, follows no redirects and has bounded rate-limit retries. Quiz internals, media binaries, enrollments/progress and community are explicitly outside this capture.
-- Import batching now retains original course/module/lesson ordering. Read-only production audit found 21 modules sharing 6 positions and 7 modules with duplicate lesson positions; compare against source before a focused repair. Fix is in source, not yet deployed as an Edge Function.
-- Workflow draft: https://app.gohighlevel.com/v2/location/eqVZcs8fro8qiGD2sgoG/automation/workflow/57bf209d-11ca-475a-ad8e-5aff6b22ce4e . Name: Dirty Turf app sync — DRAFT, NOT ACTIVE. Post-created trigger only, exact Academy group filter, no outbound action or publication.
+## Evidence
+
+[Activation details](activation-status-2026-09-29.md), [store release evidence](release-status-2026-09-29.md), [community implementation and remaining gates](community-sync.md).
