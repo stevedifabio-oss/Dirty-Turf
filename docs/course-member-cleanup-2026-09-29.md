@@ -11,7 +11,7 @@
 
 63 records: 61 active members have linked login accounts; one active member has an existing pending manual invitation; one cancelled member remains as a historical author.
 
-- Ralph has a saved invitation for Rangel Janitorial. He is a manually added member, with no GHL import mapping, no linked login and no course grants. Creating his login is pending the requested owner confirmation. No invitation email was sent.
+- Ralph has a saved invitation for Rangel Janitorial. He is a manually added member, with no GHL import mapping and no linked login. His existing course assignment is retained. Creating his login is pending the requested owner confirmation. No invitation email was sent.
 - Derek Baca is explicitly cancelled in the imported source record and is retained for historical comment attribution. His absence from active sign-in provisioning is intentional.
 - No member, invitation, access grant, progress record, source content or historical discussion was deleted or reassigned.
 
