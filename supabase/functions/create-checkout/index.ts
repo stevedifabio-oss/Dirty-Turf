@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { loadRuntimeConfig } from "../_shared/runtime-config.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import Stripe from "npm:stripe@22.6.2";
 import { isUuid } from "../_shared/billing.ts";
@@ -30,10 +31,21 @@ Deno.serve(async (request) => {
   }
   const url = Deno.env.get("SUPABASE_URL");
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const secret = Deno.env.get("STRIPE_SECRET_KEY");
+  if (!url || !key) {
+    return jsonResponse(request, { error: "Billing is not configured" }, {
+      status: 503,
+    });
+  }
+  const admin = createClient(url, key, { auth: { persistSession: false } });
+  const runtime = await loadRuntimeConfig(admin, [
+    "STRIPE_SECRET_KEY",
+    "STRIPE_MODE",
+    "STRIPE_CHECKOUT_ENABLED",
+  ], (name) => Deno.env.get(name));
+  const secret = runtime.STRIPE_SECRET_KEY;
   const config = billingConfiguration(
-    Deno.env.get("STRIPE_CHECKOUT_ENABLED"),
-    Deno.env.get("STRIPE_MODE"),
+    runtime.STRIPE_CHECKOUT_ENABLED,
+    runtime.STRIPE_MODE,
     secret,
   );
   if (!config.enabled || !url || !key || !secret) {
@@ -54,7 +66,6 @@ Deno.serve(async (request) => {
       error: "A valid planId and requestId are required",
     }, { status: 422 });
   }
-  const admin = createClient(url, key, { auth: { persistSession: false } });
   let email = checkoutEmail(body.email);
   let userId: string | undefined;
   const authorization = request.headers.get("authorization");

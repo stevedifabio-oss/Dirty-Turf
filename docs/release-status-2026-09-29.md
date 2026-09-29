@@ -1,5 +1,7 @@
 # Release status — September 29, 2026
 
+> Later activation update: see [activation-status-2026-09-29.md](activation-status-2026-09-29.md). Course sync, whole-Academy membership checkout and measuring-tool checkout are now active; earlier disabled-state observations below are historical.
+
 ## Web — live
 
 - [PR 21](https://github.com/stevedifabio-oss/Dirty-Turf/pull/21) merged through the GitHub connector as Steve. Main release commit: `4d14343cfe4e007412b508aa4c417f3b8f7fe9a1`.

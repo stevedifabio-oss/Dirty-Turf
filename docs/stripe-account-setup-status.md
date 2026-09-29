@@ -1,5 +1,7 @@
 # Stripe setup — September 29, 2026
 
+> Later activation update: see [activation-status-2026-09-29.md](activation-status-2026-09-29.md). Course sync, whole-Academy membership checkout and measuring-tool checkout are now active; earlier disabled-state observations below are historical.
+
 Verified using the Stripe plugin against Dirty Turf account `acct_1UGVbZRfnCxS2laI` in **live mode**. No sandbox was exposed by the connection. No charges or customer subscription changes were made.
 
 ## Created and read back

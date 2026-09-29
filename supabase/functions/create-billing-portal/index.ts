@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { loadRuntimeConfig } from "../_shared/runtime-config.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import Stripe from "npm:stripe@22.6.2";
 import { billingConfiguration } from "../_shared/checkout.ts";
@@ -21,13 +22,27 @@ Deno.serve(async (request) => {
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const stripeSecret = Deno.env.get("STRIPE_SECRET_KEY");
-  const portalConfigurationId = Deno.env.get("STRIPE_PORTAL_CONFIGURATION_ID");
+  if (!supabaseUrl || !serviceRoleKey) {
+    return Response.json({ error: "Billing is not configured" }, {
+      status: 503,
+    });
+  }
+  const admin = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false },
+  });
+  const runtime = await loadRuntimeConfig(admin, [
+    "STRIPE_SECRET_KEY",
+    "STRIPE_MODE",
+    "STRIPE_PORTAL_CONFIGURATION_ID",
+  ], (name) => Deno.env.get(name));
+  const stripeSecret = runtime.STRIPE_SECRET_KEY;
+  const portalConfigurationId = runtime.STRIPE_PORTAL_CONFIGURATION_ID;
   const authorization = request.headers.get("authorization");
   if (
     !supabaseUrl || !serviceRoleKey || !stripeSecret ||
-    !portalConfigurationId || !/^bpc_[A-Za-z0-9]+$/.test(portalConfigurationId) ||
-    !billingConfiguration("true", Deno.env.get("STRIPE_MODE"), stripeSecret)
+    !portalConfigurationId ||
+    !/^bpc_[A-Za-z0-9]+$/.test(portalConfigurationId) ||
+    !billingConfiguration("true", runtime.STRIPE_MODE, stripeSecret)
       .enabled
   ) {
     return jsonResponse(request, { error: "Billing is not configured" }, {
@@ -40,9 +55,6 @@ Deno.serve(async (request) => {
     });
   }
 
-  const admin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false },
-  });
   const { data: userData, error: userError } = await admin.auth.getUser(
     authorization.slice(7),
   );

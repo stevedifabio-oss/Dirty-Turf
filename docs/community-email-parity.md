@@ -1,6 +1,10 @@
-# Community email parity — local build, held for Stripe
+# Community email parity
 
-Nothing in this change has been pushed, deployed, scheduled remotely, or emailed to a member. The preview catalog contains **38 synthetic emails**. Regenerate it with `node scripts/preview-academy-emails.mjs`, then open `output/email-preview/index.html`.
+The templates, triggers and Edge Function were deployed on September 29. Supabase Auth continues using the existing Mailgun SMTP account. Community notifications now reuse the existing HighLevel email connection, whose default provider is the verified `mail.dirtyturf.com` Mailgun domain. The worker is active with a five-minute schedule and cutover at **2026-09-29 20:39:07 UTC**. Five historical deliveries remain cancelled. No test or bulk campaign was sent. Provider inbox delivery remains unverified until a real future notification is accepted and received.
+
+The HighLevel transport requires a pre-existing imported contact, then verifies its contact ID, location and current primary email against the prepared app recipient. It respects HighLevel DND plus app notification preferences. Missing/mismatched mappings become explicit failed deliveries requiring review; no contact is created or guessed. There are 60 imported mappings for 63 app members. Branded HTML and signed body unsubscribe links are preserved. HighLevel's API does not expose custom List-Unsubscribe headers or per-message tracking settings; those remain provider-managed. The original Mailgun API transport remains available through `ACADEMY_EMAIL_PROVIDER=mailgun`.
+
+The preview catalog contains **38 synthetic emails**. Regenerate it with `node scripts/preview-academy-emails.mjs`, then open `output/email-preview/index.html`.
 
 ## Brand styling
 
@@ -42,7 +46,7 @@ The protected producer is `queue_academy_lifecycle_email(...)`, executable only 
 
 ## Delivery safeguards
 
-- Both the Edge Function `ACADEMY_EMAIL_DELIVERY_ENABLED` flag and `private.academy_email_cutover.enabled` default off. In-app alerts continue while email is off. No pre-cutover backlog is created for later replay; the migration retires old pending/processing deliveries.
+- Both the Edge Function `ACADEMY_EMAIL_DELIVERY_ENABLED` flag and `private.academy_email_cutover.enabled` default off and are now explicitly activated in production. In-app alerts continue while email is off. No pre-cutover backlog is created for later replay; the migration retires old pending/processing deliveries.
 - Imported historical records and the initial course synchronization produce no email blast. The course worker enables subsequent source publication notifications only after its baseline succeeds. Content edits preserve progress and do not email every learner on each poll.
 - Recipient email comes from the currently bound Auth user, never a stale GHL invite or Stripe billing address. Unclaimed imported accounts require the separate invitation process. No marketing email is guessed from display names.
 - Access, target visibility, preferences, changed email addresses, blocks, unfollows and RSVP existence are checked again when claiming and immediately before provider submission. Course-only access works without assuming a community grant. Membership-removal/cancellation notices may reach their own inactive account without leaking protected content.
@@ -51,14 +55,14 @@ The protected producer is `queue_academy_lifecycle_email(...)`, executable only 
 - Preference unsubscribe uses a signed token; GET previews confirmation, POST applies the change. The endpoint stays available even while dispatch is disabled. Queued pending/processing messages for that category are cancelled.
 - Claims use locks and idempotency keys. A provider timeout, 5xx, missing acceptance ID, process crash, or database failure after acceptance is held for manual provider-log review rather than automatically resent. Mailgun has no guaranteed message idempotency contract here; exactly-once delivery cannot be promised across provider/network failure.
 
-## Cutover — prepared instructions, not executed
+## Cutover procedure and recovery
 
-1. Keep the release held until the Stripe details arrive. Complete staging payment/access tests first. Prepare the production backend before pushing the website: this frontend depends on the new course visibility and notification timezone columns.
-2. Apply course-sync and email migrations; deploy the named functions. Keep `ACADEMY_EMAIL_DELIVERY_ENABLED=false`. Do not change unrelated functions or schedules.
-3. Configure `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, `MAILGUN_FROM_EMAIL`, `MAILGUN_FROM_NAME`, `MAILGUN_REGION`, `APP_URL`, `NOTIFICATION_DISPATCH_SECRET`, and `NOTIFICATION_SIGNING_SECRET` as server-only secrets. Keep the existing `/unsubscribe` route accessible. The worker uses its custom `x-notification-secret` header; its existing `verify_jwt=false` setting is required for cron/unsubscribe.
+1. Release authorization is in place. The web and backend deployment is complete; payment lifecycle notices still require verified payment events.
+2. Course-sync and email migrations and named functions are deployed. Future notification delivery is enabled. Disable `ACADEMY_EMAIL_DELIVERY_ENABLED` to stop dispatch immediately. Do not change unrelated functions or schedules.
+3. Active production provider: `ACADEMY_EMAIL_PROVIDER=ghl`, `GHL_PRIVATE_INTEGRATION_TOKEN`, `GHL_LOCATION_ID`, `GHL_EMAIL_FROM` with existing HighLevel email scopes/provider. For the alternate direct Mailgun provider, configure `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, `MAILGUN_FROM_EMAIL`, `MAILGUN_FROM_NAME`, `MAILGUN_REGION`, `APP_URL`, `NOTIFICATION_DISPATCH_SECRET`, and `NOTIFICATION_SIGNING_SECRET` as server-only secrets. Keep the existing `/unsubscribe` route accessible. The worker uses its custom `x-notification-secret` header; its existing `verify_jwt=false` setting is required for cron/unsubscribe.
 4. Verify the disabled backend, apply the guarded course baseline, and then push through GitHub for the automatic web build and prepare the native release. Verify one internal member's consent/preferences, recipient identity, event/course targets and the existing GHL notification configuration. Stop the matching GHL email families before enabling this sender to prevent duplicate notifications. Do not blindly enable both systems.
 5. Set the DB cutover time **at activation**, then turn on the Edge Function flag. Old pending mail remains cancelled. Run one controlled internal event and verify delivery + unsubscribe + target opens on web/iPhone/Android before broad cutover.
-6. Use the existing scheduler recipe in `docs/release-runbook.md` (Vault secrets and `pg_net`) for the `academy-notification-dispatch` job every five minutes. Inspect existing jobs first and update that job instead of creating a duplicate. Do not enable this job before cutover. The reminder catch-up window is 15 minutes; a longer outage intentionally does not send late reminders.
+6. Execute `supabase/operations/academy-notification-schedule.sql` (Vault secrets, `pg_cron` and `pg_net`) for the `academy-notification-dispatch` job every five minutes. It refuses to install without active cutover and valid Vault configuration, and reuses the same job name. Do not enable this job before cutover. The reminder catch-up window is 15 minutes; a longer outage intentionally does not send late reminders.
 7. Observe pending/failed/cancelled outbox counts. Review ambiguous provider outcomes individually. Disable the Edge flag to stop dispatch; disable/reset DB cutover before a long pause so old queued content will not replay at the next activation.
 
 ## Verification

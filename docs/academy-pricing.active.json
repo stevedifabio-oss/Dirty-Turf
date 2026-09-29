@@ -1,0 +1,169 @@
+{
+  "currency": "usd",
+  "currency_assumption": "USD; existing matching Stripe prices are USD.",
+  "status": "membership_and_measuring_active",
+  "checkoutEnabled": true,
+  "existingMembers": {
+    "priceCents": 0,
+    "includes": [
+      "community",
+      "turf_cleaning_certification"
+    ],
+    "eligibility": "Reviewed existing-member roster at cutover; not every future account.",
+    "preservePriorCourseGrants": true
+  },
+  "offers": [
+    {
+      "slug": "community-certification",
+      "name": "Community + Turf Cleaning Academy",
+      "amountCents": 3999,
+      "billingInterval": "month",
+      "kind": "membership",
+      "grants": [
+        "community",
+        "whole_current_turf_cleaning_academy"
+      ],
+      "stripePriceId": "price_1UL6ZaRfnCxS2laIQv4DFpeK",
+      "active": true,
+      "blockers": [],
+      "stripeProductId": "prod_dirtyturf_app_community_certification_v1",
+      "ownerApprovedScope": "Include the whole current Academy, September 29, 2026"
+    },
+    {
+      "slug": "full-turf-cleaning-course",
+      "name": "Full Turf Cleaning Course",
+      "amountCents": 14995,
+      "billingInterval": "one_time",
+      "kind": "course_upgrade",
+      "grants": [
+        "full_turf_cleaning_course"
+      ],
+      "stripePriceId": "price_1UL6ZnRfnCxS2laI6GoVMpYe",
+      "active": false,
+      "blockers": [
+        "whole_current_course_included_in_membership_do_not_double_sell"
+      ],
+      "stripeProductId": "prod_dirtyturf_app_full_turf_cleaning_course_v1"
+    },
+    {
+      "slug": "tile-and-grout-course",
+      "name": "Tile and Grout Cleaning Course",
+      "amountCents": 14995,
+      "billingInterval": "one_time",
+      "kind": "course_upgrade",
+      "grants": [
+        "tile_and_grout_course"
+      ],
+      "stripePriceId": "price_1UL6ZoRfnCxS2laIvHq9zPy3",
+      "active": false,
+      "blockers": [
+        "course_mapping",
+        "sandbox_payment_access_verification"
+      ],
+      "stripeProductId": "prod_dirtyturf_app_tile_and_grout_course_v1"
+    },
+    {
+      "slug": "pavers-and-travertine-course",
+      "name": "Pavers and Travertine Cleaning Course",
+      "amountCents": 14995,
+      "billingInterval": "one_time",
+      "kind": "course_upgrade",
+      "grants": [
+        "pavers_and_travertine_course"
+      ],
+      "stripePriceId": "price_1UL6ZpRfnCxS2laIDgwt6e6N",
+      "active": false,
+      "blockers": [
+        "course_mapping",
+        "sandbox_payment_access_verification"
+      ],
+      "stripeProductId": "prod_dirtyturf_app_pavers_and_travertine_course_v1"
+    },
+    {
+      "slug": "measuring-tool",
+      "name": "Measuring Tool",
+      "amountCents": 2995,
+      "billingInterval": "month",
+      "kind": "tool_addon",
+      "grants": [
+        "measuring_tool"
+      ],
+      "stripePriceId": "price_1UL6ZpRfnCxS2laIoklVoP83",
+      "active": true,
+      "blockers": [],
+      "stripeProductId": "prod_dirtyturf_app_measuring_tool_v1"
+    },
+    {
+      "slug": "seo-tools",
+      "name": "SEO Tools",
+      "amountCents": 14995,
+      "billingInterval": "month",
+      "kind": "tool_addon",
+      "grants": [
+        "seo_tools"
+      ],
+      "stripePriceId": null,
+      "active": false,
+      "blockers": [
+        "tool_scope_and_readiness",
+        "stripe_price_creation",
+        "sandbox_payment_access_verification"
+      ]
+    },
+    {
+      "slug": "turf-cleaning-crm",
+      "name": "Turf Cleaning CRM",
+      "amountCents": 18999,
+      "billingInterval": "month",
+      "kind": "future",
+      "grants": [
+        "turf_cleaning_crm"
+      ],
+      "stripePriceId": null,
+      "active": false,
+      "blockers": [
+        "future_product_do_not_sell"
+      ]
+    }
+  ],
+  "stripeReadOnlyAudit": {
+    "observedOn": "2026-09-28",
+    "activePriceCount": 6,
+    "paginationComplete": true,
+    "matchingMonthly3999Candidates": [
+      {
+        "priceId": "price_1UJfzpRfnCxS2laIdx6d18I4",
+        "productId": "prod_VHHzkj381nsMy4",
+        "productName": "Communities - undefined",
+        "nickname": "Monthly Membership"
+      },
+      {
+        "priceId": "price_1UGjPIRfnCxS2laICjBobLEq",
+        "productId": "prod_VHHzkj381nsMy4",
+        "productName": "Communities - undefined",
+        "nickname": "undefined - Price"
+      },
+      {
+        "priceId": "price_1UGWRoRfnCxS2laIDlBfZmm9",
+        "productId": "prod_VH4bUV2vq2YDeu",
+        "productName": "Communities - undefined",
+        "nickname": "undefined - Price"
+      },
+      {
+        "priceId": "price_1UGWQrRfnCxS2laIjdt3c2ee",
+        "productId": "prod_VH4ZYBNXeaTOye",
+        "productName": "Learning - Turf Cleaning Academy",
+        "nickname": "Price-Turf Cleaning Academy"
+      }
+    ],
+    "matchingAddonPricesFound": false,
+    "note": "Other two active prices are USD 300/month with nickname Test. No prices were created, selected, changed, or archived."
+  },
+  "stripeProvisioning": {
+    "observedOn": "2026-09-29",
+    "mode": "live",
+    "productsActive": true,
+    "portalConfigurationId": "bpc_1UL6a1RfnCxS2laIDBqD3Sxt",
+    "note": "Membership $39.99/month and measuring $29.95/month active. Other offers remain inactive. Existing GHL subscriptions preserved. Live unpaid Checkout creation verified; no actual charge performed."
+  }
+}

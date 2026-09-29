@@ -1,4 +1,5 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { loadRuntimeConfig } from "../_shared/runtime-config.ts";
 import {
   createClient,
   type SupabaseClient,
@@ -34,10 +35,23 @@ Deno.serve(async (request) => {
   }
 
   const signature = request.headers.get("stripe-signature");
-  const webhookSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET");
-  const stripeSecret = Deno.env.get("STRIPE_SECRET_KEY");
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!supabaseUrl || !serviceRoleKey) {
+    return Response.json({ error: "Billing is not configured" }, {
+      status: 503,
+    });
+  }
+  const admin = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false },
+  });
+  const runtime = await loadRuntimeConfig(admin, [
+    "STRIPE_SECRET_KEY",
+    "STRIPE_MODE",
+    "STRIPE_WEBHOOK_SECRET",
+  ], (name) => Deno.env.get(name));
+  const webhookSecret = runtime.STRIPE_WEBHOOK_SECRET;
+  const stripeSecret = runtime.STRIPE_SECRET_KEY;
   if (
     !signature || !webhookSecret || !stripeSecret || !supabaseUrl ||
     !serviceRoleKey
@@ -67,7 +81,7 @@ Deno.serve(async (request) => {
 
   const config = billingConfiguration(
     "true",
-    Deno.env.get("STRIPE_MODE"),
+    runtime.STRIPE_MODE,
     stripeSecret,
   );
   if (!config.enabled || event.livemode !== config.livemode) {
@@ -77,9 +91,6 @@ Deno.serve(async (request) => {
     );
   }
 
-  const admin = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false },
-  });
   const { error: eventError } = await admin.from("integration_events").insert({
     provider: "stripe",
     external_event_id: event.id,
