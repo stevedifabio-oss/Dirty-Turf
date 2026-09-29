@@ -104,6 +104,35 @@ eq((await db.query('select enroll_academy_community_sync($1) r',[cfg])).rows[0].
 eq((await row('community_comments','imported-reply')).parent_id,importedParent);
 eq((await apply(event({entity:'comment',externalId:'imported-reply',postExternalId:'post',sourceUpdatedAt:time(55),body:'Delayed'}))).status,'stale');
 
+// Historical page captures contained avatars/profile links discarded by the importer.
+// Only archive normalization is relaxed; local edits and unknown assets still win.
+const chromeMedia = [
+ {type:'source-asset',url:'https://assetsdrm.clientclub.net/images/client-portal/location/users/member'},
+ {type:'source-asset',url:'https://assetsdrm.clientclub.net/images/communities/location/profile-avatars/3.webp'},
+ {type:'source-asset',url:'https://academy.dirtyturf.com/communities/users/member'},
+];
+const realMedia = [{type:'source-asset',url:'https://assetsdrm.clientclub.net/images/communities/location/posts/photo.webp'}];
+for (const [ext,live,archive,expected] of [
+ ['cleaned-empty',[],chromeMedia,'highlevel'],
+ ['cleaned-image',[{...realMedia[0],storage_path:'private/image.webp'}],[chromeMedia[0],...realMedia,...chromeMedia.slice(1)],'highlevel'],
+ ['removed-image',[],[...chromeMedia,...realMedia],'local'],
+ ['added-avatar',chromeMedia,chromeMedia,'local'],
+ ['changed-image',[{...realMedia[0],url:'https://example.com/changed.webp'}],[...chromeMedia,...realMedia],'local'],
+ ['lookalike-host',[],[{type:'source-asset',url:'https://assetsdrm.clientclub.net.example.com/profile-avatars/3.webp'}],'local'],
+ ['query-path',[],[{type:'source-asset',url:'https://assetsdrm.clientclub.net/photo.webp?path=/profile-avatars/3.webp'}],'local'],
+ ['unknown-url',[],[{type:'source-asset',url:'unknown'}],'local'],
+]) {
+ const id=uuid();
+ await db.query("insert into community_posts(id,organization_id,academy_community_id,academy_author_id,title,body,external_id,source_provider,source_import_batch_id,media) values($1,$2,$3,$4,'Imported','Original content',$5,'highlevel',$6,$7)",[id,org,community,author,ext,batch,JSON.stringify(live)]);
+ await db.query("insert into source_import_records(batch_id,academy_community_id,record_type,external_id,content_hash,payload,imported_id,imported_table) values($1,$2,'post',$3,repeat('d',64),$4,$5,'community_posts')",[batch,community,ext,JSON.stringify({title:'Imported',body:'Original content',authorExternalId:'author',media:archive}),id]);
+ await db.query('select enroll_academy_community_sync($1)',[cfg]);
+ const importedRow=await row('community_posts',ext);
+ eq(importedRow.sync_owner,expected);eq(importedRow.media,live);eq(importedRow.body,'Original content');
+}
+eq((await db.query('select enroll_academy_community_sync($1) r',[cfg])).rows[0].r.posts,0);
+eq((await row('community_posts','cleaned-image')).source_updated_at,null);
+eq(await count('academy_email_deliveries'),0);
+
 // Worker scope is restored before a later local mutation in the SAME transaction.
 await db.exec('begin');const transactionPost=event({externalId:'same-transaction',sourceUpdatedAt:time(58)});eq((await apply(transactionPost)).status,'applied');await db.exec("update community_posts set body='Local edit immediately after sync' where external_id='same-transaction'");await db.exec('commit');eq((await row('community_posts','same-transaction')).sync_owner,'local');
 await db.exec('begin');await db.exec("select set_config('app.academy_community_sync','off',true)");await db.query('select enroll_academy_community_sync($1)',[cfg]);eq((await db.query("select current_setting('app.academy_community_sync',true) v")).rows[0].v,'off');await db.exec('commit');
@@ -112,6 +141,7 @@ await assert.rejects(db.query('select retry_academy_community_events($1,101)',[c
 const eventsBefore=await count('academy_community_sync_events');await assert.rejects(apply(event({groupId:'foreign'})));assertions++;await assert.rejects(apply(event({body:'x'})));assertions++;eq(await count('academy_community_sync_events'),eventsBefore);
 // Private ingress, RPCs, and deletion guard are not public APIs.
 for(const role of ['anon','authenticated']) {
+ eq((await db.query("select has_function_privilege($1,'private.community_import_media(jsonb)','execute') p",[role])).rows[0].p,false);
  for(const fn of ['apply_academy_community_event(uuid,jsonb)','enroll_academy_community_sync(uuid)','retry_academy_community_events(uuid,integer)']) eq((await db.query('select has_function_privilege($1,$2,\'execute\') p',[role,fn])).rows[0].p,false);
  for(const table of ['academy_community_sync_configs','academy_community_sync_events','academy_community_sync_state','academy_community_sync_inbox']) eq((await db.query('select has_table_privilege($1,$2,\'select\') p',[role,table])).rows[0].p,false);
 }
