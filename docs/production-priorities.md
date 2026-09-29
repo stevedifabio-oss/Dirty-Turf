@@ -1,5 +1,7 @@
 # Dirty Turf production priorities
 
+> Later activation update: see [activation-status-2026-09-29.md](activation-status-2026-09-29.md). Course sync, whole-Academy membership checkout and measuring-tool checkout are now active; earlier disabled-state observations below are historical.
+
 Updated September 29, 2026. User explicitly asked to retain and complete this list.
 
 ## Current release snapshot (September 29)

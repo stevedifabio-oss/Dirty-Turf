@@ -1,5 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.116.0";
+import { loadRuntimeConfig } from "../_shared/runtime-config.ts";
+import { verifyGhlEmailRecipient, sendGhlEmail, GhlEmailRejected, GhlRecipientUnavailable } from "../_shared/ghl-email.ts";
 import {
   buildAcademyEmail,
   createUnsubscribeToken,
@@ -17,6 +19,8 @@ type RuntimeConfig = {
   appUrl: string;
   dispatchSecret: string;
   signingSecret: string;
+  provider: "mailgun" | "ghl";
+  ghl: { token: string; locationId: string; from: string };
   mailgunApiKey: string;
   mailgunDomain: string;
   mailgunFromEmail: string;
@@ -29,8 +33,9 @@ Deno.serve(async (request) => {
   if (url.pathname.endsWith("/unsubscribe")) return handleUnsubscribe(request, url);
   if (request.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
-  if (Deno.env.get("ACADEMY_EMAIL_DELIVERY_ENABLED") !== "true") return json({ enabled: false, sent: 0 });
-  const config = loadConfig();
+  const settings = await loadNotificationSettings();
+  if (settings.ACADEMY_EMAIL_DELIVERY_ENABLED !== "true") return json({ enabled: false, sent: 0 });
+  const config = loadConfig(settings);
   if (!config) return json({ error: "Notification delivery is not configured" }, 503);
   if (!safeEqual(request.headers.get("x-notification-secret") ?? "", config.dispatchSecret)) {
     return json({ error: "Authentication required" }, 401);
@@ -72,8 +77,18 @@ Deno.serve(async (request) => {
       );
       const unsubscribeUrl = `${config.supabaseUrl}/functions/v1/academy-notifications/unsubscribe?token=${encodeURIComponent(token)}`;
       const email = buildAcademyEmail(delivery, { appUrl: config.appUrl, unsubscribeUrl });
+      let contactId: string | null = null;
+      if (config.provider === "ghl") {
+        const { data: link, error: linkError } = await admin.from("academy_member_links")
+          .select("external_contact_id").eq("academy_member_id", delivery.recipient_member_id)
+          .eq("external_provider", "highlevel").maybeSingle();
+        if (linkError) throw new Error("HighLevel contact mapping could not be read");
+        contactId = await verifyGhlEmailRecipient(config.ghl, link?.external_contact_id ?? null, delivery.recipient_email);
+      }
       providerAttempted = true;
-      const providerMessageId = await sendMailgun(config, delivery, email, unsubscribeUrl);
+      const providerMessageId = config.provider === "ghl"
+        ? await sendGhlEmail(config.ghl, contactId!, delivery.recipient_email, email)
+        : await sendMailgun(config, delivery, email, unsubscribeUrl);
       providerAccepted = true;
       const { data: completed, error: completeError } = await admin.rpc("complete_academy_email_delivery", {
         p_delivery_id: delivery.id,
@@ -83,9 +98,15 @@ Deno.serve(async (request) => {
       if (completeError || !completed) throw completeError ?? new Error("Delivery lock lost after provider acceptance");
       results.push({ id: delivery.id, status: "sent" });
     } catch (deliveryError) {
-      // Mailgun does not promise idempotency for messages. A timeout, 5xx, or DB failure
+      if (deliveryError instanceof GhlRecipientUnavailable) {
+        await admin.from("academy_email_deliveries").update({ status: "failed", last_error: deliveryError.message, lock_token: null, locked_at: null })
+          .eq("id", delivery.id).eq("lock_token", lockToken).eq("status", "processing");
+        results.push({ id: delivery.id, status: "review_required" });
+        continue;
+      }
+      // Providers do not promise idempotency for messages. A timeout, 5xx, or DB failure
       // after acceptance requires provider review; automatic resend can duplicate mail.
-      if (providerAccepted || (providerAttempted && !(deliveryError instanceof ProviderRejected))) {
+      if (providerAccepted || (providerAttempted && !(deliveryError instanceof ProviderRejected || deliveryError instanceof GhlEmailRejected))) {
         await admin.from("academy_email_deliveries").update({ status: "failed", last_error: "Provider result uncertain; review before retry", lock_token: null, locked_at: null })
           .eq("id", delivery.id).eq("lock_token", lockToken).eq("status", "processing");
         results.push({ id: delivery.id, status: "review_required" });
@@ -112,7 +133,7 @@ Deno.serve(async (request) => {
 
 async function handleUnsubscribe(request: Request, url: URL) {
   if (!["GET", "POST"].includes(request.method)) return htmlPage("Method not allowed", "Use the link from your email.", 405);
-  const config = loadUnsubscribeConfig();
+  const config = loadUnsubscribeConfig(await loadNotificationSettings());
   if (!config) return htmlPage("Notifications are unavailable", "Please update your preferences inside the Academy app.", 503);
 
   let token = url.searchParams.get("token") ?? "";
@@ -193,29 +214,44 @@ async function sendMailgun(
 
 class ProviderRejected extends Error {}
 
-function loadConfig(): RuntimeConfig | null {
-  const unsubscribe = loadUnsubscribeConfig();
-  const dispatchSecret = Deno.env.get("NOTIFICATION_DISPATCH_SECRET")?.trim();
-  const mailgunApiKey = Deno.env.get("MAILGUN_API_KEY")?.trim();
-  const mailgunDomain = Deno.env.get("MAILGUN_DOMAIN")?.trim();
-  const mailgunFromEmail = Deno.env.get("MAILGUN_FROM_EMAIL")?.trim();
-  if (!unsubscribe || !dispatchSecret || !mailgunApiKey || !mailgunDomain || !mailgunFromEmail) return null;
+async function loadNotificationSettings() {
+  const names = ["ACADEMY_EMAIL_DELIVERY_ENABLED", "NOTIFICATION_DISPATCH_SECRET", "NOTIFICATION_SIGNING_SECRET", "MAILGUN_API_KEY", "MAILGUN_DOMAIN", "MAILGUN_FROM_EMAIL", "MAILGUN_FROM_NAME", "MAILGUN_REGION", "ACADEMY_EMAIL_PROVIDER", "GHL_EMAIL_FROM", "GHL_PRIVATE_INTEGRATION_TOKEN", "GHL_LOCATION_ID"];
+  const url = Deno.env.get("SUPABASE_URL"), key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  if (!url || !key) return Object.fromEntries(names.map(name => [name, Deno.env.get(name)]));
+  const admin = createClient(url, key, { auth: { persistSession: false } });
+  return loadRuntimeConfig(admin, names, name => Deno.env.get(name));
+}
+
+function loadConfig(settings: Record<string, string | undefined>): RuntimeConfig | null {
+  const unsubscribe = loadUnsubscribeConfig(settings);
+  const dispatchSecret = settings.NOTIFICATION_DISPATCH_SECRET?.trim();
+  const provider = settings.ACADEMY_EMAIL_PROVIDER ?? "mailgun";
+  if (provider !== "mailgun" && provider !== "ghl") return null;
+  const ghl = { token: settings.GHL_PRIVATE_INTEGRATION_TOKEN ?? "", locationId: settings.GHL_LOCATION_ID ?? "", from: settings.GHL_EMAIL_FROM ?? "" };
+  const mailgunApiKey = settings.MAILGUN_API_KEY?.trim() || "";
+  const mailgunDomain = settings.MAILGUN_DOMAIN?.trim() || "";
+  const mailgunFromEmail = settings.MAILGUN_FROM_EMAIL?.trim() || "";
+  if (!unsubscribe || !dispatchSecret) return null;
+  if (provider === "mailgun" && (!mailgunApiKey || !mailgunDomain || !mailgunFromEmail)) return null;
+  if (provider === "ghl" && (!ghl.token || /[\r\n]/.test(ghl.token) || !/^[A-Za-z0-9_-]{1,128}$/.test(ghl.locationId) || !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(ghl.from))) return null;
   return {
     ...unsubscribe,
+    provider,
+    ghl,
     dispatchSecret,
     mailgunApiKey,
     mailgunDomain,
     mailgunFromEmail,
-    mailgunFromName: Deno.env.get("MAILGUN_FROM_NAME")?.trim() || "Dirty Turf Academy",
-    mailgunRegion: Deno.env.get("MAILGUN_REGION")?.trim() || "us",
+    mailgunFromName: settings.MAILGUN_FROM_NAME?.trim() || "Dirty Turf Academy",
+    mailgunRegion: settings.MAILGUN_REGION?.trim() || "us",
   };
 }
 
-function loadUnsubscribeConfig() {
+function loadUnsubscribeConfig(settings: Record<string, string | undefined>) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")?.replace(/\/$/, "");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.trim();
   const appUrl = Deno.env.get("APP_URL")?.trim();
-  const signingSecret = Deno.env.get("NOTIFICATION_SIGNING_SECRET")?.trim();
+  const signingSecret = settings.NOTIFICATION_SIGNING_SECRET?.trim();
   if (!supabaseUrl || !serviceRoleKey || !appUrl || !signingSecret) return null;
   try {
     return { supabaseUrl, serviceRoleKey, appUrl: new URL(appUrl).origin, signingSecret };

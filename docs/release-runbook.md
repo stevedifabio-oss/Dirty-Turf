@@ -222,6 +222,9 @@ select cron.schedule(
 );
 ```
 
-Keep this Cron job removed or inactive until Mailgun domain verification and
-the single-recipient acceptance test pass. The outbox can safely accumulate
-while delivery is paused.
+Use `supabase/operations/academy-notification-schedule.sql` for the guarded,
+idempotent schedule installation. Keep this Cron job removed or inactive until
+Mailgun domain verification and the single-recipient acceptance test pass.
+Keep the database cutover disabled before activation so historical actions do
+not accumulate for later replay. For a long pause, disable the database cutover
+as well as delivery and retire pending rows before setting a fresh cutover time.

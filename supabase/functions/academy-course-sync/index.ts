@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
+import { loadRuntimeConfig } from "../_shared/runtime-config.ts";
 // @ts-types="../_shared/ghl-course-reader.d.ts"
 import { captureGhlCourses } from "../_shared/ghl-course-reader.mjs";
 // @ts-types="../_shared/course-sync.d.ts"
@@ -8,12 +9,17 @@ import { mapCourseSnapshot, courseSnapshotHash, secretMatches } from "../_shared
 const reply = (body: unknown, status=200) => new Response(JSON.stringify(body),{status,headers:{"content-type":"application/json","cache-control":"no-store"}});
 Deno.serve(async request => {
   if(request.method !== 'POST') return reply({error:'Method not allowed'},405);
-  if(!await secretMatches(request.headers.get('x-course-sync-secret'),Deno.env.get('GHL_COURSE_SYNC_SECRET'))) return reply({error:'Unauthorized'},401);
-  if(Deno.env.get('GHL_COURSE_SYNC_ENABLED') !== 'true') return reply({status:'disabled'});
   const url=Deno.env.get('SUPABASE_URL'), key=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  const token=Deno.env.get('GHL_PRIVATE_INTEGRATION_TOKEN'), locationId=Deno.env.get('GHL_LOCATION_ID');
-  if(!url || !key || !token || !locationId) return reply({error:'Sync not configured'},503);
+  if(!url || !key) return reply({error:'Sync not configured'},503);
   const admin=createClient(url,key,{auth:{persistSession:false}});
+  let settings: Record<string,string | undefined>;
+  try {
+    settings=await loadRuntimeConfig(admin,['GHL_COURSE_SYNC_SECRET','GHL_COURSE_SYNC_ENABLED','GHL_PRIVATE_INTEGRATION_TOKEN','GHL_LOCATION_ID'],name=>Deno.env.get(name));
+  } catch { return reply({error:'Sync not configured'},503); }
+  if(!await secretMatches(request.headers.get('x-course-sync-secret'),settings.GHL_COURSE_SYNC_SECRET)) return reply({error:'Unauthorized'},401);
+  if(settings.GHL_COURSE_SYNC_ENABLED !== 'true') return reply({status:'disabled'});
+  const token=settings.GHL_PRIVATE_INTEGRATION_TOKEN, locationId=settings.GHL_LOCATION_ID;
+  if(!token || !locationId) return reply({error:'Sync not configured'},503);
   // No caller-provided scope, URLs, credentials or snapshot accepted.
   const {data:configs,error}=await admin.from('academy_course_sync_configs').select('id').eq('enabled',true).eq('location_id',locationId).limit(10);
   if(error) return reply({error:'Unable to read sync configuration'},503);

@@ -4,6 +4,7 @@ import ts from "typescript";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as checkout from "./checkout";
 import * as billing from "./billing";
+import { loadRuntimeConfig } from "./runtime-config";
 
 // Execute the real Edge entrypoint with network/database boundaries replaced.
 // No Stripe account or Supabase project is contacted by these tests.
@@ -34,7 +35,7 @@ function handler(name: string) {
   }
   vm.runInNewContext(compiled, {
     Deno: { env: { get: (key: string) => env[key] }, serve: (value: typeof serve) => { serve = value; } },
-    Stripe: FakeStripe, createClient: () => admin, ...checkout, ...billing,
+    Stripe: FakeStripe, createClient: () => admin, loadRuntimeConfig, ...checkout, ...billing,
     handlePreflight: () => null, jsonResponse: (_: Request, body: unknown, init: ResponseInit = {}) => Response.json(body, init),
     Request, Response, URL, console: { error: vi.fn() }, Date,
   });
