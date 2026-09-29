@@ -23,12 +23,12 @@ Portal configuration `bpc_1UL6a1RfnCxS2laIDBqD3Sxt` supports invoice history, pa
 - `charges_enabled` and `payouts_enabled` were true, but `external_account` appeared in both `currently_due` and `past_due`. The owner must resolve the bank account requirement in Stripe before release.
 - Stripe Tax settings were `pending` with no registrations or default tax category. Tax collection has not been enabled; applicable registrations and product categories require review before activation.
 - Account branding was initially empty. The real Dirty Turf logo, app icon and brand colors (`#003113` and `#047631`) were uploaded/saved through the signed-in Chrome dashboard and verified through the API. Local hosted Checkout also specifies the logo and app colors. Stripe does not support Poppins/Outfit in Checkout; Montserrat is the supported fallback. Stripe receipt layout/font remain provider-controlled; the app's community emails retain Poppins/Outfit with email-client fallbacks.
-- Account-owned default payment settings had cards and Apple Pay enabled. Google Pay was unavailable/off. LeadConnector-owned configurations differ; do not treat those as the app's defaults.
+- Account-owned default payment settings have cards, Apple Pay and Google Pay enabled. Google Pay was enabled on September 29 through the dashboard and read back through the API. LeadConnector-owned configurations were preserved.
 - No webhook endpoints were listed. The app endpoint must be deployed and configured with its own signing secret before sales start. Creating a catalog does not install the runtime API key or webhook secret.
 
 ## Remaining release work
 
-1. Connect a separate Stripe sandbox and configure an isolated backend with sandbox credentials, sandbox price IDs, and its matching webhook. Prove purchase, access, renewal failure, cancellation, refund and replay behavior.
+1. Payment/access verification remains outstanding. A separate sandbox is preferred for renewal failure and replay coverage. The owner prefers live setup; a controlled live purchase/refund/cancellation is an alternative for the basic purchase path only after explicit authorization for the charge. No charge has been authorized or performed.
 2. Resolve the certification/full-course content split and all course IDs. Review the grandfathered roster. Keep existing imported grants.
 3. Resolve the account bank requirement and tax settings. Replace the previously shared runtime key before live activation.
 4. Deploy the reviewed backend and apply inactive app plans with the correct live IDs; register the eight webhook events in `stripe-setup.md`, securely save the signing secret, and verify delivery.
@@ -44,3 +44,5 @@ The protected local Stripe environment contains the live portal configuration ID
 - SQL harness passed 83 assertions across 30 migrations.
 - Secret scan and diff whitespace checks passed. Generated the inactive live catalog SQL locally; it has not been applied.
 - Chrome confirmed the bank task explicitly states no bank account is on file; the task is left open for the owner.
+
+Follow-up: added the verified public privacy-policy URL to the live billing portal. Payout bank account is still required. No webhook was registered against the undeployed backend, and no sales were enabled.

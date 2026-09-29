@@ -1,5 +1,7 @@
 # Dirty Turf Academy release runbook
 
+> Current status: see `release-status-2026-09-29.md`. Build 4 / Internal build 1 entries below are historical September 20 evidence, not current store status.
+
 The web app, iOS app, and Android app share one React application and one
 Supabase backend. A release is complete only when all three clients pass the
 same authenticated member path. A simulator build or an unauthenticated

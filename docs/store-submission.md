@@ -1,5 +1,7 @@
 # Dirty Turf Academy store submission
 
+> Current status: see `release-status-2026-09-29.md`. Build 4 / Internal build 1 entries below are historical September 20 evidence, not current store status.
+
 This file is the prepared source of truth for the App Store Connect and Google
 Play records. The permanent web origin is `https://app.dirtyturf.com`. Do not
 add a purchase link to either native listing or reviewer notes.
