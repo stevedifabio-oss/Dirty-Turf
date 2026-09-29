@@ -17,7 +17,7 @@ Updated September 29, 2026. Retained at the owner's request.
 |---|---|---|
 |1|Community post/comment synchronization|Real test post/comment/reply created. Native payloads omit stable content IDs, source timestamps and reply parents; the workflow picker also omits them. Obtain a supported GHL source interface before automatic application. Backend tests and authenticated transport pass; edit/delete/media support remains unestablished.|
 |2|Store releases and installed devices|Check approval of Apple12/Android7; verify current builds on the owner's iPhone and Steve's Android. Backend content updates already use their shared database.|
-|3|Stripe fulfillment|Owner must complete the payout bank requirement. Controlled paid purchase/access/cancellation and refund verification remain pending; no charge is authorized. Preserve existing subscriptions and imported grants.|
+|3|Stripe fulfillment|Bank requirement cleared September29: Stripe reports charges_enabled=true, payouts_enabled=true, one connected bank and no current/past-due/pending requirements. Controlled paid purchase/access/cancellation and refund verification remain pending; the owner completes any real paid checkout. Preserve existing subscriptions and imported grants.|
 |4|Email delivery acceptance|Passed: inbox receipt, logo/colors, corrected sender, direct CTA, live unsubscribe GET/POST and original preference restoration. Derek Baca and Ralph lack linked login/contact identities; the dedicated App Review account intentionally has no GHL contact. Do not guess or create contact mappings.|
 |5|Media/download audit|All109 published lessons have content. Authenticated first-lesson image loaded from signed private storage (1672x941). All142 inventoried assets are images; no published video/audio URLs were found, so video playback cannot be claimed. Empty source container modules currently show 0/0 headings in the course outline.|
 |6|Upcoming events|GHL's Upcoming view showed no events on September29. Its calendar includes the past September27 Turf Clean call. Publish only real supplied/source upcoming dates and meeting details.|
@@ -29,7 +29,7 @@ One-way GHL to app only. Member progress, app discussions, moderation, account a
 
 ## Stripe text for Steve — draft only
 
-Hey Steve, the $39.99/month Academy membership and $29.95/month measuring tool checkout are connected. Existing members keep their free Academy/community access. Stripe still needs your payout bank account: open Settings → Business → Account status → Provide an external account → Start, and complete that directly in Stripe. We still need to verify one paid purchase and cancellation end to end.
+Hey Steve, Stripe is connected and the bank requirement is cleared. The $39.99/month Academy membership and $29.95/month measuring tool checkout are available. Existing members keep their free Academy/community access. We still need one new-member purchase to verify access and cancellation end to end. Please coordinate that checkout with us so we can check the complete flow.
 
 ## Evidence
 
