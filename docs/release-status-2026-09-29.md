@@ -1,5 +1,7 @@
 # Release status — September 29, 2026
 
+> Latest cleanup release: [course/member cleanup evidence](course-member-cleanup-2026-09-29.md) and [current priorities](production-priorities.md). The build12/7 details below describe the earlier submission.
+
 > Later activation update: see [activation-status-2026-09-29.md](activation-status-2026-09-29.md). Course sync, whole-Academy membership checkout and measuring-tool checkout are now active; earlier disabled-state observations below are historical.
 
 ## Web — live
