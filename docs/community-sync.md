@@ -31,3 +31,7 @@ Existing imports are adopted only if current fields match their recorded source 
 Verification: 375 application tests; 79 isolated PostgreSQL assertions across all 37 migrations; type, schema, secret, store metadata, build and PWA checks. Live unauthenticated POST is 401; GET is 405. No member/grant changes (63 members,111 grants). Existing web, iOS and Android embedded frontend hashes match; this backend work requires no replacement store binary.
 
 References: [GHL Community triggers](https://ideas.gohighlevel.com/changelog/new-communities-triggers-in-workflows-automate-more-faster), [standard webhook payload](https://help.gohighlevel.com/support/solutions/articles/155000003299), [Social Planner limitations](https://help.gohighlevel.com/support/solutions/articles/155000006433).
+
+## GHL support request — draft, not sent
+
+We need a supported one-way export/API/webhook for native Community posts, comments and nested replies in our existing 7 Figure Turf Cleaning group. Live Group Post Created and Group Comment Created workflow events reach our webhook, but `triggerData` is empty. The custom-value picker exposes text/title/group/channel names only. Please identify the supported source interface for stable post/comment/reply-parent IDs, author/contact IDs, group/channel IDs, source create/update timestamps, attachments and edit/delete events. Social Planner-only content does not cover posts created by our members inside Communities. Without stable identities, replay-safe thread synchronization cannot be enabled.
