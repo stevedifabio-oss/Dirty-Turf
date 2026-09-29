@@ -75,8 +75,9 @@ Deno.serve(async (request) => {
         preference,
         config.signingSecret,
       );
-      const unsubscribeUrl = `${config.supabaseUrl}/functions/v1/academy-notifications/unsubscribe?token=${encodeURIComponent(token)}`;
-      const email = buildAcademyEmail(delivery, { appUrl: config.appUrl, unsubscribeUrl });
+      const unsubscribeUrl = new URL("/email/unsubscribe", config.appUrl);
+      unsubscribeUrl.searchParams.set("token", token);
+      const email = buildAcademyEmail(delivery, { appUrl: config.appUrl, unsubscribeUrl: unsubscribeUrl.toString() });
       let contactId: string | null = null;
       if (config.provider === "ghl") {
         const { data: link, error: linkError } = await admin.from("academy_member_links")
@@ -88,7 +89,7 @@ Deno.serve(async (request) => {
       providerAttempted = true;
       const providerMessageId = config.provider === "ghl"
         ? await sendGhlEmail(config.ghl, contactId!, delivery.recipient_email, email)
-        : await sendMailgun(config, delivery, email, unsubscribeUrl);
+        : await sendMailgun(config, delivery, email, unsubscribeUrl.toString());
       providerAccepted = true;
       const { data: completed, error: completeError } = await admin.rpc("complete_academy_email_delivery", {
         p_delivery_id: delivery.id,

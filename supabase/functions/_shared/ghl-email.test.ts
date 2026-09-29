@@ -33,7 +33,7 @@ describe("HighLevel existing email connection", () => {
     const email = { subject: "Academy update", html: '<p style="color:#047631">Update</p><a href="https://example.com/unsubscribe?token=signed">Unsubscribe</a>', text: "Update. Unsubscribe: https://example.com/unsubscribe?token=signed" };
     await expect(sendGhlEmail(config, contact.id, contact.email, email, fetcher)).resolves.toBe("ghl:message-1");
     const body = JSON.parse(fetcher.mock.calls[0][1].body);
-    expect(body).toEqual({ type: "Email", contactId: contact.id, emailTo: contact.email, emailFrom: config.from, subject: email.subject, html: email.html, message: email.text });
+    expect(body).toEqual({ type: "Email", contactId: contact.id, emailTo: contact.email, emailFrom: `Dirty Turf Academy <${config.from}>`, subject: email.subject, html: email.html, message: email.text });
     expect(fetcher).toHaveBeenCalledOnce();
   });
   it("distinguishes provider rejection from uncertain delivery without automatic resend", async () => {

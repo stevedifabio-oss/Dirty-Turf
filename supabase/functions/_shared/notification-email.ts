@@ -109,13 +109,13 @@ export function buildAcademyEmail(delivery: AcademyEmailDelivery, options: Email
           ${delivery.detail ? `<div style="margin:0 0 22px;padding:16px 18px;background:#f4faee;border-left:4px solid #78c12e;color:#111f14;font-size:15px;line-height:1.5">${escapeHtml(delivery.detail)}</div>` : ""}
           ${excerpt ? `<p style="margin:0 0 22px;font-size:15px;line-height:1.6;color:#3d5c44">${escapeHtml(excerpt)}</p>` : ""}
           ${eventDetails.html}
-          <a href="${safeActionUrl}" style="display:inline-block;background:#047631;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:13px 20px;border-radius:6px">${escapeHtml(content.action)}</a>
+          <a href="${safeActionUrl}" disable-tracking="true" style="display:inline-block;background:#047631;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;padding:13px 20px;border-radius:6px">${escapeHtml(content.action)}</a>
         </td></tr>
         <tr><td style="padding:18px 28px 30px">
           <p style="margin:0;font-size:13px;line-height:1.55;color:#3d5c44">Use the same email address that received this message to sign in. Magic links work on the web, iPhone, and Android app.</p>
         </td></tr>
         <tr><td style="border-top:1px solid #e8f5d0;padding:18px 28px;font-size:12px;line-height:1.6;color:#3d5c44">
-          Dirty Turf Academy · <a href="${safeManageUrl}" style="color:#035f27">Notification settings</a> · <a href="${safeUnsubscribeUrl}" style="color:#035f27">Unsubscribe from this type of email</a>
+          Dirty Turf Academy · <a href="${safeManageUrl}" disable-tracking="true" style="color:#035f27">Notification settings</a> · <a href="${safeUnsubscribeUrl}" disable-tracking="true" style="color:#035f27">Unsubscribe from this type of email</a>
         </td></tr>
       </table>
     </td></tr>

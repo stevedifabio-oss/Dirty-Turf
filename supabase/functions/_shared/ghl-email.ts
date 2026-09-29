@@ -32,7 +32,7 @@ export async function verifyGhlEmailRecipient(config: GhlEmailConfig, contactId:
 export async function sendGhlEmail(config: GhlEmailConfig, contactId: string, recipient: string, email: { subject: string; html: string; text: string }, fetchImpl: typeof fetch = fetch) {
   const response = await fetchImpl(`${API_ORIGIN}/conversations/messages`, {
     method: "POST", headers: headers(config), redirect: "error", signal: AbortSignal.timeout(20_000),
-    body: JSON.stringify({ type: "Email", contactId, emailTo: recipient, emailFrom: config.from, subject: email.subject, html: email.html, message: email.text }),
+    body: JSON.stringify({ type: "Email", contactId, emailTo: recipient, emailFrom: `Dirty Turf Academy <${config.from}>`, subject: email.subject, html: email.html, message: email.text }),
   });
   if (response.status >= 400 && response.status < 500) throw new GhlEmailRejected(`HighLevel rejected delivery (${response.status})`);
   const result = await response.json().catch(() => null);
