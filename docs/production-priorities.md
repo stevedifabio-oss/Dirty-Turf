@@ -4,7 +4,7 @@ Updated September 29, 2026. User explicitly asked to retain and complete this li
 
 ## Current release snapshot (September 29)
 
-See `release-status-2026-09-29.md` for live console findings. Google internal build 6 is available to testers; production build 5 was rejected because reviewers could not sign in. The publishing overview also shows a build-5 review entry, so treat the rejection as unresolved until Google confirms otherwise. Apple verification is blocked by its signed-out console. Signed Android build 7 is prepared locally, not uploaded.
+See `release-status-2026-09-29.md` for live console findings. Google internal build 6 is available to testers; production build 5 was rejected because reviewers could not sign in. The publishing overview also shows a build-5 review entry, so treat the rejection as unresolved until Google confirms otherwise. Apple build 10 is Waiting for Review; TestFlight build 11 is Ready to Submit for internal testers. Google reviewer instructions were corrected to 372/500 characters and saved, preserving supplied credentials. Signed Android build 7 is prepared locally, not uploaded.
 
 ## Confirmed
 - Steve reports Android login now works on his phone.
