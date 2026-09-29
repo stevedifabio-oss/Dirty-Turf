@@ -32,6 +32,10 @@ describe("Academy notification email", () => {
     expect(email.actionUrl).toContain(encodeURIComponent(delivery.target_id));
     expect(email.html).not.toContain("<script>alert(1)</script>");
     expect(email.html).toContain("Dirty Turf");
+    // Mailgun must preserve native app links and the signed unsubscribe URL.
+    const links = email.html.match(/<a\s[^>]+>/g) ?? [];
+    expect(links).toHaveLength(3);
+    expect(links.every((link) => link.includes('disable-tracking="true"'))).toBe(true);
     expect(email.text).toContain("Unsubscribe from this type of email");
   });
 

@@ -12,7 +12,9 @@ Workflow `57bf209d-11ca-475a-ad8e-5aff6b22ce4e`, **Dirty Turf Community — payl
 
 A controlled workflow test using the owner's existing contact reached the private inbox at **21:16:55 UTC**. This proves transport/authentication. Manual tests supply an empty `triggerData` object and blank post title, so they do not prove native post/comment identifiers or content.
 
-**No native-payload adapter is enabled yet.** Real post/comment events stay in the private inbox as `needs_mapping`; they do not automatically appear in the app. A real source post and comment/reply must be captured before mapping stable source IDs, timestamps, authors, parents and media. The user was asked to authorize a clearly labeled test post/reply because GHL may notify members. No test post or reply has been published.
+**No native-payload adapter is enabled yet.** The owner authorized and we published a clearly labeled General-channel test post, comment and nested reply on September 29. Source post `6abc30b5b17c9b8832d92c2b`, comment `6abc30f144024e173c15ba62`. The real post reached the receiver at 21:42:17 UTC and the comment at 21:43:18 UTC. Both carried an empty `triggerData` object; only our explicitly mapped post title was included for the post. Neither carried stable content IDs, source timestamps, media or a reply parent. The nested reply is visible in GHL but supplies no distinct identity through this payload. Raw captures remain private as `needs_mapping` and are not applied.
+
+The live workflow variable picker exposes four post fields (title, content, group name, channel name) and five comment fields (the same plus comment content). It does not expose identifiers, versions or reply parents. Full native Community mirroring is blocked on a supported source interface carrying these fields; inventing IDs from titles or guessing parents would corrupt threads. The source group DOM identifies `6a5ff7019b8d5f3bf162a694`, but the actual webhook does not carry it.
 
 Public GHL documentation does not establish native Community edit/delete webhooks or a complete read API. Do not guess identities from text or treat missing items as deletions. Social Planner's community comment API covers only posts published through Social Planner and cannot replace native Community synchronization. Comment attachments are rejected by the normalized contract until the app has an explicit representation for them.
 
@@ -20,8 +22,8 @@ Existing imports are adopted only if current fields match their recorded source 
 
 ## Remaining acceptance
 
-1. Capture an authorized real post plus comment and nested reply.
-2. Implement a fixture-backed adapter for the observed event shape; preserve the raw source IDs used by the historical import.
+1. Obtain a supported GHL payload/API containing post ID, comment ID, reply-parent ID, author/contact ID, group/channel IDs, timestamps and attachments. Real native post/comment/reply testing is complete and demonstrates the current gap.
+2. Implement a fixture-backed adapter once that interface exists; preserve the raw source IDs used by the historical import.
 3. Confirm media and update/delete capabilities separately. Unsupported events remain review items.
 4. Replay the same source events: one native post/reply each, matching author/thread, no duplicate member email.
 5. Verify appearance in the current web/iPhone/Android clients and enable automatic application only for the verified payload types.
