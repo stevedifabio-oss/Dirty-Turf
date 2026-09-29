@@ -116,7 +116,7 @@ export type Course = {
   progress: number;
   importedProgress?: number;
   duration: string;
-  modules: { title: string; groupTitle?: string; lessons: Lesson[] }[];
+  modules: { id?: string; title: string; groupTitle?: string; lessons: Lesson[] }[];
   access: "open" | "level" | "purchase";
   requiredLevel?: number;
 };

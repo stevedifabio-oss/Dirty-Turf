@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Award, BookOpen, CalendarDays, Check, ChevronDown, CircleAlert, FilePlus2, GraduationCap, LoaderCircle, Megaphone, Pencil, Pin, Plus, RefreshCw, ShieldCheck, Upload, Users } from "lucide-react";
 import { emptyQuizQuestion, existingQuizBody, lessonBodyForSave, lessonBodyText, quizEditorState, quizOptionsFor, serializeQuizQuestion, updateQuizQuestion, type QuizQuestionDraft } from "../lib/adminContent";
+import { memberAccessPresentation } from "../lib/memberPresentation";
 import {
   createAdminMember,
   issueAdminCertificate,
@@ -77,7 +78,7 @@ export function AdminStudio({ onToast, onContentChange }: Props) {
 
   const openReports = snapshot.reports.filter((report) => ["open", "reviewing"].includes(report.status)).length;
   const draftCourses = snapshot.courses.filter((course) => course.status === "draft").length;
-  const pendingInvites = snapshot.members.filter((member) => !member.userId || !["accepted"].includes(member.inviteStatus ?? "")).length;
+  const pendingInvites = snapshot.members.filter((member) => memberAccessPresentation(member).needsReview).length;
 
   return <div className="view-content admin-view">
     <section className="admin-hero">
@@ -100,7 +101,7 @@ export function AdminStudio({ onToast, onContentChange }: Props) {
         <StatusRow complete={snapshot.categories.some((category) => category.name.toLowerCase() === "announcements" && !category.memberCanPost)} label="Announcements restricted to admins" />
         <StatusRow complete={snapshot.templates.some((template) => template.active)} label="Active certificate template" />
         <StatusRow complete={openReports === 0} label="No unresolved moderation reports" />
-        <StatusRow complete={pendingInvites === 0} label="Every intended member has a provisioned account" />
+        <StatusRow complete={pendingInvites === 0} label="No member accounts need setup or invitation review" />
       </div>
     </section>}
 
@@ -284,7 +285,7 @@ function MembersAdmin({ snapshot, busy, act }: AdminSectionProps) {
 function MemberRow({ member, courses, busy, act }: { member: AdminMember; courses: AdminCourse[]; busy: string; act: ActionRunner }) {
   const [open, setOpen] = useState(false);
   const ownerProtected = member.role === "owner";
-  return <article className="admin-record"><button className="admin-record-head" onClick={() => setOpen((value) => !value)} aria-expanded={open}><span><small>{member.role} · {member.status} · {member.inviteStatus ?? "no invite"}</small><strong>{member.displayName || member.inviteEmail || "Academy member"}</strong><em>{member.completedLessons} completed lessons · {member.courseIds.length} courses</em></span><ChevronDown className={open ? "rotated" : ""} size={18} /></button>{open && <div className="admin-record-body"><div className="admin-form-grid"><label>Role<select value={member.role} disabled={Boolean(busy) || ownerProtected} onChange={(event) => void act(`member-${member.id}`, () => updateAdminMember(member.id, { role: event.target.value as AdminMember["role"] }), "Member role updated.")}><option value="member">Member</option><option value="moderator">Moderator</option><option value="admin">Admin</option>{ownerProtected && <option value="owner">Owner</option>}</select></label><label>Status<select value={member.status} disabled={Boolean(busy) || ownerProtected} onChange={(event) => void act(`member-${member.id}`, () => updateAdminMember(member.id, { status: event.target.value as AdminMember["status"] }), "Member status updated.")}><option value="active">Active</option><option value="pending">Pending</option><option value="suspended">Suspended</option><option value="cancelled">Cancelled</option></select></label></div>{ownerProtected && <p className="admin-form-note">Owner access is protected. Ownership changes require the account owner.</p>}<fieldset className="admin-course-access"><legend>Course access</legend>{courses.map((course) => <label key={course.id}><input type="checkbox" checked={member.courseIds.includes(course.id)} disabled={Boolean(busy)} onChange={(event) => void act(`access-${member.id}-${course.id}`, () => setAdminMemberCourseAccess(member.id, course.id, event.target.checked), "Course access updated.")} /><span>{course.title}</span></label>)}</fieldset></div>}</article>;
+  return <article className="admin-record"><button className="admin-record-head" onClick={() => setOpen((value) => !value)} aria-expanded={open}><span><small>{member.role} · {member.status} · {memberAccessPresentation(member).label}</small><strong>{member.displayName || member.inviteEmail || "Academy member"}</strong><em>{member.completedLessons} completed lessons · {member.courseIds.length} courses</em></span><ChevronDown className={open ? "rotated" : ""} size={18} /></button>{open && <div className="admin-record-body"><p className="admin-form-note">{member.inviteEmail ? `Sign-in email: ${member.inviteEmail}` : member.userId ? "This member has a connected account." : "No sign-in email is saved for this record."}</p><div className="admin-form-grid"><label>Role<select value={member.role} disabled={Boolean(busy) || ownerProtected} onChange={(event) => void act(`member-${member.id}`, () => updateAdminMember(member.id, { role: event.target.value as AdminMember["role"] }), "Member role updated.")}><option value="member">Member</option><option value="moderator">Moderator</option><option value="admin">Admin</option>{ownerProtected && <option value="owner">Owner</option>}</select></label><label>Status<select value={member.status} disabled={Boolean(busy) || ownerProtected} onChange={(event) => void act(`member-${member.id}`, () => updateAdminMember(member.id, { status: event.target.value as AdminMember["status"] }), "Member status updated.")}><option value="active">Active</option><option value="pending">Pending</option><option value="suspended">Suspended</option><option value="cancelled">Cancelled</option></select></label></div>{ownerProtected && <p className="admin-form-note">Owner access is protected. Ownership changes require the account owner.</p>}<fieldset className="admin-course-access"><legend>Course access</legend>{courses.map((course) => <label key={course.id}><input type="checkbox" checked={member.courseIds.includes(course.id)} disabled={Boolean(busy)} onChange={(event) => void act(`access-${member.id}-${course.id}`, () => setAdminMemberCourseAccess(member.id, course.id, event.target.checked), "Course access updated.")} /><span>{course.title}</span></label>)}</fieldset></div>}</article>;
 }
 
 function CertificatesAdmin({ snapshot, busy, act }: AdminSectionProps) {

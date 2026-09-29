@@ -718,6 +718,7 @@ export async function loadCourses(seed: Course[]): Promise<Course[]> {
 
   return courseRows.map((course) => {
     const modules = (moduleRows ?? []).filter((module) => module.course_id === course.id).map((module) => ({
+      id: module.id,
       title: module.title,
       groupTitle: module.group_title ?? undefined,
       lessons: (lessonRows ?? []).filter((lesson) => lesson.module_id === module.id).map((lesson) => ({

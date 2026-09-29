@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Award, BadgeCheck, BookOpen, Check, CheckCircle2, ChevronDown, Circle, Download, ExternalLink, FileText, Lock, MessageSquare, Play, Printer, RotateCcw, Trophy, XCircle } from "lucide-react";
 import type { AcademyCertificate, Course, LessonQuiz } from "../domain";
 import { combinedCourseProgress } from "../lib/courseProgress";
-import { academyDurationLabel, hasCarriedOverProgress } from "../lib/coursePresentation";
+import { academyDurationLabel, academyResourcePresentation, hasCarriedOverProgress } from "../lib/coursePresentation";
 import { safeExternalUrl } from "../lib/safeExternalUrl";
 import { SafeRichText } from "./SafeRichText";
 
@@ -97,7 +97,7 @@ export function AcademyView({ courses, requestedCourseCloudId, onRequestedCourse
     const videoUrl = safeExternalUrl(selectedLesson.videoUrl);
     const resources = (selectedLesson.resources ?? []).flatMap((resource) => {
       const url = safeExternalUrl(resource.url);
-      return url ? [{ ...resource, url }] : [];
+      return url ? [{ ...resource, url, ...academyResourcePresentation({ ...resource, url }) }] : [];
     });
     const directVideo = /\.(mp4|webm|mov)(\?|$)/i.test(videoUrl ?? "");
     const hasContent = Boolean(selectedLesson.body?.trim() || selectedLesson.bodyHtml?.trim() || videoUrl || resources.length || selectedLesson.transcript?.trim() || selectedLesson.quiz?.questions.length);
@@ -130,7 +130,7 @@ export function AcademyView({ courses, requestedCourseCloudId, onRequestedCourse
           {selectedLesson.type === "quiz" && selectedLesson.quiz && <QuizLesson key={selectedLesson.id} quiz={selectedLesson.quiz} onSubmit={submitQuiz} />}
           <SafeRichText html={selectedLesson.bodyHtml} fallback={selectedLesson.body} />
           {selectedLesson.transcript && <details className="lesson-transcript"><summary>Transcript</summary><p>{selectedLesson.transcript}</p></details>}
-          {!!resources.length && <section className="lesson-resources"><h3>Resources</h3>{resources.map((resource) => <a href={resource.url} target="_blank" rel="noopener noreferrer" key={`${resource.title}-${resource.url}`}><Download size={17} /><span><strong>{resource.title}</strong><small>{resource.type ?? "Download"}</small></span><ExternalLink size={15} /></a>)}</section>}
+          {!!resources.length && <section className="lesson-resources"><h3>Resources</h3>{resources.map((resource) => <a href={resource.url} target="_blank" rel="noopener noreferrer" key={`${resource.title}-${resource.url}`}>{resource.isDownload ? <Download size={17} /> : <ExternalLink size={17} />}<span><strong>{resource.title}</strong><small>{resource.type}</small></span><ExternalLink size={15} /></a>)}</section>}
           {!hasContent && <div className="empty-state"><XCircle size={24} /><h3>Lesson content unavailable</h3><p>This published lesson does not currently contain readable lesson text or media.</p></div>}
         </article>
         {hasContent && <button disabled={completionBusy || !canComplete} className={selectedLesson.completed ? "secondary-button wide" : "primary-button wide"} onClick={() => void completeLesson(selectedLesson.id)}>{selectedLesson.completed ? <Check size={18} /> : canComplete ? <CheckCircle2 size={18} /> : <Lock size={18} />}{completionBusy ? "Saving…" : selectedLesson.completed ? "Completed" : canComplete ? "Mark lesson complete" : "Pass quiz to complete"}</button>}
@@ -139,6 +139,7 @@ export function AcademyView({ courses, requestedCourseCloudId, onRequestedCourse
   }
 
   if (selected) {
+    const visibleModules = selected.modules.filter((module) => module.lessons.length > 0);
     const lessonCount = selected.modules.reduce((total, module) => total + module.lessons.length, 0);
     const certificate = certificates.find((item) => item.courseId === (selected.cloudId ?? selected.id) && item.status === "active");
     const requestCertificate = async () => {
@@ -166,10 +167,10 @@ export function AcademyView({ courses, requestedCourseCloudId, onRequestedCourse
         </section>
         {hasCarriedOverProgress(selected) && <p className="setting-help course-progress-note">Includes progress carried over from your previous Academy. Lesson checkmarks reflect activity in this app.</p>}
         <section className="module-list">
-          {selected.modules.map((module, moduleIndex) => {
-            const moduleKey = `${selected.id}-${moduleIndex}`;
+          {visibleModules.map((module, moduleIndex) => {
+            const moduleKey = `${selected.id}-${module.id ?? module.lessons[0].id}`;
             const expanded = openModules[moduleKey] ?? moduleIndex === 0;
-            return <article className="module" key={module.title}>
+            return <article className="module" key={moduleKey}>
               <button className="module-header" onClick={() => setOpenModules((current) => ({ ...current, [moduleKey]: !expanded }))} aria-expanded={expanded}>
                 <span><small>{module.groupTitle ?? `Module ${moduleIndex + 1}`}</small><strong>{module.title}</strong></span>
                 <span>{module.lessons.filter((lesson) => lesson.completed).length}/{module.lessons.length}<ChevronDown className={expanded ? "rotated" : ""} size={17} /></span>
@@ -181,6 +182,7 @@ export function AcademyView({ courses, requestedCourseCloudId, onRequestedCourse
               </button>)}</div>}
             </article>;
           })}
+          {visibleModules.length === 0 && <div className="empty-state"><BookOpen size={24} /><h3>No published lessons yet</h3><p>Lessons will appear here when they are available.</p></div>}
         </section>
         {certificate ? <CertificateCard certificate={certificate} /> : selected.progress >= 100 ? <section className="certificate-ready"><Award size={24} /><div><p>Course complete</p><h3>Your certificate is ready</h3><span>Create a verified completion record you can print or share.</span></div><button className="primary-button" disabled={certificateBusy} onClick={() => void requestCertificate()}>{certificateBusy ? "Issuing..." : "Issue certificate"}</button></section> : null}
         <div className="course-actions"><button className="secondary-button" onClick={onDiscuss}><MessageSquare size={17} /> Discuss this course</button></div>
