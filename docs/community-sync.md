@@ -18,7 +18,9 @@ The live workflow variable picker exposes four post fields (title, content, grou
 
 Public GHL documentation does not establish native Community edit/delete webhooks or a complete read API. Do not guess identities from text or treat missing items as deletions. Social Planner's community comment API covers only posts published through Social Planner and cannot replace native Community synchronization. Comment attachments are rejected by the normalized contract until the app has an explicit representation for them.
 
-Existing imports are adopted only if current fields match their recorded source payload. Production adoption retained all 62 posts as local/protected and adopted 59 imported comments; the app-created comment remained local. Missing historical source versions are not invented. The group allowlist currently uses the stored source slug; map the actual event group ID only after inspecting a real scoped source event.
+Existing imports are adopted only if current fields match their recorded source payload. The original capture included 162 profile/avatar artifacts which the importer correctly excluded, causing all 62 otherwise-identical posts to fail their media comparison. The September 29 reconciliation migration normalizes those known artifacts on the archived side only. All 62 posts and 59 imported comments are now enrolled; the app-created comment remains local. Actual attachment additions, removals, replacements, unknown URLs and local edits remain protected. Missing historical source versions are not invented. The group allowlist currently uses the stored source slug; map the actual event group ID only after inspecting a real scoped source event.
+
+Production enrollment ran with the service role, as required by the existing post-write guard. Before/after checks confirmed identical post-content fingerprints, 11 attachments, 63 members, 111 grants, 62 posts, 60 comments and 7 email delivery records. No content, access or email was changed by enrollment. This shared database fix applies to web, Apple and Android without a new client binary. Automatic native GHL event application remains blocked by the missing source identities described above.
 
 ## Remaining acceptance
 
@@ -28,7 +30,7 @@ Existing imports are adopted only if current fields match their recorded source 
 4. Replay the same source events: one native post/reply each, matching author/thread, no duplicate member email.
 5. Verify appearance in the current web/iPhone/Android clients and enable automatic application only for the verified payload types.
 
-Verification: 375 application tests; 79 isolated PostgreSQL assertions across all 37 migrations; type, schema, secret, store metadata, build and PWA checks. Live unauthenticated POST is 401; GET is 405. No member/grant changes (63 members,111 grants). Existing web, iOS and Android embedded frontend hashes match; this backend work requires no replacement store binary.
+Verification: 380 application tests; 108 isolated PostgreSQL assertions across all 38 migrations; type, schema, secret, store metadata, build and PWA checks. Regression coverage includes avatar cleanup, retained mirrored images, removed/replaced attachments, lookalike hosts, paths embedded in query strings, idempotent enrollment and denied member access to the private helper. Live unauthenticated POST is 401; GET is 405. No member/grant changes (63 members,111 grants). Existing web, iOS and Android embedded frontend hashes match; this backend work requires no replacement store binary.
 
 References: [GHL Community triggers](https://ideas.gohighlevel.com/changelog/new-communities-triggers-in-workflows-automate-more-faster), [standard webhook payload](https://help.gohighlevel.com/support/solutions/articles/155000003299), [Social Planner limitations](https://help.gohighlevel.com/support/solutions/articles/155000006433).
 
