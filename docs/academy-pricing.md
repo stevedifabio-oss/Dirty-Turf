@@ -24,11 +24,11 @@ Source: the owner's supplied pricing screenshot. Amounts are recorded as USD; th
 - Recurring cancellation/revocation affects only that purchase's grants. Course purchases and grandfathered access remain independent. Decide whether paid upgrades require a continuing base membership; the screenshot does not settle that policy.
 - Keep native checkout links disabled while the existing web payment integration is completed. Do not infer store approval from this pricing plan.
 
-## Read-only Stripe audit
+## Stripe catalog audit and setup
 
 The supplied live key successfully listed all six active prices on September 28. Four are $39.99/month USD; their IDs, product names and nicknames are recorded in the JSON draft. Several product names are `Communities - undefined`, so amount alone is not a reliable plan mapping. The remaining two prices are $300/month with the nickname `Test`; they were left untouched.
 
-No matching $149.95 one-time, $29.95/month, $149.95/month or $189.99/month active prices were found. No products/prices were created or changed. Existing subscriptions and payment links must be reconciled before selecting a membership price, and absent upgrade prices should be created only after their content/tool mapping is settled. [Stripe price-list API](https://docs.stripe.com/api/prices/list)
+That September 28 audit found no matching upgrade prices. On September 29, the Stripe plugin created five separate inactive app products and their live prices: membership, three courses, and the measuring tool. The JSON draft records their verified IDs. Existing LeadConnector products and subscriptions were preserved; SEO/CRM remain unavailable. The app billing portal was also configured. See `stripe-account-setup-status.md`. [Stripe price-list API](https://docs.stripe.com/api/prices/list)
 
 ## September 29 local implementation
 
@@ -50,4 +50,4 @@ No matching $149.95 one-time, $29.95/month, $149.95/month or $189.99/month activ
 
 ## Release status
 
-All draft offers are inactive with unmapped Stripe IDs. Checkout stays disabled. No hosted data, member access, subscriptions, emails, app releases or deployments were changed. The live key is private and ignored by Git; it must be replaced before production because it appeared in the conversation. Sandbox purchase/access/cancellation testing still needs separate test credentials and an isolated backend.
+All five supported draft offers are inactive with verified live Stripe IDs; course entitlement mappings remain pending. Checkout stays disabled. Stripe catalog, portal and account branding were configured. No app database, member access, subscriptions, email deliveries, app releases or deployments were changed. The live key is private and ignored by Git; it must be replaced before production because it appeared in the conversation. Sandbox purchase/access/cancellation testing still needs separate test credentials and an isolated backend.

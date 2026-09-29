@@ -22,9 +22,11 @@ Deno.serve(async (request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const stripeSecret = Deno.env.get("STRIPE_SECRET_KEY");
+  const portalConfigurationId = Deno.env.get("STRIPE_PORTAL_CONFIGURATION_ID");
   const authorization = request.headers.get("authorization");
   if (
     !supabaseUrl || !serviceRoleKey || !stripeSecret ||
+    !portalConfigurationId || !/^bpc_[A-Za-z0-9]+$/.test(portalConfigurationId) ||
     !billingConfiguration("true", Deno.env.get("STRIPE_MODE"), stripeSecret)
       .enabled
   ) {
@@ -63,6 +65,7 @@ Deno.serve(async (request) => {
     const stripe = new Stripe(stripeSecret);
     const session = await stripe.billingPortal.sessions.create({
       customer: customer.provider_customer_id,
+      configuration: portalConfigurationId,
       return_url: `${appUrl}/billing`,
     });
     return jsonResponse(request, { url: session.url });

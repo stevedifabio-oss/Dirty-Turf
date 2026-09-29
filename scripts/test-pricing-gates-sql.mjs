@@ -45,7 +45,8 @@ const draft=JSON.parse(await readFile(new URL('../docs/academy-pricing.draft.jso
 const catalogSQL=pricingCatalogSql(draft,community);
 await db.exec(catalogSQL);
 eq((await db.query('select count(*)::int n from academy_billing_plans')).rows[0].n,5,'catalog inserts exactly five sale candidates');
-eq((await db.query('select count(*)::int n from academy_billing_plans where active or stripe_price_id is not null')).rows[0].n,0,'catalog cannot activate payments');
+eq((await db.query('select count(*)::int n from academy_billing_plans where active')).rows[0].n,0,'catalog cannot activate payments');
+eq((await db.query('select slug,stripe_price_id from academy_billing_plans order by slug')).rows, draft.offers.filter(o=>o.kind!=='future'&&o.slug!=='seo-tools').map(o=>({slug:o.slug,stripe_price_id:o.stripePriceId})).sort((a,b)=>a.slug.localeCompare(b.slug)), 'catalog preserves held Stripe price mappings');
 eq((await db.query("select count(*)::int n from academy_billing_plan_features where feature_key='measuring_tool'")).rows[0].n,1,'catalog maps only measuring feature');
 eq((await db.query('select amount_cents,offer_kind from academy_billing_plans order by amount_cents,offer_kind')).rows,
  [{amount_cents:2995,offer_kind:'tool'},{amount_cents:3999,offer_kind:'membership'},...Array.from({length:3},()=>({amount_cents:14995,offer_kind:'course'}))],'catalog preserves approved amounts and independent kinds');

@@ -225,3 +225,31 @@ describe("Stripe webhook handler", () => {
     expect(apply?.[1].p_email).toBe("buyer@example.com");
   });
 });
+
+
+describe("customer billing portal", () => {
+  const portalRequest = () => new Request("https://edge.test/create-billing-portal", { method: "POST", headers: { Origin: "https://app.dirtyturf.com", Authorization: "Bearer valid" } });
+  beforeEach(() => {
+    rows.academy_billing_customers = { provider_customer_id: "cus_member" };
+    env.STRIPE_PORTAL_CONFIGURATION_ID = "bpc_dedicatedTest";
+    stripe.billingPortal = { sessions: { create: vi.fn(async () => ({ url: "https://billing.stripe.com/test" })) } };
+  });
+  it.each([undefined, "", "bpc_", "bpc_bad/value", "bpc_config\n", "cus_notAConfig"])("fails closed for invalid configuration %s", async (configuration) => {
+    if (configuration === undefined) delete env.STRIPE_PORTAL_CONFIGURATION_ID;
+    else env.STRIPE_PORTAL_CONFIGURATION_ID = configuration;
+    expect((await handler("create-billing-portal")(portalRequest())).status).toBe(503);
+    expect(stripe.billingPortal.sessions.create).not.toHaveBeenCalled();
+    expect(admin.auth.getUser).not.toHaveBeenCalled();
+  });
+  it("uses only the dedicated configuration and authenticated customer, even while checkout is held", async () => {
+    env.STRIPE_CHECKOUT_ENABLED = "false";
+    const response = await handler("create-billing-portal")(portalRequest());
+    expect(response.status).toBe(200);
+    expect(stripe.billingPortal.sessions.create).toHaveBeenCalledExactlyOnceWith({ customer: "cus_member", configuration: "bpc_dedicatedTest", return_url: "https://app.dirtyturf.com/billing" });
+  });
+  it("does not fall back to the default portal when Stripe rejects the configured one", async () => {
+    stripe.billingPortal.sessions.create.mockRejectedValue(new Error("Wrong mode configuration"));
+    expect((await handler("create-billing-portal")(portalRequest())).status).toBe(502);
+    expect(stripe.billingPortal.sessions.create).toHaveBeenCalledTimes(1);
+  });
+});

@@ -255,6 +255,18 @@ Deno.serve(async (request) => {
       success_url: `${appUrl}/checkout/return?checkout=success`,
       cancel_url: `${appUrl}/membership?checkout=cancelled`,
       integration_identifier: "dirty_turf_academy_qmvrxhtn",
+      branding_settings: {
+        display_name: "Dirty Turf Academy",
+        background_color: "#f4faee",
+        button_color: "#047631",
+        border_style: "rounded",
+        // Stripe-hosted Checkout does not support the app's Poppins/Outfit fonts.
+        font_family: "montserrat",
+        logo: {
+          type: "url",
+          url: "https://app.dirtyturf.com/dirty-turf-logo.png",
+        },
+      },
       ...(customerId ? { customer: customerId } : { customer_email: email }),
       ...(plan.billing_type === "one_time"
         ? {

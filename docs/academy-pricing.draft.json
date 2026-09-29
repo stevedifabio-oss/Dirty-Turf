@@ -23,14 +23,14 @@
         "community",
         "turf_cleaning_certification"
       ],
-      "stripePriceId": null,
+      "stripePriceId": "price_1UL6ZaRfnCxS2laIQv4DFpeK",
       "active": false,
       "blockers": [
         "certification_content_scope",
         "existing_member_roster",
-        "stripe_price_selection",
         "sandbox_payment_access_verification"
-      ]
+      ],
+      "stripeProductId": "prod_dirtyturf_app_community_certification_v1"
     },
     {
       "slug": "full-turf-cleaning-course",
@@ -41,14 +41,14 @@
       "grants": [
         "full_turf_cleaning_course"
       ],
-      "stripePriceId": null,
+      "stripePriceId": "price_1UL6ZnRfnCxS2laI6GoVMpYe",
       "active": false,
       "blockers": [
         "certification_content_scope",
         "course_mapping",
-        "stripe_price_creation",
         "sandbox_payment_access_verification"
-      ]
+      ],
+      "stripeProductId": "prod_dirtyturf_app_full_turf_cleaning_course_v1"
     },
     {
       "slug": "tile-and-grout-course",
@@ -59,13 +59,13 @@
       "grants": [
         "tile_and_grout_course"
       ],
-      "stripePriceId": null,
+      "stripePriceId": "price_1UL6ZoRfnCxS2laIvHq9zPy3",
       "active": false,
       "blockers": [
         "course_mapping",
-        "stripe_price_creation",
         "sandbox_payment_access_verification"
-      ]
+      ],
+      "stripeProductId": "prod_dirtyturf_app_tile_and_grout_course_v1"
     },
     {
       "slug": "pavers-and-travertine-course",
@@ -76,13 +76,13 @@
       "grants": [
         "pavers_and_travertine_course"
       ],
-      "stripePriceId": null,
+      "stripePriceId": "price_1UL6ZpRfnCxS2laIDgwt6e6N",
       "active": false,
       "blockers": [
         "course_mapping",
-        "stripe_price_creation",
         "sandbox_payment_access_verification"
-      ]
+      ],
+      "stripeProductId": "prod_dirtyturf_app_pavers_and_travertine_course_v1"
     },
     {
       "slug": "measuring-tool",
@@ -93,12 +93,12 @@
       "grants": [
         "measuring_tool"
       ],
-      "stripePriceId": null,
+      "stripePriceId": "price_1UL6ZpRfnCxS2laIoklVoP83",
       "active": false,
       "blockers": [
-        "stripe_price_creation",
         "sandbox_payment_access_verification"
-      ]
+      ],
+      "stripeProductId": "prod_dirtyturf_app_measuring_tool_v1"
     },
     {
       "slug": "seo-tools",
@@ -165,5 +165,12 @@
     ],
     "matchingAddonPricesFound": false,
     "note": "Other two active prices are USD 300/month with nickname Test. No prices were created, selected, changed, or archived."
+  },
+  "stripeProvisioning": {
+    "observedOn": "2026-09-29",
+    "mode": "live",
+    "productsActive": false,
+    "portalConfigurationId": "bpc_1UL6a1RfnCxS2laIDBqD3Sxt",
+    "note": "Dedicated app products and prices prepared. Existing GHL products and subscriptions preserved. Checkout and all app offers remain disabled. These live IDs cannot be used in sandbox tests."
   }
 }
