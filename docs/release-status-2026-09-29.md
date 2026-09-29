@@ -1,39 +1,42 @@
 # Release status — September 29, 2026
 
-## Google Play — verified in the signed-in console
+## Web — live
 
-- Internal testing is active. **1.0 (6), Native login and session fix**, is available to internal testers; released September 26.
-- Production track marks **1.0 (5), Member sign-in update**, rejected. Policy status lists a September 28 rejection: reviewers could not sign in with the supplied credentials. The issue detail says a previous version remains available on Google Play; this does not mean build 5 is approved.
-- Publishing overview also lists build 5 under changes in review. Treat this as unresolved/resubmitted review activity; the policy rejection is still present. An open-testing resume change is separately not submitted.
-- Saved the dedicated Google reviewer entry as **Dirty Turf App Review** with corrected instructions of **372/500 characters**. Reload confirmed the saved entry includes username, password and instructions. Preserved the supplied credentials. Correction to earlier notes: browser inspection hid the credential values, but the visible counters showed the fields populated; absence of readable values was not evidence they were empty. No password was reset, and successful password sign-in has not been verified in this pass.
-- Read-only backend checks confirmed the dedicated reviewer identity is email-confirmed, has a password, is an active member with an unexpired manual community grant, and can qualify for the published open-access Academy course. This does not prove password sign-in on the installed build.
+- [PR 21](https://github.com/stevedifabio-oss/Dirty-Turf/pull/21) merged through the GitHub connector as Steve. Main release commit: `4d14343cfe4e007412b508aa4c417f3b8f7fe9a1`.
+- GitHub CI passed; the automatic Netlify build deployed to https://app.dirtyturf.com. No manual Netlify deployment was used.
+- Live root HTML SHA-256 matches the release build: `a55a0e0680af4ddf34b2b756042ed6ef821c21f986390bc97ceb569f5b92b431`.
+- All 10 public release smoke checks passed, including legal/support pages, native callback, PWA files, SPA fallback, HTTPS and security headers. Authenticated Dashboard, Academy (109 published lessons) and Community loaded; no captured browser errors.
 
-## Android next candidate — local only
+## Google Play — build 7 submitted; internal testing available
 
-Signed **1.0 (7)** at `android/app/build/outputs/bundle/release/app-release.aab`.
+- **1.0 (7), Academy and member experience**, is available to internal testers, released September 29 at 3:13 PM local.
+- The same build is submitted for production review, with a full rollout to the selected United States distribution. Publishing overview lists it under **Changes in review**. Managed publishing is off, so approved changes publish automatically.
+- The earlier build 5 rejection concerned reviewer login. Reviewer instructions were corrected and saved at **372/500 characters**, preserving the supplied credentials. Submission does not prove Google has accepted that correction; approval remains pending.
+- An older open-testing resume change remains unsubmitted.
+- Package: `com.dirtyturf.academy`. Corrected signed AAB SHA-256: `7c54beffe0be10a7d36843bce1a8782fe96f060692ede23924d2ae6344212b4a`.
+- Google accepted the existing registered upload certificate, SHA-1 `5F:0D:7A:96:E5:FF:CA:22:CA:4F:41:6D:46:96:BC:91:A1:4B:69:12`. The first locally signed candidate used a superseded key and was replaced; no key reset was needed. See `release-runbook.md`.
+- Signature verified; all 49 embedded web assets match the release build. Steve's earlier successful Android login is separate evidence; installation and login on build 7 have not been observed.
 
-- Package `com.dirtyturf.academy`; embedded version verified.
-- Bundle validation passed; signature matches the existing protected upload key.
-- All 49 web assets match the local web build.
-- SHA-256: `395622a50aad9d7435c52f4f12b7d718a983167eae05f7bd40d5ca98588ef307`.
-- Includes the pending pricing UI, course refresh and email-related frontend changes. Backend services and activation switches remain separate release work.
-- Not uploaded, submitted, installed on a phone, or published.
+## Apple — build 12 submitted; TestFlight testing
 
-## Apple — verified after owner sign-in
+- Signed **iOS 1.0 (12)** uploaded and processed successfully. App Store status: **Waiting for Review**, submitted September 29 at 3:11 PM local.
+- [Current submission](https://appstoreconnect.apple.com/apps/6813588770/distribution/reviewsubmissions/details/b80c8ce7-5c4b-4b3c-b7d9-74b110e7d272). The old build 10 submission was replaced. Automatic release after approval is selected.
+- TestFlight build 12 is **Testing**, assigned to **Internal Testers** and **iPhone Testers**. Existing external tester notification was enabled.
+- Reviewer credentials were preserved. The existing physical-iPhone walkthrough was accurately identified as build 10; it is not build 12 device evidence.
+- IPA SHA-256: `dc256474510a6ec0a839d52bea3aa5da243865fcfa8d5939d9f52fed2e28325a`. Strict code-signature verification passed; all 49 embedded web assets match the release build.
+- Public App Store approval and build 12 physical-device acceptance remain pending.
 
-App Store Connect shows **iOS 1.0 (10), Waiting for Review**, submitted September 25 at 3:52 PM. Submission `2d48a399-2dbb-4817-9eae-ec91e6bdef40` includes the physical-iPhone walkthrough response and recording. It has not been approved.
+## Backend — deployed; feature activation pending
 
-TestFlight: build **11** upload completed September 26, is **Ready to Submit**, assigned to Internal Testers, with one install shown. Build **10** is **Testing**, assigned to Internal Testers and iPhone Testers, with two installs shown. The App Store review still selects build 10; no selection or submission was changed.
+The Supabase connector applied five migrations and deployed seven Edge Functions. Existing access was preserved: 63 members and 111 access grants, with an identical complete grant-row hash before and after. See `backend-release-pending.md` for versions and endpoint evidence.
 
-Local iOS source is **1.0 (11)** and the simulator app matches the local web entry. There is no signed IPA/archive in this worktree. No Apple build was uploaded or changed during this pass.
+- Stripe checkout and pricing gates remain off. Webhook signing/runtime configuration, course mapping, payout bank setup and payment/access/cancellation verification remain pending.
+- Branded community email templates and dispatcher are deployed; customer delivery remains off pending credentials, cutover and delivery QA. No member campaign was sent.
+- Apps refresh course data on return. Automatic GHL source synchronization remains off pending source/baseline validation, configuration and scheduling. Do not describe it as a running automatic mirror.
 
-## Remaining work
+## Verification and remaining acceptance
 
-1. Verify the saved reviewer credentials on the intended release candidate and send the appropriate Google review changes; saving the entry alone does not resolve the rejection.
-2. Apple build 10 remains waiting for review. Prepare the newer Apple binary separately before any intentional replacement; local changes sharing build number 11 are not identical to the September 26 uploaded build.
-3. Finish course entitlement mapping and the Stripe backend/webhook runtime setup; verify payment/access behavior before enabling sales.
-4. Complete the pending GitHub release when its hold is lifted. GitHub triggers Netlify automatically. No manual Netlify deployment is needed.
-
-No store submission, customer message, payment, production database write, GitHub push or app deployment occurred during this pass. Stripe Google Pay and portal privacy-link configuration were saved live.
-
-Google reviewer text limit: maximum 500 characters. The corrected 372-character instructions were saved and verified after reload; no review submission was sent during this correction.
+- Full local check passed: **291 tests across 48 files**, security scan, schema checks, store metadata, TypeScript, production build and PWA checks.
+- Both native artifacts contain the same release web assets. Availability to testers is not proof of installation or successful device testing.
+- Remaining release gates: Apple/Google approval, newest-build device checks, and separate activation/verification of payments, source synchronization and member email delivery.
+- The installed GitHub and Supabase connectors resolved the CLI account mismatch. No additional GitHub merge or Supabase function-deployment permission is needed for this release.

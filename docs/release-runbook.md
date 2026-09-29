@@ -78,6 +78,42 @@ upload-key variables are present. `npm run native:android:release` then builds
 the release AAB and signs it only when the complete environment is supplied;
 the key and passwords never belong in Git or `.env` files.
 
+### Android upload signing key
+
+Use the existing keystore at
+`/Users/wififunded/Documents/Dirty Turf Release Keys/dirty-turf-upload.jks`
+with alias `dirty-turf-upload`. Google Play expects its certificate SHA-1:
+`5F:0D:7A:96:E5:FF:CA:22:CA:4F:41:6D:46:96:BC:91:A1:4B:69:12`.
+The September 29 corrected build 7 was verified against that fingerprint.
+
+**Do not use `~/.config/dirty-turf/android/dirty-turf-upload.jks` or its
+`signing.env`.** That directory contains a superseded key with a different
+certificate; Google Play rejected the first build 7 artifact signed with it.
+
+To find the password, open **Keychain Access**, search for
+**Dirty Turf Android Upload Key**, and open the password item whose account is
+**stevedifabio-oss**. Choose **Show password** and authenticate with macOS when
+prompted. This existing item holds the password used for both the keystore and
+the `dirty-turf-upload` key. Keep it in Keychain; do not paste it into source,
+chat, build logs, or shell command arguments.
+
+For a local release, provide `ANDROID_KEYSTORE_PATH` with the Documents path,
+`ANDROID_KEY_ALIAS=dirty-turf-upload`, and retrieve the Keychain password into
+the `ANDROID_KEYSTORE_PASSWORD` and `ANDROID_KEY_PASSWORD` environment
+variables without printing it. Set
+`ANDROID_HOME=/Users/wififunded/Library/Android/sdk` if the SDK is not already
+configured, then run `npm run native:android:signing-status` and
+`npm run native:android:release`.
+
+Environment presence alone does not prove the correct key was selected. Before
+uploading, check the finished artifact's certificate and compare its SHA-1 to
+the expected value above:
+
+```bash
+keytool -printcert -jarfile android/app/build/outputs/bundle/release/app-release.aab
+jarsigner -verify android/app/build/outputs/bundle/release/app-release.aab
+```
+
 `npm run check` includes a credential-pattern scan, migration/RLS contract
 checks, store metadata/native permission validation, TypeScript, unit tests,
 the production build, public legal-page checks, and the PWA offline manifest
