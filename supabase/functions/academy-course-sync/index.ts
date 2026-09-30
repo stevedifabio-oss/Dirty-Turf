@@ -5,6 +5,8 @@ import { loadRuntimeConfig } from "../_shared/runtime-config.ts";
 import { captureGhlCourses } from "../_shared/ghl-course-reader.mjs";
 // @ts-types="../_shared/course-sync.d.ts"
 import { mapCourseSnapshot, courseSnapshotHash, secretMatches } from "../_shared/course-sync.mjs";
+// @ts-types="../_shared/course-image-mirror.d.ts"
+import { mirrorCourseImages } from "../_shared/course-image-mirror.mjs";
 
 const reply = (body: unknown, status=200) => new Response(JSON.stringify(body),{status,headers:{"content-type":"application/json","cache-control":"no-store"}});
 Deno.serve(async request => {
@@ -21,7 +23,7 @@ Deno.serve(async request => {
   const token=settings.GHL_PRIVATE_INTEGRATION_TOKEN, locationId=settings.GHL_LOCATION_ID;
   if(!token || !locationId) return reply({error:'Sync not configured'},503);
   // No caller-provided scope, URLs, credentials or snapshot accepted.
-  const {data:configs,error}=await admin.from('academy_course_sync_configs').select('id').eq('enabled',true).eq('location_id',locationId).limit(10);
+  const {data:configs,error}=await admin.from('academy_course_sync_configs').select('id,academy_community_id,location_id,course_ids').eq('enabled',true).eq('location_id',locationId).limit(10);
   if(error) return reply({error:'Unable to read sync configuration'},503);
   const results:Record<string,unknown>[]=[];
   for(const config of configs ?? []) {
@@ -41,7 +43,14 @@ Deno.serve(async request => {
       phase='apply_failed';
       const {data,error:applyError}=await admin.rpc('apply_academy_course_sync',{p_run_id:run.run_id,p_snapshot:mapped,p_hash:hash});
       if(applyError) throw new Error('Apply failed');
-      results.push({config_id:config.id,...data});
+      // Run even when the course snapshot is unchanged, so interrupted image
+      // uploads recover on the next poll without changing source/progress data.
+      let imageMirror: Record<string,string|number>;
+      try { imageMirror=await mirrorCourseImages(admin,{...config,course_ids:run.course_ids}); }
+      catch { imageMirror={status:'failed',error_code:'image_mirror_unavailable'}; }
+      const counts={...data}; delete counts.status;
+      const {error:reportError}=await admin.from('academy_course_sync_runs').update({counts:{...counts,image_mirror:imageMirror}}).eq('id',run.run_id);
+      results.push({config_id:config.id,...data,image_mirror:imageMirror,...(reportError?{image_report_error:true}:{})});
     } catch (error) {
       const reason=error instanceof Error?error.message:'';
       if(phase==='validation_failed') {
