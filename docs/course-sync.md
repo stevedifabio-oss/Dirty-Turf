@@ -30,6 +30,8 @@ After either a successful or unchanged content snapshot, the same worker fills m
 
 Verification includes retry/concurrency, visibility/scope, URL/format/size restrictions, and timeout queue fairness tests, plus the existing SQL access-policy regression suite.
 
+**Live September29 verification (September30 UTC):** worker v3 copied six missing images at00:14 UTC, reusing five catalog rows and creating one missing row. All143 catalog assets now have private mappings. All six new objects have matching catalog/storage byte sizes and valid content hashes. The scheduled00:15 run and a manual repeat found138 current published inline-image mappings, copied zero further images, and reported no failures/unsupported/deferred items. The Van Setup With a Truck Mount image loaded from a signed private app-storage URL at1536×1024 in the authenticated production browser. Lesson-body, access-grant and progress hashes stayed identical; member count remained63. Full CI:413 tests across55 files; Deno type check and33 SQL visibility/access assertions passed.
+
 ## Safety and ownership
 
 - Two complete API reads must produce identical normalized content before the worker applies a snapshot. No caller-supplied snapshot or scope is accepted.
