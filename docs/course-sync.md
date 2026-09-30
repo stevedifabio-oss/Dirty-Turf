@@ -18,6 +18,20 @@ The server reads the explicitly allowlisted GHL course every five minutes and at
 
 The real September 26 read-only capture mapped successfully: 1 allowlisted course, 36 modules, 128 lessons, 109 published after ancestor visibility is applied. That is mapping evidence, not production sync evidence.
 
+## Private lesson-image copies
+
+After either a successful or unchanged content snapshot, the same worker fills missing private image mappings for published, source-owned lessons in the configured courses. It reads each lesson's current inline `img src`, copies supported images to `academy-assets`, and registers the original URL with the existing signed-image loader. Source HTML stays unchanged, so a failed copy retains the existing source fallback. No replacement web/native client is required.
+
+- Only the configured location's course/media paths on the three existing GHL image CDN hosts are eligible. HTTPS, no custom port/credentials, no redirects, an eight-second download timeout, a six-MiB streamed-byte limit, and matching PNG/JPEG/GIF/WebP headers/signatures are enforced. SVG, unrelated sites and unsupported formats stay on their source URLs.
+- At most eight images are attempted within a 20-second download budget per run. The starting position rotates each five-minute window so repeated failures cannot starve later images.
+- Existing uncopied catalog rows retain their IDs and metadata. New records use deterministic lesson/URL identities; storage paths include community, course and lesson IDs plus the content hash. Concurrent retries do not create duplicate records. Existing private mappings and local/ambiguous records are preserved.
+- The content transaction has already completed before copying starts. Media failures are reported independently in `academy_course_sync_runs.counts.image_mirror`; they do not misreport a successful course update as a failed transaction. Remaining copies retry on later polls.
+- This copies missing mappings. It does not refresh bytes replaced at an unchanged source URL, repair missing objects behind existing mappings, mirror `srcset`, or copy video/audio.
+
+Verification includes retry/concurrency, visibility/scope, URL/format/size restrictions, and timeout queue fairness tests, plus the existing SQL access-policy regression suite.
+
+**Live September29 verification (September30 UTC):** worker v3 copied six missing images at00:14 UTC, reusing five catalog rows and creating one missing row. All143 catalog assets now have private mappings. All six new objects have matching catalog/storage byte sizes and valid content hashes. The scheduled00:15 run and a manual repeat found138 current published inline-image mappings, copied zero further images, and reported no failures/unsupported/deferred items. The Van Setup With a Truck Mount image loaded from a signed private app-storage URL at1536×1024 in the authenticated production browser. Lesson-body, access-grant and progress hashes stayed identical; member count remained63. Full CI:413 tests across55 files; Deno type check and33 SQL visibility/access assertions passed.
+
 ## Safety and ownership
 
 - Two complete API reads must produce identical normalized content before the worker applies a snapshot. No caller-supplied snapshot or scope is accepted.
