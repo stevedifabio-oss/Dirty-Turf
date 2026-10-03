@@ -89,6 +89,7 @@ import { billingPageRoute } from "./lib/membershipBilling";
 import { cloudCollectionOrEmpty } from "./lib/cloudCollection";
 import { createCommunityPostPageGate } from "./lib/communityPostPageGate";
 import { createCourseRefresh, watchCourseRefresh } from "./lib/courseRefresh";
+import { communityHasActiveDraft, createCommunityRefresh, loadCommunityPostWindow, mergeCommunityPostWindow } from "./lib/communityRefresh";
 import { createWorkspaceSession } from "./lib/workspaceSession";
 import { calculateQuote, INFILL_RATES } from "./lib/quote";
 import { useModalDialog } from "./lib/useModalDialog";
@@ -186,6 +187,14 @@ function App() {
   const [hasMorePosts, setHasMorePosts] = useState(false);
   const [loadingMorePosts, setLoadingMorePosts] = useState(false);
   const postPageGate = useRef(createCommunityPostPageGate());
+  const postCursorRef = useRef<CommunityPostCursor | undefined>(undefined);
+  const communityRevision = useRef(0);
+  const communityWritesPending = useRef(0);
+  const communityPagePending = useRef(false);
+  const refreshCommunityRef = useRef<() => void>(() => undefined);
+  const communityViewVisible = useRef(false);
+  communityViewVisible.current = !searchOpen && (activeView === "community" || activeView === "events");
+  const [communityRefreshError, setCommunityRefreshError] = useState(false);
   const [comments, setComments] = useState<CommunityComment[]>(supabase ? [] : initialComments);
   const [events, setEvents] = useState<AcademyEvent[]>(supabase ? [] : initialEvents);
   const [members, setMembers] = useState<Member[]>(supabase ? [] : initialMembers);
@@ -215,6 +224,8 @@ function App() {
   const canManage = workspaceAccess.status === "member" && workspaceAccess.canManage;
 
   const clearWorkspaceContent = () => {
+    communityRevision.current += 1;
+    setCommunityRefreshError(false);
     setJobs([]);
     setCourses([]);
     setPosts([]);
@@ -236,6 +247,9 @@ function App() {
       const activeRefresh = session.beginRefresh();
       workspaceRefreshPending.current = true;
       courseRevision.current += 1;
+      communityRevision.current += 1;
+      communityPagePending.current = false;
+      postCursorRef.current = undefined;
       postPageGate.current.refresh();
       setLoadingMorePosts(false);
       setHasMorePosts(false);
@@ -279,6 +293,7 @@ function App() {
         if (postsResult.status === "fulfilled") {
           postPageGate.current.activate();
           setPosts(postsResult.value.posts);
+          postCursorRef.current = postsResult.value.nextCursor;
           setPostCursor(postsResult.value.nextCursor);
           setHasMorePosts(postsResult.value.hasMore);
         } else setPosts([]);
@@ -321,6 +336,36 @@ function App() {
       onSuccess: () => setCourseRefreshError(false),
     });
     refreshCoursesRef.current = () => { void courseRefresh.refresh(); };
+    const communityRefresh = createCommunityRefresh({
+      load: async () => {
+        const [postWindow, comments, events, members] = await Promise.all([
+          loadCommunityPostWindow(cursor => loadPosts([], cursor), postCursorRef.current),
+          loadComments([]), loadEvents([]), loadMembers([]),
+        ]);
+        return { postWindow, comments, events, members };
+      },
+      apply: ({ postWindow, comments, events, members }) => {
+        setPosts(current => mergeCommunityPostWindow(current, postWindow));
+        // A bounded partial read must not move the user's older-page cursor.
+        if (postWindow.complete) {
+          postCursorRef.current = postWindow.nextCursor;
+          setPostCursor(postWindow.nextCursor);
+          setHasMorePosts(postWindow.hasMore);
+        }
+        setComments(comments);
+        setEvents(events);
+        setMembers(members);
+      },
+      version: () => communityRevision.current,
+      eligible: () => Boolean(supabase) && mounted && workspaceContentReady.current
+        && Boolean(lastAccess && communityAvailable(lastAccess)) && communityViewVisible.current
+        && !workspaceRefreshPending.current && !communityPagePending.current && communityWritesPending.current === 0
+        && document.visibilityState === "visible" && !communityHasActiveDraft(document)
+        && ![...document.querySelectorAll<HTMLVideoElement>(".community-media-video")].some(video => !video.paused),
+      onError: () => setCommunityRefreshError(true),
+      onSuccess: () => setCommunityRefreshError(false),
+    });
+    refreshCommunityRef.current = () => { void communityRefresh.refresh(); };
     const refreshAccess = async () => {
       if (!supabase || !mounted || accessRefreshPending || workspaceRefreshPending.current) return;
       accessRefreshPending = true;
@@ -335,7 +380,10 @@ function App() {
           workspaceContentReady.current = false;
           setWorkspaceAccess(access);
           void refreshWorkspace();
-        } else refreshCoursesRef.current();
+        } else {
+          refreshCoursesRef.current();
+          refreshCommunityRef.current();
+        }
       } catch {
         if (mounted && session.isCurrent(generation)) {
           courseRevision.current += 1;
@@ -361,6 +409,9 @@ function App() {
         lastAccess = null;
         courseAccountGeneration.current += 1;
         courseRevision.current += 1;
+        communityRevision.current += 1;
+        communityPagePending.current = false;
+        postCursorRef.current = undefined;
         setCourseRefreshError(false);
         clearWorkspaceContent();
         workspaceContentReady.current = false;
@@ -398,6 +449,8 @@ function App() {
       session.invalidate();
       courseRevision.current += 1;
       courseRefresh.dispose();
+      communityRefresh.dispose();
+      refreshCommunityRef.current = () => undefined;
       stopCourseRefresh();
       refreshCoursesRef.current = () => undefined;
       refreshWorkspaceRef.current = () => undefined;
@@ -425,6 +478,7 @@ function App() {
 
   useEffect(() => {
     if (activeView === "learn") refreshCoursesRef.current();
+    if (activeView === "community" || activeView === "events") refreshCommunityRef.current();
   }, [activeView]);
 
   const renderedCourseAccount = courseAccountGeneration.current;
@@ -440,10 +494,24 @@ function App() {
     finally { courseWritesPending.current -= 1; courseRevision.current += 1; }
   };
 
+  const changeCommunity = <T,>(setter: React.Dispatch<React.SetStateAction<T>>, next: T) => {
+    if (renderedCourseAccount !== courseAccountGeneration.current) return;
+    communityRevision.current += 1;
+    setter(next);
+  };
+  const writeCommunity = async <T,>(write: () => Promise<T>): Promise<T> => {
+    communityRevision.current += 1;
+    communityWritesPending.current += 1;
+    try { return await write(); }
+    finally { communityWritesPending.current -= 1; communityRevision.current += 1; }
+  };
+
   const loadMoreCommunityPosts = async () => {
     if (!hasMorePosts) return;
     const requestGeneration = postPageGate.current.begin();
     if (requestGeneration === null) return;
+    communityPagePending.current = true;
+    communityRevision.current += 1;
     setLoadingMorePosts(true);
     try {
       const page = await loadPosts(initialPosts, postCursor);
@@ -452,12 +520,17 @@ function App() {
         const existing = new Set(current.map((post) => post.cloudId ?? String(post.id)));
         return [...current, ...page.posts.filter((post) => !existing.has(post.cloudId ?? String(post.id)))];
       });
+      postCursorRef.current = page.nextCursor;
       setPostCursor(page.nextCursor);
       setHasMorePosts(page.hasMore);
     } catch {
       if (postPageGate.current.isCurrent(requestGeneration)) setToast("More posts could not load. Try again.");
     } finally {
-      if (postPageGate.current.finish(requestGeneration)) setLoadingMorePosts(false);
+      if (postPageGate.current.finish(requestGeneration)) {
+        communityPagePending.current = false;
+        communityRevision.current += 1;
+        setLoadingMorePosts(false);
+      }
     }
   };
 
@@ -661,6 +734,8 @@ function App() {
 
         {cloudLoadError && <div className="cloud-load-alert" role="alert"><span>{cloudLoadError}</span><button type="button" onClick={() => setWorkspaceRefreshToken((token) => token + 1)}>Try again</button></div>}
 
+        {communityRefreshError && (activeView === "community" || activeView === "events") && <div className="cloud-load-alert" role="status"><span>Updates are temporarily unavailable. Your loaded content is still here; we’ll retry automatically.</span></div>}
+
         {workspaceContentLoading && <div className="cloud-load-alert" role="status"><span>{waitingForWorkspace ? "Loading your workspace..." : "Updating your workspace..."}</span></div>}
 
         {!waitingForWorkspace && <>
@@ -668,8 +743,8 @@ function App() {
         {!searchOpen && activeView !== "home" && <AcademyTabs activeView={activeView} canManage={canManage} hasCommunity={hasCommunity} onNavigate={changeView} />}
         {!searchOpen && activeView === "home" && <HomeView jobs={jobs} openQuote={openQuote} checks={arrivalChecks} setChecks={setArrivalChecks} setToast={setToast} />}
         {!searchOpen && activeView === "learn" && <AcademyView requestedCourseCloudId={requestedCourseCloudId} onRequestedCourseOpened={() => setRequestedCourseCloudId(undefined)} courses={visibleCourses} certificates={certificates} dataMode={dataMode} refreshError={courseRefreshError} onRefresh={() => refreshCoursesRef.current()} onCoursesChange={changeCourses} onLessonCompletion={(id, completed) => writeCourseProgress(() => saveLessonCompletion(id, completed))} onQuizAttempt={(id, score, answers) => writeCourseProgress(() => recordAcademyQuizAttempt(id, score, answers))} onRequestCertificate={async (courseId) => { await requestAcademyCertificate(courseId); setCertificates(await loadAcademyCertificates()); }} onToast={setToast} onDiscuss={() => changeView("community")} />}
-        {!searchOpen && activeView === "community" && hasCommunity && <CommunityView posts={posts} comments={comments} members={members} events={events} requestedPostCloudId={requestedPostCloudId} onRequestedPostOpened={() => setRequestedPostCloudId(undefined)} onPostsChange={setPosts} onCommentsChange={setComments} onMembersChange={setMembers} onToggleFollow={(member, following) => member.cloudId ? setAcademyMemberFollow(member.cloudId, following) : Promise.resolve(following)} onLoadMorePosts={loadMoreCommunityPosts} hasMorePosts={hasMorePosts} loadingMorePosts={loadingMorePosts} onCreatePost={savePost} onCreateComment={saveComment} onToggleLike={(post) => post.cloudId ? togglePostReaction(post.cloudId) : Promise.resolve(null)} onToggleCommentLike={(comment) => comment.cloudId ? toggleCommentReaction(comment.cloudId) : Promise.resolve(null)} onToggleBookmark={(post) => post.cloudId ? togglePostBookmark(post.cloudId) : Promise.resolve(null)} onReport={(contentType, contentId, reason) => reportAcademyContent(contentType, contentId, reason).then(() => undefined)} onBlockMember={toggleAcademyMemberBlock} onLoadBlockedMembers={loadBlockedAcademyMemberIds} onRefreshCommunity={() => setWorkspaceRefreshToken((current) => current + 1)} onNavigate={changeView} onToast={setToast} />}
-        {!searchOpen && activeView === "events" && hasCommunity && <EventsView requestedEventCloudId={requestedEventCloudId} onRequestedEventOpened={() => setRequestedEventCloudId(undefined)} events={events} onEventsChange={setEvents} onToggleRsvp={(event) => event.cloudId ? toggleAcademyEventRsvp(event.cloudId) : Promise.resolve(null)} onToast={setToast} />}
+        {!searchOpen && activeView === "community" && hasCommunity && <CommunityView posts={posts} comments={comments} members={members} events={events} requestedPostCloudId={requestedPostCloudId} onRequestedPostOpened={() => setRequestedPostCloudId(undefined)} onPostsChange={next => changeCommunity(setPosts, next)} onCommentsChange={next => changeCommunity(setComments, next)} onMembersChange={next => changeCommunity(setMembers, next)} onToggleFollow={(member, following) => writeCommunity(() => member.cloudId ? setAcademyMemberFollow(member.cloudId, following) : Promise.resolve(following))} onLoadMorePosts={loadMoreCommunityPosts} hasMorePosts={hasMorePosts} loadingMorePosts={loadingMorePosts} onCreatePost={post => writeCommunity(() => savePost(post))} onCreateComment={(comment, postCloudId) => writeCommunity(() => saveComment(comment, postCloudId))} onToggleLike={(post) => writeCommunity(() => post.cloudId ? togglePostReaction(post.cloudId) : Promise.resolve(null))} onToggleCommentLike={(comment) => writeCommunity(() => comment.cloudId ? toggleCommentReaction(comment.cloudId) : Promise.resolve(null))} onToggleBookmark={(post) => writeCommunity(() => post.cloudId ? togglePostBookmark(post.cloudId) : Promise.resolve(null))} onReport={(contentType, contentId, reason) => reportAcademyContent(contentType, contentId, reason).then(() => undefined)} onBlockMember={memberId => writeCommunity(() => toggleAcademyMemberBlock(memberId))} onLoadBlockedMembers={loadBlockedAcademyMemberIds} onRefreshCommunity={() => setWorkspaceRefreshToken((current) => current + 1)} onNavigate={changeView} onToast={setToast} />}
+        {!searchOpen && activeView === "events" && hasCommunity && <EventsView requestedEventCloudId={requestedEventCloudId} onRequestedEventOpened={() => setRequestedEventCloudId(undefined)} events={events} onEventsChange={next => changeCommunity(setEvents, next)} onToggleRsvp={(event) => writeCommunity(() => event.cloudId ? toggleAcademyEventRsvp(event.cloudId) : Promise.resolve(null))} onToast={setToast} />}
         {!searchOpen && ["community", "events"].includes(activeView) && !hasCommunity && <><AccessRequired title="Community access required">This account does not currently have access to community conversations and events.</AccessRequired><AvailableUpgrades access={workspaceAccess} kind="membership" /></>}
         {!searchOpen && activeView === "learn" && <AvailableUpgrades access={workspaceAccess} kind="course" />}
         {!searchOpen && activeView === "admin" && canManage && <Suspense fallback={<div className="admin-loading" role="status">Loading Admin Studio...</div>}><AdminStudio onToast={setToast} onContentChange={() => setWorkspaceRefreshToken((token) => token + 1)} /></Suspense>}

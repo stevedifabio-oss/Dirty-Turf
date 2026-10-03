@@ -601,30 +601,61 @@ export async function savePost(post: CommunityPost): Promise<CommunityPost> {
   return { ...post, id: stableNumericId(data), cloudId: String(data) };
 }
 
+type AcademyCommentRow = {
+  id: string; post_id: string; parent_id: string | null; author_name: string; body: string;
+  created_at: string; like_count: number; is_answer: boolean; academy_author_id: string | null;
+};
+
 export async function loadComments(seed: CommunityComment[]): Promise<CommunityComment[]> {
   const context = await getAcademyContext();
   if (!context) return (await hasCloudSession()) ? [] : readLocal(COMMENTS_KEY, seed);
 
-  const { data, error } = await supabase!
-    .from("academy_comment_feed")
-    .select("id,post_id,parent_id,author_name,body,created_at,like_count,is_answer,academy_author_id")
-    .eq("academy_community_id", context.communityId)
-    .order("created_at", { ascending: true })
-    .limit(500);
-  if (error) throw error;
+  const pageSize = 500;
+  const maxPages = 20;
+  const data: AcademyCommentRow[] = [];
+  const seen = new Set<string>();
+  let cursor: CommunityPostCursor | undefined;
+  let complete = false;
+  for (let pageNumber = 0; pageNumber < maxPages; pageNumber += 1) {
+    const query = supabase!
+      .from("academy_comment_feed")
+      .select("id,post_id,parent_id,author_name,body,created_at,like_count,is_answer,academy_author_id")
+      .eq("academy_community_id", context.communityId)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true });
+    const { data: page, error } = await (cursor
+      ? query.or(`created_at.gt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.gt.${cursor.id})`)
+      : query).limit(pageSize);
+    if (error) throw error;
+    const rows = page ?? [];
+    for (const row of rows) {
+      if (seen.has(row.id)) throw new Error("Community comment pagination did not advance.");
+      seen.add(row.id);
+      data.push(row);
+    }
+    if (rows.length < pageSize) { complete = true; break; }
+    const last = rows.at(-1)!;
+    if (!/^\d{4}-\d\d-\d\dT[\d:.]+(?:Z|[+-]\d\d:\d\d)$/.test(last.created_at) || !/^[0-9a-f-]{36}$/i.test(last.id)) {
+      throw new Error("Invalid comment page cursor.");
+    }
+    cursor = { createdAt: last.created_at, id: last.id };
+  }
+  // Refresh replaces this collection: never present a bounded partial read as complete.
+  if (!complete) throw new Error("Could not load the complete comment history.");
 
-  const commentIds = (data ?? []).map((row) => row.id);
-  const { data: reactionRows, error: reactionError } = commentIds.length
-    ? await supabase!
-        .from("academy_comment_reactions")
-        .select("comment_id")
-        .eq("academy_member_id", context.memberId)
-        .in("comment_id", commentIds)
-    : { data: [], error: null };
-  if (reactionError) throw reactionError;
-  const liked = new Set((reactionRows ?? []).map((row) => row.comment_id));
+  const liked = new Set<string>();
+  // Keep UUID filters below URL limits as the comment collection grows.
+  for (let offset = 0; offset < data.length; offset += 100) {
+    const { data: reactionRows, error: reactionError } = await supabase!
+      .from("academy_comment_reactions")
+      .select("comment_id")
+      .eq("academy_member_id", context.memberId)
+      .in("comment_id", data.slice(offset, offset + 100).map(row => row.id));
+    if (reactionError) throw reactionError;
+    for (const row of reactionRows ?? []) liked.add(row.comment_id);
+  }
 
-  return (data ?? []).map((row) => ({
+  return data.map((row) => ({
     id: stableNumericId(row.id),
     cloudId: row.id,
     postId: stableNumericId(row.post_id),
