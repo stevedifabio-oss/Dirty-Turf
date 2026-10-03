@@ -96,6 +96,7 @@ import { AcademyView } from "./components/Academy";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { CommunityView } from "./components/Community";
 import { EventsView } from "./components/Events";
+import { NumberField } from "./components/NumberField";
 import { PrimaryNavigation, type PrimaryNavigationView } from "./components/PrimaryNavigation";
 import type { HubSection } from "./components/Network";
 import { courses as seedCourses, initialComments, initialEvents, initialMembers, initialNotifications, initialPosts } from "./appData";
@@ -902,7 +903,7 @@ function QuoteSheet({ canMeasure, access, draft, setDraft, quote, photoUrl, setP
           {draft.mode === "manual" && <DimensionInputs draft={draft} update={update} />}
           {draft.mode === "map" && canMeasure && <Suspense fallback={<div className="map-loading" role="status">Loading property map...</div>}><MapMeasurement address={draft.address} area={draft.mapArea} onAddressChange={(value) => update("address", value)} onAreaChange={(value) => update("mapArea", value)} /></Suspense>}
           {draft.mode !== "manual" && !canMeasure && <><AccessRequired title="Measuring tool access required">Camera and map measurements are not available with your current access. You can still enter dimensions manually.</AccessRequired><AvailableUpgrades access={access} kind="tool" feature="measuring_tool" /><button className="secondary-button wide" onClick={() => update("mode", "manual")}>Enter dimensions manually</button></>}
-          {(draft.mode === "manual" || canMeasure) && <><section className="infill-controls"><label className="field-label">Infill rate<select value={draft.infillRate} onChange={(event) => update("infillRate", numberValue(event.target.value))}>{INFILL_RATES.map((rate) => <option key={rate} value={rate}>{rate.toFixed(2)} lb / sq ft</option>)}</select></label><NumberField label="What you charge" value={draft.serviceRate} prefix="$" suffix="/ sq ft" step={0.01} update={(value) => update("serviceRate", value)} /></section>
+          {(draft.mode === "manual" || canMeasure) && <><section className="infill-controls"><label className="field-label">Infill rate<select value={draft.infillRate} onChange={(event) => update("infillRate", numberValue(event.target.value))}>{INFILL_RATES.map((rate) => <option key={rate} value={rate}>{rate.toFixed(2)} lb / sq ft</option>)}</select></label><NumberField label="What you charge" value={draft.serviceRate} prefix="$" suffix="/ sq ft" update={(value) => update("serviceRate", value)} /></section>
           <section className="infill-summary" aria-label="Infill calculation results"><div className="area-total"><span>Total turf area</span><strong>{formatNumber(quote.area)}</strong><small>square feet</small></div><div className="infill-result-grid"><div><span>Total infill</span><strong>{formatNumber(quote.infillPounds)} lb</strong></div><div><span>40-lb bags</span><strong>{quote.bags40}</strong></div><div><span>50-lb bags</span><strong>{quote.bags50}</strong></div></div><div className="customer-price"><span>Customer price</span><strong>{formatCurrency(quote.serviceTotal)}</strong></div></section></>}
         </div>
         <div className="sheet-footer"><button className="primary-button wide" disabled={draft.mode !== "manual" && !canMeasure} onClick={onSave}><CheckCircle2 size={18} /> Save calculation</button></div>
@@ -952,10 +953,6 @@ function LiveCameraMeasurement({ area, onAreaChange, photoUrl, changePhoto }: { 
 
 function DimensionInputs({ draft, update }: { draft: QuoteDraft; update: <K extends keyof QuoteDraft>(key: K, value: QuoteDraft[K]) => void }) {
   return <div className="dimension-grid"><NumberField label="Length" value={draft.length} suffix="ft" update={(value) => update("length", value)} /><span className="dimension-times">×</span><NumberField label="Width" value={draft.width} suffix="ft" update={(value) => update("width", value)} /></div>;
-}
-
-function NumberField({ label, value, update, prefix, suffix, step = 1 }: { label: string; value: number; update: (value: number) => void; prefix?: string; suffix?: string; step?: number }) {
-  return <label className="number-field"><span>{label}</span><div>{prefix && <i>{prefix}</i>}<input type="number" min="0" step={step} value={value} onChange={(event) => update(numberValue(event.target.value))} />{suffix && <small>{suffix}</small>}</div></label>;
 }
 
 function ModeButton({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) { return <button type="button" className={active ? "active" : ""} onClick={onClick}>{icon}<span>{label}</span></button>; }
