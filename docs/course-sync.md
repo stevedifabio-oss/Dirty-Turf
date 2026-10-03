@@ -2,6 +2,14 @@
 
 **Production activated September 29, 2026:** the allowlisted Turf Cleaning Academy course now syncs automatically every five minutes. The first live worker run succeeded at 20:29:34 UTC, applying 1 course, 36 source modules and 128 lessons. All 63 members, access grants, learning progress and lesson UUIDs were preserved. Course updates reach web, iPhone and Android through the shared database and existing foreground/resume refresh. Community posts/comments are a separate integration and are not mirrored by this worker.
 
+**Live health verified October 3 at 17:47 UTC:** the exact one-course configuration
+is enabled and its five-minute cron job is active. The latest six scheduled runs
+(17:20–17:45 UTC) all completed `unchanged` with no errors. Every run reported 138
+already-mirrored current inline images and zero failed, unsupported or deferred
+copies. The latest success finished at 17:45:06 UTC. This verifies continued
+scheduled operation; it does not extend the allowlist to unrelated/new courses
+or establish Community synchronization.
+
 The server reads the explicitly allowlisted GHL course every five minutes and atomically updates the shared Academy database. Apple, Android and web read that same database; course content updates do not require a new store binary. The frontend checks every 60 seconds in the foreground and on focus, reconnect and native resume. It defers updates while any lesson view is open, protecting paused video position, quiz answers and reading; checks resume after returning to the catalog. The initial binary containing refresh behavior still needs its normal native release.
 
 ## Supported source changes
