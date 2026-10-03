@@ -7,8 +7,10 @@ const mocks = vi.hoisted(() => {
   const reactions = vi.fn();
   const cursor = vi.fn();
   const order = vi.fn();
+  const signedUrls = vi.fn();
   const client = {
     auth: { getSession },
+    storage: { from: vi.fn(() => ({ createSignedUrls: signedUrls })) },
     from: vi.fn((table: string) => {
       if (table === "academy_members") {
         const query = { select: () => query, eq: () => query, limit: () => query,
@@ -28,7 +30,7 @@ const mocks = vi.hoisted(() => {
       throw new Error(`Unexpected table: ${table}`);
     }),
   };
-  return { client, getSession, commentPage, reactions, cursor, order };
+  return { client, getSession, commentPage, reactions, cursor, order, signedUrls };
 });
 
 vi.mock("@supabase/supabase-js", () => ({ createClient: () => mocks.client }));
@@ -52,12 +54,48 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.commentPage.mockReset();
   mocks.getSession.mockResolvedValue({ data: { session: { user: { id: "user-1" } } }, error: null });
+  mocks.signedUrls.mockReset().mockImplementation(async (paths: string[]) => ({
+    data: paths.map(path => ({ path, signedUrl: `https://project.supabase.co/signed/${path}` })), error: null,
+  }));
   mocks.reactions.mockReset().mockImplementation(async (_column: string, ids: string[]) => ({
     data: ids.includes(id(503)) ? [{ comment_id: id(503) }] : [], error: null,
   }));
 });
 
 describe("complete community comment reads", () => {
+  it("keeps reply attachments with the correct comment and signs private media", async () => {
+    const parent = row(1);
+    const reply = { ...row(2), parent_id: id(1), media: [
+      { url: "https://source.example/image", type: "image", storage_path: "community/comments/reply.webp", mime_type: "image/webp", name: "After cleaning" },
+      { url: "https://source.example/checklist", type: "file", name: "Checklist" },
+    ] };
+    mocks.commentPage.mockResolvedValue({ data: [parent, reply], error: null });
+    const comments = await loadComments([]);
+    expect(comments[0].mediaItems).toEqual([]);
+    expect(comments[1].parentCloudId).toBe(id(1));
+    expect(comments[1].mediaItems).toEqual([
+      { kind: "image", url: "https://project.supabase.co/signed/community/comments/reply.webp", originalUrl: "https://source.example/image", label: "After cleaning" },
+      { kind: "file", url: "https://source.example/checklist", label: "Checklist" },
+    ]);
+    expect(mocks.signedUrls).toHaveBeenCalledWith(["community/comments/reply.webp"], 3600);
+  });
+
+  it("signs a large comment attachment collection in bounded batches", async () => {
+    const rows = Array.from({ length: 201 }, (_, index) => ({ ...row(index + 1), media: [{
+      url: `https://source.example/${index}`, type: "image", storage_path: `community/comments/${index}.webp`,
+    }] }));
+    mocks.commentPage.mockResolvedValue({ data: rows, error: null });
+    const comments = await loadComments([]);
+    expect(comments).toHaveLength(201);
+    expect(mocks.signedUrls.mock.calls.map(call => call[0].length)).toEqual([100, 100, 1]);
+  });
+
+  it("rejects a private media signing error rather than applying a broken refresh", async () => {
+    mocks.commentPage.mockResolvedValue({ data: [{ ...row(1), media: [{ url: "https://source.example/image", storage_path: "community/comments/image.webp" }] }], error: null });
+    mocks.signedUrls.mockResolvedValue({ data: null, error: new Error("Media unavailable") });
+    await expect(loadComments([])).rejects.toThrow("Media unavailable");
+  });
+
   it("keeps comments newer than the first 500 and pages by timestamp plus ID", async () => {
     mocks.commentPage.mockResolvedValueOnce({ data: Array.from({ length: 500 }, (_, index) => row(index + 1)), error: null })
       .mockResolvedValueOnce({ data: [row(501), row(502), row(503)], error: null });

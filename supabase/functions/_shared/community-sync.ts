@@ -91,7 +91,7 @@ export function validateCommunitySyncEvent(value: unknown): CommunitySyncEvent {
     event.postExternalId = identifier(input.postExternalId, "postExternalId");
     if (input.parentExternalId !== undefined) event.parentExternalId = input.parentExternalId === null ? null : identifier(input.parentExternalId, "parentExternalId");
     if (event.parentExternalId === event.externalId) return invalid("A comment cannot parent itself");
-    if (["title", "categoryExternalId", "pinned", "media"].some(key => input[key] !== undefined)) return invalid("Comment title, category, pin and media fields are unsupported");
+    if (["title", "categoryExternalId", "pinned"].some(key => input[key] !== undefined)) return invalid("Comment title, category and pin fields are unsupported");
   } else {
     if (input.postExternalId !== undefined || input.parentExternalId !== undefined) return invalid("Post events cannot carry comment parent fields");
     if (input.title !== undefined) event.title = content(input.title, "title", 2, 120);
@@ -100,10 +100,10 @@ export function validateCommunitySyncEvent(value: unknown): CommunitySyncEvent {
       if (typeof input.pinned !== "boolean") return invalid("pinned must be boolean");
       event.pinned = input.pinned;
     }
-    if (input.media !== undefined) {
-      if (!Array.isArray(input.media) || input.media.length > 20) return invalid("media must be an array of at most 20 assets");
-      event.media = input.media.map(mediaItem);
-    }
+  }
+  if (input.media !== undefined) {
+    if (!Array.isArray(input.media) || input.media.length > 20) return invalid("media must be an array of at most 20 assets");
+    event.media = input.media.map(mediaItem);
   }
   if (input.body !== undefined) event.body = content(input.body, "body", event.entity === "post" ? 2 : 1, event.entity === "post" ? 5000 : 3000);
   if (event.operation === "upsert") {

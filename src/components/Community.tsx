@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, AtSign, Bookmark, CalendarDays, Check, ChevronRight, ExternalLink, Flag, Hash, Heart, Link2, LockKeyhole, MapPin, Megaphone, MessageSquare, MoreHorizontal, Pin, Plus, Search, Send, Share2, ThumbsUp, Trophy, UserX, Users, X } from "lucide-react";
-import type { AcademyEvent, CommunityComment, CommunityMedia, CommunityPost, Member } from "../domain";
+import { ArrowLeft, AtSign, Bookmark, CalendarDays, Check, ChevronRight, Flag, Hash, Heart, Link2, LockKeyhole, MapPin, Megaphone, MessageSquare, MoreHorizontal, Pin, Plus, Search, Send, Share2, ThumbsUp, Trophy, UserX, Users, X } from "lucide-react";
+import type { AcademyEvent, CommunityComment, CommunityPost, Member } from "../domain";
+import { CommunityMediaGallery } from "./CommunityMediaGallery";
 import { communityChannels, communityLeaders, communityStats, featuredCommunityPost, postsFromFollowedMembers } from "../lib/communityOverview";
 import { communityBodyBlocks, communityBodyNeedsExpansion, communityPostShareUrl } from "../lib/communityPost";
 import { nextBlockedMemberIds, validReportReason, withoutMemberContent } from "../lib/communitySafety";
@@ -376,7 +377,7 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
       </article>
       <section className="thread-comments">
         <div className="thread-count">{thread.length} {thread.length === 1 ? "comment" : "comments"}</div>
-        {thread.map((comment) => <article className={`${comment.answer ? "comment answer" : "comment"}${comment.parentId ? " nested" : ""}`} key={comment.id}><Avatar name={comment.author} members={members} /><div><div className="comment-head"><strong>{comment.author}</strong><span>{comment.age}</span>{comment.answer && <em><Check size={11} /> Answer</em>}</div><p>{comment.body}</p><div className="comment-actions"><button className={comment.liked ? "active" : ""} onClick={() => void toggleCommentLike(comment)}><Heart size={14} fill={comment.liked ? "currentColor" : "none"} /> {comment.likes}</button><button onClick={() => { setReplyingTo(comment); setCommentText(`@${comment.author} `); }}><MessageSquare size={14} /> Reply</button>{comment.cloudId && <button onClick={() => void reportContent("comment", comment.cloudId!, "comment")}><Flag size={14} /> Report</button>}{comment.authorCloudId && <button onClick={() => void toggleMemberBlock(comment.authorCloudId!, comment.author)}><UserX size={14} /> Block</button>}</div></div></article>)}
+        {thread.map((comment) => <article className={`${comment.answer ? "comment answer" : "comment"}${comment.parentId ? " nested" : ""}`} key={comment.id}><Avatar name={comment.author} members={members} /><div><div className="comment-head"><strong>{comment.author}</strong><span>{comment.age}</span>{comment.answer && <em><Check size={11} /> Answer</em>}</div><p>{comment.body}</p><CommunityMediaGallery items={comment.mediaItems ?? []} context="Comment" /><div className="comment-actions"><button className={comment.liked ? "active" : ""} onClick={() => void toggleCommentLike(comment)}><Heart size={14} fill={comment.liked ? "currentColor" : "none"} /> {comment.likes}</button><button onClick={() => { setReplyingTo(comment); setCommentText(`@${comment.author} `); }}><MessageSquare size={14} /> Reply</button>{comment.cloudId && <button onClick={() => void reportContent("comment", comment.cloudId!, "comment")}><Flag size={14} /> Report</button>}{comment.authorCloudId && <button onClick={() => void toggleMemberBlock(comment.authorCloudId!, comment.author)}><UserX size={14} /> Block</button>}</div></div></article>)}
         {thread.length === 0 && <div className="thread-empty"><MessageSquare size={19} /><span><strong>Start the conversation</strong><small>Share an answer or ask a follow-up question.</small></span></div>}
       </section>
       {replyingTo && <div className="replying-to"><span>Replying to <strong>{replyingTo.author}</strong></span><button onClick={() => setReplyingTo(null)} aria-label="Cancel reply"><X size={14} /></button></div>}
@@ -482,17 +483,6 @@ function EngagementSummary({ likes, comments }: { likes: number; comments: numbe
   return <div className="post-engagement-summary">
     <span>{likes ? `${likes} ${likes === 1 ? "like" : "likes"}` : ""}</span>
     <span>{comments ? `${comments} ${comments === 1 ? "comment" : "comments"}` : ""}</span>
-  </div>;
-}
-
-function CommunityMediaGallery({ items }: { items: CommunityMedia[] }) {
-  if (!items.length) return null;
-  return <div className={`community-media-grid${items.length === 1 ? " single" : ""}`} aria-label="Post attachments">
-    {items.map((item, index) => item.kind === "image"
-      ? <a className="community-media-image" href={item.url} target="_blank" rel="noreferrer" key={`${item.url}-${index}`} aria-label={`Open attachment ${index + 1}`}><img src={item.url} alt={`Post attachment ${index + 1}`} loading="lazy" /></a>
-      : item.kind === "video"
-        ? <video className="community-media-video" src={item.url} controls preload="metadata" key={`${item.url}-${index}`} aria-label={`Post video ${index + 1}`} />
-        : <a className="community-media-link" href={item.url} target="_blank" rel="noreferrer" key={`${item.url}-${index}`}><ExternalLink size={17} /><span><strong>{item.label}</strong><small>Open shared resource</small></span></a>)}
   </div>;
 }
 

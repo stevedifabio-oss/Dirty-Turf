@@ -1,5 +1,40 @@
 # Community post and comment sync
 
+## Confirmed migration direction — October 3, 2026
+
+The custom Dirty Turf app is the destination. Members are still using the GHL
+Community during the transition, so GHL activity needs to flow **one way into the
+app until cutover**. Keep the app's native Community and existing app discussions.
+Opening the GHL Community inside the app does not fulfill this requirement.
+
+Courses already have an automatic reader. Community now has a guarded browser
+reader and a separate snapshot writer; the existing webhook receiver alone is
+not a complete sync. The temporary bridge reads verified source identities and
+holds unavailable fields without inventing IDs or modification timestamps.
+
+## October 3 production catch-up
+
+The snapshot migrations and current Edge Function are deployed. A complete
+source catalog contained 67 posts and 74 comments/replies, with an independent
+fresh feed-end read confirming the same post IDs. The first production capture
+added 14 records and updated 116. Replaying the same capture returned `duplicate`.
+There were no target conflicts or missing-record removals. The result was
+`partial`, with 11 held records/dependents involving five native videos and
+unresolved author mappings; it was not a complete mirror.
+
+A live database read confirmed 66 imported posts and 69 imported comments. The
+five Equipment photos now belong to their actual replies (four and one), and
+the app-native test post remains. The signed-in production app shows the newer
+GHL announcements and replies. Private receipts remain under `output/private`.
+
+The **Dirty Turf Community catch-up** local heartbeat is active every 15 minutes.
+Follow [the browser bridge runbook](community-browser-sync-runbook.md). It needs
+this Mac, Codex and the authorized signed-in Chrome session available. The first
+scheduler-triggered run is not yet verified. Native blob-only videos, inferred
+deletions, source reactions, events and membership/payment changes are not
+certified by this post/comment bridge. These limitations prevent calling it full
+automatic Community synchronization.
+
 ## Deployed September 29, 2026
 
 The production backend can atomically apply versioned post/comment events while preserving native IDs, author mappings, reply parents, reactions, mirrored post media and local moderation. It deduplicates events, rejects older versions, records conflicts and retains deletion tombstones. Remote deletion archives posts or replaces a comment body; it never cascades away local replies. Imported events do not replay community emails.
@@ -16,7 +51,7 @@ A controlled workflow test using the owner's existing contact reached the privat
 
 The live workflow variable picker exposes four post fields (title, content, group name, channel name) and five comment fields (the same plus comment content). It does not expose identifiers, versions or reply parents. Full native Community mirroring is blocked on a supported source interface carrying these fields; inventing IDs from titles or guessing parents would corrupt threads. The source group DOM identifies `6a5ff7019b8d5f3bf162a694`, but the actual webhook does not carry it.
 
-Public GHL documentation does not establish native Community edit/delete webhooks or a complete read API. Do not guess identities from text or treat missing items as deletions. Social Planner's community comment API covers only posts published through Social Planner and cannot replace native Community synchronization. Comment attachments are rejected by the normalized contract until the app has an explicit representation for them.
+Public GHL documentation does not establish native Community edit/delete webhooks or a complete read API. Do not guess identities from text or treat missing items as deletions. Social Planner's community comment API covers only posts published through Social Planner and cannot replace native Community synchronization. The app now represents comment attachments explicitly; the source reader must still verify each attachment and the deployed database must report the corresponding capability before applying it.
 
 Existing imports are adopted only if current fields match their recorded source payload. The original capture included 162 profile/avatar artifacts which the importer correctly excluded, causing all 62 otherwise-identical posts to fail their media comparison. The September 29 reconciliation migration normalizes those known artifacts on the archived side only. All 62 posts and 59 imported comments are now enrolled; the app-created comment remains local. Actual attachment additions, removals, replacements, unknown URLs and local edits remain protected. Missing historical source versions are not invented. The group allowlist currently uses the stored source slug; map the actual event group ID only after inspecting a real scoped source event.
 
@@ -102,21 +137,115 @@ missed. Apply only source-owned records with their stable IDs and versions;
 preserve app-only discussions, moderation, progress and billing grants. An item
 missing from an incomplete or failed read is never a deletion.
 
-The supported alternative worth validating is opening the **actual GHL
-Community** through its [contact-specific Client Portal magic link](https://help.gohighlevel.com/support/solutions/articles/155000001667-client-portal-single-sign-on-sso-and-magic-links).
-It shares the source discussions directly but changes the Community experience
-and authentication boundary. A safe app implementation requires server-side
-member/contact matching and a fresh, short-lived link for that member. No shared
-admin link, public credentials or assumed iframe support.
+### Temporary browser snapshot bridge
 
-On October 3, a dashboard-generated contact magic link successfully signed Steve
-into his existing portal account and opened the private group. The live group
-showed 69 posts, including his October 2 **App test**, with its original
-Discussion/Learning/Events/Members navigation. No email was sent and no post or
-comment was created. This proves manual member-specific browser access.
-Automatic link generation, native navigation, return-to-app behavior and
-ordinary-member isolation still require proof. Do not silently replace the
-native Community with this option; a user decision is pending.
+On October 3, read-only inspection in the owner's signed-in GHL browser verified:
+
+- Post wrappers/permalinks carry stable source post IDs.
+- Comment containers carry source comment IDs, and DOM nesting exposes reply
+  parents. One complete discussion was captured with two root comments and three
+  replies; all five matched its displayed comment count after loading replies.
+- Post avatar controls and mention links expose author IDs. Comment avatar IDs
+  can be `undefined`, so comment usernames require independently verified
+  handle-to-source-ID mappings. Display names alone are not sufficient.
+- Post creation labels are visible, but their timezone is unverified. Comment
+  relative ages are not trustworthy creation/update timestamps.
+- Media display URLs are visible. Original attachment enumeration and durable
+  mirroring still require validation. Duplicate channel names cannot safely map
+  posts to categories without a verified channel ID.
+
+Private proof: `output/private/community-browser-proof-oct3.json`. This contains
+one discussion, **not a complete group capture**, and made no app database writes.
+
+`scripts/lib/community-snapshot.mjs` and the offline
+`scripts/plan-community-snapshot.mjs` command plan Community-only changes from
+captures. Observation times order snapshots separately from source versions.
+Unknown media/category/pin values must not clear existing data. Missing records
+are review items, never inferred deletions. Identity changes and partial capture
+coverage require review. Output is a plan, not a production import receipt.
+
+Run the offline planner with private capture and reconciled identity files:
+
+```sh
+node scripts/plan-community-snapshot.mjs \
+  --capture output/private/community-browser-capture-oct3.json \
+  --config output/private/community-browser-identities-oct3.json \
+  --report output/private/new-community-plan.json
+```
+
+The saved report contains content and IDs; it is created exclusively with owner
+read/write permissions under ignored `output/private/`. Console output contains
+counts/status only. A rejected capture has no next baseline. An accepted planner
+baseline is still not evidence that anything was applied to production.
+
+The guarded writer and authenticated snapshot endpoint are implemented. The
+endpoint recomputes the plan using private database identity mappings and the
+last accepted baseline; it never accepts a caller's plan or mappings. Its leases,
+ownership checks, local-edit conflicts and imported-email suppression protect
+existing records. Before scheduling this bridge, complete group pagination,
+verify source fields and attachments, and prove that an unattended reader can
+recover its session. A successful manually collected capture does not establish
+an automatic reader.
+
+#### Applying a verified capture
+
+1. Deploy the snapshot migrations and Edge Function together. The private context
+   RPC must report `partialRecords: true`, `sourceFieldHolds: true` and
+   `mediaOnlyComments: true` before using the new hold/empty-comment formats.
+2. Begin a lease with a unique capture ID. Collect every post and fully expanded
+   comment/reply ID and parent; both catalog coverage values must be `complete`.
+   Renew the lease if the read exceeds its lifetime. Partial catalog coverage
+   cannot apply, even when individual records could be read.
+3. Preserve exact stored group/category IDs, including percent-encoded slugs.
+   Source author IDs must independently map to one Academy member. An unknown
+   author is held; names and synthetic legacy IDs never establish a mapping.
+4. Inspect the private receipt and compare applied target records. Repeat a
+   capture to prove deduplication, then verify the content on web/iPhone/Android.
+   Counts from an offline plan are not write or device verification.
+
+Use the existing secret only in an ignored, owner-readable server environment
+file. Never place it in a browser bundle, capture, public receipt or command
+argument. Detailed receipts are created as new private files:
+
+```sh
+node --env-file=.env.community-sync.local scripts/sync-community-snapshot.mjs \
+  --action begin --capture-id capture-unique --lease-seconds 3600 \
+  --receipt output/private/new-snapshot-lease.json
+node --env-file=.env.community-sync.local scripts/sync-community-snapshot.mjs \
+  --action apply --lease output/private/new-snapshot-lease.json \
+  --capture output/private/verified-complete-capture.json \
+  --receipt output/private/new-snapshot-apply.json
+```
+
+`status: partial` or `fullSync: false` means some records were held, conflicted
+with local edits, or were missing and retained for review. It is not a completed
+mirror. A held post/parent also holds its dependent comments. Held records never
+write; unchanged held content is retried when evidence or identity mappings
+become available. Missing records never trigger deletion or release a hold.
+
+Source fidelity gates:
+
+- Explicit `authorComplete: false` omits the author ID. Explicit
+  `bodyComplete: false` omits body text. Their stable record/parent identities
+  remain in the baseline with a hold; no placeholder author or body is created.
+- Unobserved media, category and pin values hold the row and retain previously
+  known fields. A blob-only video/audio URL is unobserved media, not a durable
+  attachment. Profile photos, thumbnails and UI icons are not post attachments.
+- An observed empty comment body is writable only with verified nonempty media
+  and the database's `mediaOnlyComments` capability. Empty/unobservable content
+  stays held; imported text comments and app-native text validation retain their
+  existing rules.
+- Preserve genuine source timestamps when available. Relative ages and capture
+  observation times are not fabricated source versions. Source-owned updates
+  retain target IDs/reactions and stop on a local edit or identity change.
+
+Keep imported records separate from app-native discussions, progress,
+moderation and payment grants. Native Community video/audio coverage and a
+reliable unattended source reader remain gates to declaring full automatic sync.
+
+At the agreed cutover, stop GHL writes briefly, run a final catch-up, reconcile
+records/media and confirm member access in the app. Retain the source archive for
+rollback. Do not disable GHL or announce the move without the owner's approval.
 
 ## GHL support request — draft, not sent
 

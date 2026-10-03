@@ -1,5 +1,6 @@
 import { loadRuntimeConfig } from "../_shared/runtime-config.ts";
 import { readCommunitySyncJson, validateCommunitySyncEvent, communitySha256, canonicalCommunityJson, secretMatches } from "../_shared/community-sync.ts";
+import { handleCommunitySnapshotRequest } from "./snapshot-handler.ts";
 
 type DatabaseError = { code?: string; message?: string } | null;
 type Config = { id: string; enabled: boolean; location_id: string; group_id: string };
@@ -24,7 +25,9 @@ export function createCommunitySyncHandler(admin: CommunitySyncAdmin, env: (name
         .select("id,enabled,location_id,group_id").eq("id", configId).maybeSingle();
       if (configError || !config || config.id !== configId) return communitySyncReply({ error: "Sync not configured" }, 503);
       if (!config.enabled) return communitySyncReply({ status: "disabled" }, 503);
-      const route = new URL(request.url).pathname.split("/").filter(Boolean).at(-1);
+      const segments = new URL(request.url).pathname.split("/").filter(Boolean);
+      const route = segments.at(-1);
+      if (segments.at(-2) === "snapshot") return handleCommunitySnapshotRequest(request, admin, configId, config, route ?? "");
       if (route !== "capture" && route !== "apply") return communitySyncReply({ error: "Unknown sync route" }, 404);
       let payload: unknown;
       try { payload = await readCommunitySyncJson(request); }
