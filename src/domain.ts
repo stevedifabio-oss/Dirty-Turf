@@ -46,7 +46,7 @@ export type CommunityPost = {
 };
 
 export type CommunityMedia = {
-  kind: "image" | "video" | "link";
+  kind: "image" | "video" | "file" | "link";
   url: string;
   originalUrl?: string;
   label: string;
@@ -61,6 +61,7 @@ export type CommunityComment = {
   author: string;
   authorCloudId?: string;
   body: string;
+  mediaItems?: CommunityMedia[];
   age: string;
   likes: number;
   liked?: boolean;

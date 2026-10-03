@@ -39,10 +39,17 @@ describe("explicit community v1 contract (synthetic fixtures)", () => {
     expect(() => validateCommunitySyncEvent({ ...comment(), postExternalId: undefined })).toThrow();
     expect(() => validateCommunitySyncEvent({ ...comment(), operation: "delete", body: undefined, postExternalId: undefined })).toThrow();
   });
-  it("rejects comment self parenting and unsupported attachments", () => {
+  it("rejects comment self parenting and overlong bodies", () => {
     expect(() => validateCommunitySyncEvent({ ...comment(), parentExternalId: "synthetic-comment" })).toThrow();
-    expect(() => validateCommunitySyncEvent({ ...comment(), media: [] })).toThrow();
     expect(() => validateCommunitySyncEvent({ ...comment(), body: "x".repeat(3001) })).toThrow();
+  });
+  it("keeps comment media absent, populated and explicitly cleared distinct", () => {
+    expect(validateCommunitySyncEvent(comment())).not.toHaveProperty("media");
+    expect(validateCommunitySyncEvent({ ...comment(), media: [] }).media).toEqual([]);
+    const media = [{ type: "video", url: "https://cdn.example.com/reply.mp4", name: "Reply video" }];
+    expect(validateCommunitySyncEvent({ ...comment(), media }).media).toEqual(media);
+    expect(() => validateCommunitySyncEvent({ ...comment(), media: [{ ...media[0], storage_path: "private/reply.mp4" }] })).toThrow();
+    expect(() => validateCommunitySyncEvent({ ...comment(), operation: "delete", body: undefined, media })).toThrow();
   });
   it("accepts a content-free deletion without author", () => {
     expect(validateCommunitySyncEvent({ ...post(), operation: "delete", title: undefined, body: undefined, authorExternalId: undefined }).operation).toBe("delete");

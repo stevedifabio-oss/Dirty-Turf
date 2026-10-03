@@ -604,6 +604,7 @@ export async function savePost(post: CommunityPost): Promise<CommunityPost> {
 type AcademyCommentRow = {
   id: string; post_id: string; parent_id: string | null; author_name: string; body: string;
   created_at: string; like_count: number; is_answer: boolean; academy_author_id: string | null;
+  media?: unknown;
 };
 
 export async function loadComments(seed: CommunityComment[]): Promise<CommunityComment[]> {
@@ -619,7 +620,7 @@ export async function loadComments(seed: CommunityComment[]): Promise<CommunityC
   for (let pageNumber = 0; pageNumber < maxPages; pageNumber += 1) {
     const query = supabase!
       .from("academy_comment_feed")
-      .select("id,post_id,parent_id,author_name,body,created_at,like_count,is_answer,academy_author_id")
+      .select("id,post_id,parent_id,author_name,body,created_at,like_count,is_answer,academy_author_id,media")
       .eq("academy_community_id", context.communityId)
       .order("created_at", { ascending: true })
       .order("id", { ascending: true });
@@ -655,6 +656,18 @@ export async function loadComments(seed: CommunityComment[]): Promise<CommunityC
     for (const row of reactionRows ?? []) liked.add(row.comment_id);
   }
 
+  const signedByPath = new Map<string, string>();
+  const mediaPaths = [...new Set(data.flatMap(row => communityMediaStoragePaths(row.media)))];
+  // Chunk these too: a full history can contain more attachments than one signing request supports.
+  for (let offset = 0; offset < mediaPaths.length; offset += 100) {
+    const { data: signedRows, error: signedError } = await supabase!.storage
+      .from("academy-assets").createSignedUrls(mediaPaths.slice(offset, offset + 100), 60 * 60);
+    if (signedError) throw signedError;
+    for (const asset of signedRows ?? []) {
+      if (asset.path && asset.signedUrl) signedByPath.set(asset.path, asset.signedUrl);
+    }
+  }
+
   return data.map((row) => ({
     id: stableNumericId(row.id),
     cloudId: row.id,
@@ -664,6 +677,7 @@ export async function loadComments(seed: CommunityComment[]): Promise<CommunityC
     author: row.author_name,
     authorCloudId: row.academy_author_id ?? undefined,
     body: row.body,
+    mediaItems: normalizeCommunityMediaItems(row.media, signedByPath),
     age: relativeDate(row.created_at),
     likes: Number(row.like_count),
     liked: liked.has(row.id),

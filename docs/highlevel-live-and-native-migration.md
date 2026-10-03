@@ -2,6 +2,9 @@
 
 ## Decision
 
+For the current member invitation, pilot and changeover sequence, use the
+[October 3 member migration plan](member-migration-plan.md).
+
 Dirty Turf owns the native Academy experience in Supabase: authentication, courses, lesson progress, community discussions, members, events, and private media. Updated September 26: Steve wants to continue editing imported content in HighLevel and have changes flow one way into the app. Keep HighLevel available as the source for that imported content until a separately agreed cutover; protect app progress, native discussions, moderation and local edits. The app's Academy, Community, and Events tabs render the native experience.
 
 This is a controlled migration, not a screen scrape directly into production. Every source record is written to an import ledger with its HighLevel ID, parent ID, timestamps, source URL, payload hash, and resulting native ID.
@@ -25,7 +28,7 @@ The September 18 archive is a snapshot, not live synchronization. The signed GHL
 
 The allowlisted course now updates automatically through the official API. For other migration content, recapture the exact Academy group, community, events, membership, entitlements, and media through the client-owned authenticated admin session. Keep archives in ignored, access-controlled `output/private/`. Compose and validate a fresh manifest, then compare it with the previous capture using `npm run academy:delta -- <previous-manifest> <fresh-manifest> --report output/private/<new-report-name>.json`. The console prints counts only; the private report contains stable source IDs. A stale or cross-community capture is rejected.
 
-Review additions and updates against HighLevel before applying them. A missing record is not an automatic deletion: it may be a pagination or permission gap. Compare each change with native Admin Studio edits and member progress; replaying a full manifest can overwrite native-authored work. Import approved changes in dependency-ordered batches after a dry run and backup, then reconcile counts, source IDs, media, access, and visual examples in the live app. Record the last successfully applied capture time.
+Review additions and updates against HighLevel before applying them. A missing record is not an automatic deletion: it may be a pagination or permission gap. Compare each change with native Admin Studio edits and member progress; replaying a full manifest can overwrite native-authored work. Do not use the original full-manifest importer as a recurring Community writer: it also processes membership/access dependencies and does not atomically preserve all thread relationships. Use the dedicated Community snapshot plan and guarded apply path described in `community-sync.md`; the browser source and writer still need full acceptance. Record the last successfully applied capture time separately from the last browser observation.
 
 If Steve later chooses a full cutover, freeze GHL edits briefly, run one final reviewed delta, and keep GHL available for rollback until he approves native content and real-member sign-in. Only that explicit cutover makes Admin Studio the source for imported content. Automatic course reads are now supported. As of September 29, automatic course application is active every five minutes after guarded baseline enrollment and a successful production worker run; see `docs/course-sync.md` for current evidence and media limitations. Full community mirroring additionally requires verified workflow payloads and a supported strategy for edits/deletions.
 
@@ -41,7 +44,7 @@ Use three capture lanes:
 2. **Admin CSV:** the exact `7 Figure Turf Cleaning` member cohort, filtered by group/access rather than the full CRM.
 3. **Authenticated capture:** course/module/lesson bodies, media and downloads, posts, comments, reactions, progress, events, roles, access rules, and leaderboard state.
 
-Do not call undocumented HighLevel endpoints from the production app. Use the client-owned admin session for a one-time archive, then import the archive through the server-side migration function.
+Do not call undocumented HighLevel endpoints from the production app. Use the client-owned authenticated session for source archives during the migration overlap. Read-only browser captures are a temporary source option; validate complete coverage, identity and media before any guarded server-side application. The app remains the destination throughout the overlap.
 
 ## Capture Package
 
