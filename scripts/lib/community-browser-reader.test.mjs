@@ -690,6 +690,73 @@ describe("CUA only orchestration", () => {
     await expect(captureCommunityThreads(args)).rejects.toThrow("detail root identity mismatch");
   });
 
+  it("fails closed on Members navigation with immutable per-thread action diagnostics", async () => {
+    const home = "https://academy.example.com/communities/groups/turf/home";
+    const cards = [{ externalId: "post-1", sourceUrl }, { externalId: "post-2", sourceUrl: home + "/posts/post-2" }];
+    let route, currentPostId, returnedThreads, callerOffset = 60, progressCalls = 0, routeReads = 0;
+    const actions = [];
+    const locator = selector => ({ last: () => locator(selector), first: () => locator(selector), locator,
+      waitFor: async () => {}, click: async () => {
+        expect(selector).toBe('[id="post-view-content-title"]');
+        actions.push("heading"); callerOffset = 20;
+        route = "https://academy.example.com/communities/groups/turf/members?credential=secret#private";
+      } });
+    const tab = { goto: async url => { actions.push("goto"); route = url; currentPostId = url.split("/").at(-1); },
+      url: async () => { routeReads++; return route; }, scroll: async () => {}, getAXState: async () => {},
+      playwright: { locator, evaluate: async () => {
+        if (route.includes("/members")) return { detailRootId: null, thread: null, memberEmail: "private@example.com", body: "private member content" };
+        const source = observation(); source.thread.externalId = currentPostId;
+        source.detailRootId = currentPostId === "post-2" ? "post-view-content-card" : "post-view-modal-";
+        return source;
+      } } };
+    let error;
+    try {
+      returnedThreads = await captureCommunityThreads({ tab, scope: { groupId: "group-1", locationId: "location-1" },
+        feedUrl: home, cards, authors, resolvePinned: true, onProgress: () => { progressCalls++; callerOffset++; } });
+    } catch (caught) { error = caught; }
+    expect(error.message).toBe("Source detail root identity mismatch");
+    expect(error.communityReaderDiagnostics).toEqual({ expectedPostId: "post-2", observedPostId: null, observedRootId: null,
+      sourceActionPhase: "detail_heading_open", sourceActionSequence: 2, sourceActionCompleted: true,
+      sourceRoutePathname: "/communities/groups/turf/members" });
+    expect(Object.isFrozen(error.communityReaderDiagnostics)).toBe(true);
+    expect(Object.getOwnPropertyDescriptor(error, "communityReaderDiagnostics")).toMatchObject({ writable: false, configurable: false });
+    cards[1].externalId = "post-mutated";
+    expect(() => { error.communityReaderDiagnostics.expectedPostId = "post-mutated"; }).toThrow(TypeError);
+    expect(error.communityReaderDiagnostics.expectedPostId).toBe("post-2");
+    expect(callerOffset).toBe(20); expect(progressCalls).toBe(1); expect(returnedThreads).toBeUndefined();
+    expect(routeReads).toBe(1); expect(actions).toEqual(["goto", "goto", "heading"]);
+    expect(JSON.stringify(error.communityReaderDiagnostics)).not.toMatch(/credential|secret|private|memberEmail|body|example\.com/);
+  });
+
+  it.each([
+    "https://other.example.com/communities/groups/turf/members?secret=value",
+    "https://academy.example.com/communities/groups/other/members",
+    "https://user:password@academy.example.com/communities/groups/turf/members",
+    "https://academy.example.com/communities/groups/turf/members/private-profile",
+  ])("omits out-of-scope or member-profile routes from identity diagnostics: %s", async route => {
+    let routeReads = 0;
+    const locator = { last: () => locator, locator: () => locator, waitFor: async () => {} };
+    const tab = { goto: async () => {}, scroll: async () => {}, getAXState: async () => {}, url: async () => { routeReads++; return route; },
+      playwright: { locator: () => locator, evaluate: async () => ({ detailRootId: "post-view-modal-", thread: { externalId: "post-other" } }) } };
+    const error = await captureCommunityThreads({ tab, scope: { groupId: "group-1", locationId: "location-1" },
+      feedUrl: "https://academy.example.com/communities/groups/turf/home", cards: [{ externalId: "post-1", sourceUrl }] }).catch(error => error);
+    expect(error.message).toBe("Source detail root identity mismatch");
+    expect(error.communityReaderDiagnostics).toEqual({ expectedPostId: "post-1", observedPostId: "post-other", observedRootId: "post-view-modal-",
+      sourceActionPhase: "post_navigate", sourceActionSequence: 1, sourceActionCompleted: true, sourceRoutePathname: null });
+    expect(routeReads).toBe(1);
+  });
+
+  it("retains the identity error when the failure-only route read is unavailable", async () => {
+    const locator = { last: () => locator, locator: () => locator, waitFor: async () => {} };
+    const tab = { goto: async () => {}, scroll: async () => {}, getAXState: async () => {}, url: async () => { throw Error("Route unavailable"); },
+      playwright: { locator: () => locator, evaluate: async () => ({ detailRootId: "unsafe private root", thread: { externalId: "private member name" } }) } };
+    const error = await captureCommunityThreads({ tab, scope: { groupId: "group-1", locationId: "location-1" },
+      feedUrl: "https://academy.example.com/communities/groups/turf/home", cards: [{ externalId: "post-1", sourceUrl }] }).catch(error => error);
+    expect(error.message).toBe("Source detail root identity mismatch");
+    expect(error.communityReaderDiagnostics).toMatchObject({ expectedPostId: "post-1", observedPostId: null, observedRootId: null,
+      sourceActionPhase: "post_navigate", sourceActionSequence: 1, sourceRoutePathname: null });
+  });
+
   it("uses the final modal root when hydration replaces the initial standalone card", async () => {
     const initial = observation(), settled = observation();
     initial.detailRootId = "post-view-content-card";
