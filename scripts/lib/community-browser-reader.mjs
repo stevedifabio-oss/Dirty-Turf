@@ -116,12 +116,20 @@ export function extractCommunityDom(options = {}, suppliedDocument) {
   const modal = modals.at(-1) ?? standaloneCards.at(-1);
   const thread = modal ? post(modal, true) : null;
   const ownerPinTrigger = modal?.querySelector('[id="post-card-actions-trigger"]');
-  const homePinOptions = all(dom, '[id="hr-dropdown-option-pinToHome"], [id="hr-dropdown-option-unpinFromHome"]').filter(visible);
+  const modalOwnerPinTriggers = modal?.id === "post-view-modal-" ? all(modal, '[role="button"]')
+    .filter(element => visible(element) && element.getAttribute("aria-label") === "Post actions menu") : [];
+  const modalOwnerPinTrigger = modalOwnerPinTriggers.length === 1 ? modalOwnerPinTriggers[0] : null;
+  const homePinOptions = all(dom, '[id="hr-dropdown-option-pinToHome"], [id="hr-dropdown-option-unpinFromHome"], [id="options-drawer-option-pinToHome"], [id="options-drawer-option-unpinFromHome"]').filter(visible);
   const homePinOption = homePinOptions.length === 1 ? homePinOptions[0] : null;
-  const homePinActions = { "hr-dropdown-option-pinToHome": { label: "Pin to All Posts", pinned: false },
-    "hr-dropdown-option-unpinFromHome": { label: "Unpin from All Posts", pinned: true } };
+  const homePinActions = { "hr-dropdown-option-pinToHome": { label: "Pin to All Posts", pinned: false, role: "menuitem" },
+    "hr-dropdown-option-unpinFromHome": { label: "Unpin from All Posts", pinned: true, role: "menuitem" },
+    "options-drawer-option-pinToHome": { label: "Pin to All Posts", pinned: false, drawer: true },
+    "options-drawer-option-unpinFromHome": { label: "Unpin from All Posts", pinned: true, drawer: true } };
   const homePinAction = homePinOption && homePinActions[homePinOption.id];
-  const homePinMenu = thread?.externalId && homePinAction && homePinOption.getAttribute("role") === "menuitem"
+  const homePinMenu = thread?.externalId && homePinAction
+    && (homePinAction.drawer ? homePinOption.tagName === "BUTTON" && [null, "button"].includes(homePinOption.getAttribute("role"))
+      && homePinOption.closest('[id="options-drawer-drawer-body-drawer"]')?.getAttribute("role") === "dialog"
+      : homePinOption.getAttribute("role") === homePinAction.role)
     && text(homePinOption).trim() === homePinAction.label
     ? { postExternalId: thread.externalId, actionId: homePinOption.id, pinned: homePinAction.pinned } : null;
   const comments = modal ? all(modal, '[id^="comment-"][id$="-content-div"]').map(element => {
@@ -172,7 +180,8 @@ export function extractCommunityDom(options = {}, suppliedDocument) {
     homePinMenu,
     homePinMenuVisible: homePinOptions.length > 0,
     detailRootId: modal?.id ?? null,
-    ownerPinTriggerObserved: ownerPinTrigger?.tagName === "BUTTON" && visible(ownerPinTrigger),
+    ownerPinTriggerObserved: Boolean(ownerPinTrigger?.tagName === "BUTTON" && visible(ownerPinTrigger) || visible(modalOwnerPinTrigger)),
+    ownerPinTriggerKind: visible(modalOwnerPinTrigger) ? "modal_actions" : "post_card_actions",
     zeroCommentsObserved,
     expectedFeaturedCount, observedFeaturedCount: featuredIds.size, featuredCaptureComplete, featuredToggleVisible: visible(featuredToggle),
   };
@@ -390,6 +399,7 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
   }
   if (!Array.isArray(cards) || cards.length > 100 || cards.some(card => !sourceId(card.externalId))) throw new Error("Invalid bounded source thread batch");
   const threads = [];
+  const pinOptionSelector = '[id="hr-dropdown-option-pinToHome"], [id="hr-dropdown-option-unpinFromHome"], [id="options-drawer-option-pinToHome"], [id="options-drawer-option-unpinFromHome"]';
   for (const card of cards) {
     const link = card.sourceUrl ? new URL(card.sourceUrl, base).href : null;
     if (!link || new URL(link).origin !== base.origin || new URL(link).pathname !== `${base.pathname.replace(/\/$/, "")}/posts/${card.externalId}`) {
@@ -399,49 +409,60 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
     // Navigation can expose an initial Loading AX state. Wait for the observed
     // detail surface before reading it, rather than accepting an empty thread.
     let detail = tab.playwright.locator('[id="post-view-modal-"], [id="post-view-content-card"]').last();
+    const readThread = async () => {
+      const current = await read();
+      if (current.detailRootId !== undefined) {
+        if (!["post-view-modal-", "post-view-content-card"].includes(current.detailRootId)
+          || current.thread?.externalId !== card.externalId) throw new Error("Source detail root identity mismatch");
+        detail = tab.playwright.locator(`[id="${current.detailRootId}"]`).last();
+      }
+      return current;
+    };
     await detail.waitFor({ state: "visible", timeoutMs: 15000 });
     await detail.locator('[id="post-view-content-title"]').waitFor({ state: "attached", timeoutMs: 15000 });
     await detail.locator(`[id="post-card-${card.externalId}-comment-button"]`).waitFor({ state: "attached", timeoutMs: 15000 });
     await detail.locator('[id="comments-container"]').waitFor({ state: "attached", timeoutMs: 15000 });
     await tab.getAXState({ emit: false });
-    let observation = await read();
-    // Some source layouts nest a standalone card inside the modal. Match the
-    // extractor's exact visible root so its outer category header remains in
-    // scope; the inner card alone cannot establish the current modal identity.
-    if (observation.detailRootId !== undefined) {
-      if (!["post-view-modal-", "post-view-content-card"].includes(observation.detailRootId)
-        || observation.thread?.externalId !== card.externalId) throw new Error("Source detail root identity mismatch");
-      detail = tab.playwright.locator(`[id="${observation.detailRootId}"]`).last();
-      await detail.locator(`[id="post-card-${card.externalId}-comment-button"]`).waitFor({ state: "attached", timeoutMs: 15000 });
+    let observation = await readThread();
+    if (resolvePinned && observation.detailRootId === "post-view-content-card") {
+      // The mobile source opens the full post modal from this initial card.
+      // Follow the observed heading, then revalidate its current exact root.
+      await observeAction(() => detail.locator('[id="post-view-content-title"]').click());
+      observation = await readThread();
     }
     let pinnedMenuProof;
     const pinResolutionAttempted = resolvePinned && (observation.ownerPinTriggerObserved === true
       || observation.thread?.categoryControlKind === "standalone_button");
     if (pinResolutionAttempted) {
-      const trigger = detail.locator('[id="post-card-actions-trigger"]');
       // Document-level portal options have no owner ID. Establish their
       // absence before opening the current exact post's trigger so an ignored
       // click cannot relabel a stale menu from a different post as this one.
-      await observeAction(() => detail.locator('[id="post-view-content-title"]').click());
-      await tab.playwright.locator('[id="hr-dropdown-option-pinToHome"], [id="hr-dropdown-option-unpinFromHome"]').first()
-        .waitFor({ state: "hidden", timeoutMs: 3000 });
-      const beforePinMenu = await read();
+      if (observation.homePinMenuVisible) {
+        if (typeof tab.pressKey !== "function") throw new Error("Native source menu dismissal unavailable");
+        await observeAction(() => tab.pressKey(null, "Escape"));
+        await tab.playwright.locator(pinOptionSelector).first().waitFor({ state: "hidden", timeoutMs: 3000 });
+      }
+      const beforePinMenu = await readThread();
       if (beforePinMenu.thread?.externalId !== card.externalId) throw new Error("Source pin menu post identity mismatch");
       if (beforePinMenu.homePinMenuVisible) throw new Error("Preexisting source pin menu did not close");
+      observation = beforePinMenu;
       // Open/read/close only. Pin actions themselves are never executed.
       // A newly mounted source header can ignore the first click; one bounded
       // retry follows a fresh observation, with all uncertainty held.
       try {
         for (let attempt = 0; attempt < 2; attempt++) {
-          await observeAction(() => trigger.click());
+          await observeAction(() => observation.ownerPinTriggerKind === "modal_actions"
+            ? detail.getByRole("button", { name: "Post actions menu", exact: true }).click()
+            : detail.locator('[id="post-card-actions-trigger"]').click());
           try {
-            await tab.playwright.locator('[id="hr-dropdown-option-pinToHome"], [id="hr-dropdown-option-unpinFromHome"]').first()
+            await tab.playwright.locator(pinOptionSelector).first()
               .waitFor({ state: "visible", timeoutMs: 2500 });
           } catch (error) {
             if (!/timeout|timed out|deadline exceeded/i.test(String(error?.message ?? error))) throw error;
             await tab.getAXState({ emit: false });
           }
-          const pinObservation = await read();
+          const pinObservation = await readThread();
+          observation = pinObservation;
           if (pinObservation.thread?.externalId !== card.externalId) throw new Error("Source pin menu post identity mismatch");
           if (pinObservation.homePinMenu?.postExternalId === card.externalId) pinnedMenuProof = {
             ...pinObservation.homePinMenu, menuAbsentBeforeTrigger: true, currentTriggerOpenedMenu: true,
@@ -449,26 +470,30 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
           if (pinnedMenuProof || pinObservation.homePinMenuVisible) break;
         }
       } finally {
-        // A neutral detail heading dismisses the observed dropdown without
-        // selecting an action; wait through its exit transition before work.
-        await observeAction(() => detail.locator('[id="post-view-content-title"]').click());
-        await tab.playwright.locator('[id="hr-dropdown-option-pinToHome"], [id="hr-dropdown-option-unpinFromHome"]').first()
-          .waitFor({ state: "hidden", timeoutMs: 3000 });
+        // Native Escape dismisses only an actually observed owner menu; it
+        // must not close the post modal when no menu is open.
+        const openMenu = await readThread();
+        if (openMenu.homePinMenuVisible) {
+          if (typeof tab.pressKey !== "function") throw new Error("Native source menu dismissal unavailable");
+          await observeAction(() => tab.pressKey(null, "Escape"));
+          await tab.playwright.locator(pinOptionSelector).first().waitFor({ state: "hidden", timeoutMs: 3000 });
+        }
       }
-      observation = await read();
+      observation = await readThread();
       if (observation.homePinMenuVisible) throw new Error("Source pin menu did not close");
     }
     if ((observation.thread?.displayedCommentCount ?? card.displayedCommentCount) > 0 && observation.comments.length === 0) {
       await detail.locator('[id^="comment-"][id$="-content-div"]').first().waitFor({ state: "attached", timeoutMs: 15000 });
       await tab.getAXState({ emit: false });
-      observation = await read();
+      observation = await readThread();
     } else if (observation.thread?.displayedCommentCount === null && observation.comments.length === 0 && !observation.zeroCommentsObserved) {
       const firstComment = detail.locator('[id^="comment-"][id$="-content-div"]').first();
       const explicitEmpty = detail.locator('[id="comments-container"]').getByText("No comments yet", { exact: true });
       await firstComment.or(explicitEmpty).waitFor({ state: "attached", timeoutMs: 15000 });
       await tab.getAXState({ emit: false });
-      observation = await read();
+      observation = await readThread();
     }
+    let nativePaginationFallbacks = 0;
     for (let action = 0; action < maxThreadActions; action++) {
       let control = observation.controls.find(item => item.enabled);
       const expectedCommentCount = observation.thread?.displayedCommentCount;
@@ -479,7 +504,7 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
         const expectedLastComment = detail.locator('[id^="comment-"][id$="-content-div"]').nth(expectedCommentCount - 1);
         await pagination.or(expectedLastComment).first().waitFor({ state: "attached", timeoutMs: 10000 });
         await tab.getAXState({ emit: false });
-        observation = await read();
+        observation = await readThread();
         control = observation.controls.find(item => item.enabled);
       }
       if (!control) break;
@@ -488,9 +513,30 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
       await observeAction(() => detail.locator(`[id="${control.id}"]`).first().click());
       const unseenCommentSelector = '[id^="comment-"][id$="-content-div"]'
         + previouslyLoaded.map(id => `:not([id="comment-${id}-content-div"])`).join("");
-      await detail.locator(unseenCommentSelector).first().waitFor({ state: "attached", timeoutMs: 15000 });
+      try {
+        await detail.locator(unseenCommentSelector).first().waitFor({ state: "attached", timeoutMs: 15000 });
+      } catch (error) {
+        if (!/timeout|timed out|deadline exceeded/i.test(String(error?.message ?? error))) throw error;
+        await tab.getAXState({ emit: false });
+        observation = await readThread();
+        if (!observation.comments.some(comment => !previouslyLoaded.includes(comment.externalId))) {
+          // This source's modal sometimes ignores the semantic pagination
+          // click. Retry once using one exact freshly observed AX control;
+          // ambiguous controls or a changed source state fail closed.
+          if (typeof tab.click !== "function" || observation.controls.filter(item => item.enabled && item.id === control.id && item.label === control.label).length !== 1) throw error;
+          const ax = await tab.getAXState({ emit: false, disableDiffing: true });
+          const matches = String(ax).split("\n").flatMap(line => {
+            const match = line.match(/^\s*(\d+) button (.+), ID: (.+)\s*$/);
+            return match && match[2].trim() === control.label && match[3].trim() === control.id ? [Number(match[1])] : [];
+          });
+          if (matches.length !== 1) throw error;
+          await observeAction(() => tab.click(matches[0]));
+          nativePaginationFallbacks++;
+          await detail.locator(unseenCommentSelector).first().waitFor({ state: "attached", timeoutMs: 15000 });
+        }
+      }
       await tab.getAXState({ emit: false });
-      observation = await read();
+      observation = await readThread();
     }
     let fieldSettlingIssue;
     for (let settling = 0; settling < maxThreadActions; settling++) {
@@ -521,7 +567,7 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
         break;
       }
       await tab.getAXState({ emit: false });
-      observation = await read();
+      observation = await readThread();
       if (previous === JSON.stringify([observation.thread, ...observation.comments].map(row => [row?.externalId, row?.body, row?.bodyComplete, row?.mediaComplete, row?.unsupported]))) {
         fieldSettlingIssue = "source_body_or_attachment_did_not_change";
         break;
@@ -540,7 +586,7 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
         mediaLoadState = "timeout";
       }
       await tab.getAXState({ emit: false });
-      observation = await read();
+      observation = await readThread();
     }
     const missingKnownMedia = new Map();
     for (const row of [observation.thread, ...observation.comments].filter(Boolean)) {
@@ -558,7 +604,7 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
           missing.push(domId); missingKnownMedia.set(key, missing);
         }
         await tab.getAXState({ emit: false });
-        observation = await read();
+        observation = await readThread();
       }
     }
     const guardMedia = (row, entity) => {
@@ -596,6 +642,7 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
       else normalized.evidence.pinnedResolutionIssue = "explicit_home_pin_state_not_observed";
     }
     normalized.evidence.mediaLoadState = mediaLoadState;
+    if (nativePaginationFallbacks) normalized.evidence.nativePaginationFallbacks = nativePaginationFallbacks;
     threads.push(normalized);
     await onProgress({ phase: "threads", processed: threads.length, total: cards.length, complete: threads.at(-1).complete });
   }

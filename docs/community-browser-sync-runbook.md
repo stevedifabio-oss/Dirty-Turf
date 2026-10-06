@@ -94,7 +94,7 @@ lease safely and request sign-in; restart with a new capture afterward.
 
 Run this setup after the browser entry point. Set `communityWorkspace` to the
 checkout containing this runbook, and use the same fresh ID as the CLI begin.
-The examples use the verified `media11` reader; use a new import suffix after
+The examples use the verified `modal-hydration-20261006` reader; use a new import suffix after
 future code changes so the CUA module cache does not retain an older reader.
 
 ```js
@@ -104,7 +104,7 @@ var communityFs = await import("node:fs/promises");
 var communityUrl = await import("node:url");
 var communityReader = await import(communityUrl.pathToFileURL(
   communityWorkspace + "/scripts/lib/community-browser-reader.mjs"
-).href + "?v=media11");
+).href + "?v=modal-hydration-20261006");
 var communitySave = async (file, snapshot, cwd) => {
   if (!/^output\/private\/[^/.][^/]*\.json$/.test(file)) {
     throw new Error("Invalid private capture destination");
@@ -199,6 +199,8 @@ The October 5 GHL permalink UI uses `post-view-content-card` instead of the olde
 modal wrapper, and another observed layout nests that card inside the modal.
 The reader retargets the exact visible root selected by DOM extraction; the
 outer modal keeps its category header and current-post owner menu in scope.
+Every fresh thread observation revalidates that root and the exact post ID,
+including when hydration changes the wrapper while comments or media settle.
 The reader verifies the same rendered source post ID, comment
 graph and attachment ownership in both layouts. Its standalone category button
 must navigate to one of the independently observed exact channel routes.
@@ -209,13 +211,28 @@ opens the observed current post's owner menu in either detail layout and reads
 exactly one visible `menuitem` with
 ID `hr-dropdown-option-pinToHome` and text `Pin to All Posts` (unpinned), or ID
 `hr-dropdown-option-unpinFromHome` and text `Unpin from All Posts` (pinned).
+The observed mobile modal instead uses one `role=button` control labelled
+`Post actions menu`. Its dialog `options-drawer-drawer-body-drawer` contains
+buttons `options-drawer-option-pinToHome` or
+`options-drawer-option-unpinFromHome` with the same exact respective labels.
+The drawer/button roles and current exact post ID must match. Mixed menu and
+drawer choices, duplicate controls, wrong roles or wrong labels remain held.
 It verifies the current rendered post ID and proves no portal pin options are
 visible before opening that post's trigger, so a stale unrelated menu cannot be
-relabelled as current proof. It dismisses the menu through the neutral
-detail heading and waits for the menu to become hidden before
+relabelled as current proof. If the initial card needs to open the full mobile
+post, its observed heading is followed and the resulting root is revalidated.
+It dismisses only an actually observed open menu with native Escape and waits
+for all pin options to become hidden before
 thread work, and never executes either action. Missing, ambiguous or mismatched
 menu evidence remains an unknown pin field; an already observed featured card
 can still prove a true pin. The older modal path retains its prior feed guards.
+
+If a semantic comment/reply pagination click produces no new source IDs after
+the bounded wait, the reader takes a fresh thread and full AX observation. It
+can retry once with the exact newly observed native control only when one
+enabled current-thread control and one AX button match the same ID and label.
+Ambiguity, changed identity or a persistent failure stops structural coverage;
+an unavailable reply must never be certified as complete or treated as deleted.
 
 ## CLI examples
 

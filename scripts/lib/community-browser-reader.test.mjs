@@ -174,6 +174,30 @@ describe("read-only observed DOM extraction", () => {
     expect(extractCommunityDom({}, documentFixture).homePinMenu).toBeNull();
   });
 
+  it("accepts the exact modal action drawer and rejects mixed menu or wrong-role pin evidence", () => {
+    const { documentFixture, modal } = domFixture();
+    const trigger = element("div", { role: "button", "aria-label": "Post actions menu" });
+    trigger.parentElement = modal; modal.children.push(trigger);
+    const option = element("button", { id: "options-drawer-option-pinToHome" }, "Pin to All Posts");
+    const drawer = element("div", { id: "options-drawer-drawer-body-drawer", role: "dialog" }, "", [option]);
+    drawer.parentElement = documentFixture.body; documentFixture.body.children.push(drawer);
+    expect(extractCommunityDom({}, documentFixture)).toMatchObject({ ownerPinTriggerObserved: true, ownerPinTriggerKind: "modal_actions",
+      homePinMenu: { postExternalId: "post-1", actionId: "options-drawer-option-pinToHome", pinned: false } });
+    option.tagName = "DIV";
+    expect(extractCommunityDom({}, documentFixture).homePinMenu).toBeNull();
+    option.tagName = "BUTTON"; option.ownText = "Pin to Channel";
+    expect(extractCommunityDom({}, documentFixture).homePinMenu).toBeNull();
+    option.ownText = "Pin to All Posts";
+    option.attrs.role = "checkbox";
+    expect(extractCommunityDom({}, documentFixture).homePinMenu).toBeNull();
+    delete option.attrs.role; drawer.attrs.role = "button";
+    expect(extractCommunityDom({}, documentFixture).homePinMenu).toBeNull();
+    drawer.attrs.role = "dialog";
+    const foreignMenu = element("div", { id: "hr-dropdown-option-unpinFromHome", role: "menuitem" }, "Unpin from All Posts");
+    foreignMenu.parentElement = documentFixture.body; documentFixture.body.children.push(foreignMenu);
+    expect(extractCommunityDom({}, documentFixture).homePinMenu).toBeNull();
+  });
+
   it("derives a scroll point inside the visible viewport intersection", () => {
     const result = extractCommunityDom({}, domFixture().documentFixture);
     expect(result.feedScrollPoint).toEqual([313, 569]);
@@ -666,30 +690,90 @@ describe("CUA only orchestration", () => {
     await expect(captureCommunityThreads(args)).rejects.toThrow("detail root identity mismatch");
   });
 
-  it("reads and closes the pin menu before thread work, holds unavailable state and rejects a wrong post", async () => {
-    for (const mode of ["valid", "missing", "ambiguous", "wrong-post", "foreign-preexisting", "nested-modal"]) {
-      let menuOpen = mode === "foreign-preexisting", triggerClicks = 0, currentMenu = false; const events = [];
+  it("uses the final modal root when hydration replaces the initial standalone card", async () => {
+    const initial = observation(), settled = observation();
+    initial.detailRootId = "post-view-content-card";
+    Object.assign(initial.thread, { categoryControlText: "Announcements", categoryControlKind: "standalone_button" });
+    settled.detailRootId = "post-view-modal-"; settled.thread.categoryControlText = "#Announcements";
+    let reads = 0; const clicked = [];
+    const locator = path => ({ last: () => locator(path), first: () => locator(path), locator: child => locator(path + " >> " + child),
+      waitFor: async () => {}, getByText: () => locator(path), click: async () => clicked.push(path) });
+    const channelUrl = "https://academy.example.com/communities/groups/turf/channels/Announcements-5xMN0C";
+    const tab = { goto: async () => {}, scroll: async () => {}, url: async () => channelUrl, getAXState: async () => {},
+      playwright: { locator, evaluate: async () => reads++ ? settled : initial, waitForLoadState: async () => {} } };
+    const [result] = await captureCommunityThreads({ tab, scope: { groupId: "group-1", locationId: "location-1" },
+      feedUrl: "https://academy.example.com/communities/groups/turf/home", cards: [{ externalId: "post-1", sourceUrl }], authors,
+      resolveCategory: true, sourceObservedChannels: [channelUrl] });
+    expect(result.post).toMatchObject({ categoryComplete: true, categoryExternalId: "Announcements-5xMN0C" });
+    expect(clicked).toEqual(['[id="post-view-modal-"] >> [id="post-view-modal--title"]']);
+  });
+
+  it("retargets reply pagination when comments hydrate into an outer modal", async () => {
+    const initial = observation(), pending = observation(), complete = observation();
+    initial.detailRootId = "post-view-content-card"; initial.comments = [];
+    pending.detailRootId = complete.detailRootId = "post-view-modal-";
+    pending.comments = [pending.comments[0]]; pending.controls = [{ id: "comments-view-more-replies-button", enabled: true }];
+    const reads = [initial, pending, complete], clicked = [];
+    const locator = path => ({ last: () => locator(path), first: () => locator(path), locator: child => locator(path + " >> " + child),
+      waitFor: async () => {}, click: async () => { clicked.push(path); } });
+    const tab = { goto: async () => {}, scroll: async () => {}, getAXState: async () => {}, playwright: { locator, evaluate: async () => reads.shift() } };
+    const [result] = await captureCommunityThreads({ tab, scope: { groupId: "group-1", locationId: "location-1" },
+      feedUrl: "https://academy.example.com/communities/groups/turf/home", cards: [{ externalId: "post-1", sourceUrl }], authors });
+    expect(result.complete).toBe(true); expect(result.comments).toHaveLength(2);
+    expect(clicked).toEqual(['[id="post-view-modal-"] >> [id="comments-view-more-replies-button"]']);
+  });
+
+  it("uses one exact fresh AX pagination control only after an unchanged semantic click timeout", async () => {
+    for (const mode of ["unique", "ambiguous-ax", "ambiguous-dom"]) {
+      const pending = observation(), complete = observation();
+      pending.comments = [pending.comments[0]]; pending.controls = [{ id: "comments-view-more-replies-button", label: "View 1 more Reply", enabled: true }];
+      if (mode === "ambiguous-dom") pending.controls.push({ ...pending.controls[0] });
+      let nativeClicked = false, nativeClicks = 0;
       const locator = selector => ({ last: () => locator(selector), first: () => locator(selector), locator: child => locator(child),
+        click: async () => {}, waitFor: async () => {
+          if (selector.includes(':not([id="comment-') && !nativeClicked) throw Error("timed out");
+        } });
+      const ax = "  42 button View 1 more Reply, ID: comments-view-more-replies-button";
+      const tab = { goto: async () => {}, scroll: async () => {}, getAXState: async () => mode === "ambiguous-ax" ? ax + "\n  43 button View 1 more Reply, ID: comments-view-more-replies-button" : ax,
+        click: async index => { expect(index).toBe(42); nativeClicked = true; nativeClicks++; },
+        playwright: { locator, evaluate: async () => nativeClicked ? complete : pending } };
+      const args = { tab, scope: { groupId: "group-1", locationId: "location-1" }, feedUrl: "https://academy.example.com/communities/groups/turf/home",
+        cards: [{ externalId: "post-1", sourceUrl }], authors };
+      if (mode !== "unique") { await expect(captureCommunityThreads(args)).rejects.toThrow("timed out"); expect(nativeClicks).toBe(0); }
+      else { const [result] = await captureCommunityThreads(args); expect(result.complete).toBe(true); expect(result.comments).toHaveLength(2);
+        expect(nativeClicks).toBe(1); expect(result.evidence.nativePaginationFallbacks).toBe(1); }
+    }
+  });
+
+  it("reads and closes the pin menu before thread work, holds unavailable state and rejects a wrong post", async () => {
+    for (const mode of ["valid", "missing", "ambiguous", "wrong-post", "foreign-preexisting", "nested-modal", "menu-root-change"]) {
+      let menuOpen = mode === "foreign-preexisting", triggerClicks = 0, currentMenu = false, headingDismissed = false; const events = [];
+      const locator = (selector, root = selector) => ({ last: () => locator(selector, root), first: () => locator(selector, root), locator: child => locator(child, root),
         waitFor: async ({ state }) => {
           if (selector.includes("hr-dropdown-option-") && state === "visible" && (mode === "missing" || !menuOpen)) throw Error("timed out");
         },
         click: async () => {
-          if (selector === '[id="post-view-content-title"]') { events.push("close-menu"); menuOpen = false; }
+          if (selector === '[id="post-view-content-title"]') { events.push("close-menu"); menuOpen = false; headingDismissed = true; }
           else {
             expect(selector).toBe('[id="post-card-actions-trigger"]'); events.push("open-menu"); triggerClicks++;
-            if (mode !== "foreign-preexisting" || triggerClicks > 1) { menuOpen = true; currentMenu = true; }
+            if (mode === "menu-root-change") expect(root).toBe('[id="post-view-modal-"]');
+            if (mode !== "missing" && (mode !== "foreign-preexisting" || triggerClicks > 1)) { menuOpen = true; currentMenu = true; }
           }
         },
       });
       const tab = { goto: async () => {}, scroll: async () => {}, getAXState: async () => {},
+        pressKey: async (index, key) => { expect(index).toBeNull(); expect(key).toBe("Escape"); events.push("close-menu"); menuOpen = false; },
         playwright: { locator, evaluate: async () => {
           events.push(menuOpen ? "read-menu" : "read-thread");
           const source = observation(); source.thread.categoryControlKind = "standalone_button";
           if (mode === "nested-modal") {
             delete source.thread.categoryControlKind; source.detailRootId = "post-view-modal-"; source.ownerPinTriggerObserved = true;
           }
+          if (mode === "menu-root-change") {
+            source.detailRootId = headingDismissed ? "post-view-modal-" : "post-view-content-card"; source.ownerPinTriggerObserved = true;
+          }
           source.homePinMenuVisible = menuOpen && mode !== "missing";
-          if (menuOpen && ["valid", "foreign-preexisting", "nested-modal"].includes(mode)) source.homePinMenu = { postExternalId: "post-1",
+          if (menuOpen && ["valid", "foreign-preexisting", "nested-modal", "menu-root-change"].includes(mode)) source.homePinMenu = { postExternalId: "post-1",
             actionId: currentMenu ? "hr-dropdown-option-pinToHome" : "hr-dropdown-option-unpinFromHome", pinned: !currentMenu };
           if (menuOpen && mode === "wrong-post") source.thread.externalId = "post-other";
           return source;
@@ -699,14 +783,16 @@ describe("CUA only orchestration", () => {
       if (mode === "wrong-post") await expect(captureCommunityThreads(args)).rejects.toThrow("pin menu post identity");
       else {
         const [result] = await captureCommunityThreads(args);
-        expect(result.post.pinnedComplete).toBe(["valid", "foreign-preexisting", "nested-modal"].includes(mode));
-        if (["valid", "foreign-preexisting", "nested-modal"].includes(mode)) expect(result.evidence.homePinMenuProof).toMatchObject({ postExternalId: "post-1", pinned: false,
+        expect(result.post.pinnedComplete).toBe(["valid", "foreign-preexisting", "nested-modal", "menu-root-change"].includes(mode));
+        if (["valid", "foreign-preexisting", "nested-modal", "menu-root-change"].includes(mode)) expect(result.evidence.homePinMenuProof).toMatchObject({ postExternalId: "post-1", pinned: false,
           menuAbsentBeforeTrigger: true, currentTriggerOpenedMenu: true });
         else expect(result.evidence.pinnedResolutionIssue).toBe("explicit_home_pin_state_not_observed");
       }
       expect(menuOpen).toBe(false);
-      expect(events).toContain("close-menu");
-      expect(events.lastIndexOf("close-menu")).toBeGreaterThan(events.indexOf("read-menu"));
+      if (mode !== "missing") {
+        expect(events).toContain("close-menu");
+        expect(events.lastIndexOf("close-menu")).toBeGreaterThan(events.indexOf("read-menu"));
+      }
       if (mode === "foreign-preexisting") {
         expect(events.indexOf("close-menu")).toBeLessThan(events.indexOf("open-menu"));
         expect(triggerClicks).toBe(2);
