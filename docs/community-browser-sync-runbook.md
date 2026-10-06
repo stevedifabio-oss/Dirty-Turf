@@ -106,7 +106,7 @@ lease safely and request sign-in; restart with a new capture afterward.
 
 Run this setup after the browser entry point. Set `communityWorkspace` to the
 checkout containing this runbook, and use the same fresh ID as the CLI begin.
-The examples use the `action-diagnostics-20261006` reader; use a new import suffix after
+The examples use the `current-owner-controls-20261006` reader; use a new import suffix after
 future code changes so the CUA module cache does not retain an older reader.
 
 ```js
@@ -116,7 +116,7 @@ var communityFs = await import("node:fs/promises");
 var communityUrl = await import("node:url");
 var communityReader = await import(communityUrl.pathToFileURL(
   communityWorkspace + "/scripts/lib/community-browser-reader.mjs"
-).href + "?v=action-diagnostics-20261006");
+).href + "?v=current-owner-controls-20261006");
 var communitySave = async (file, snapshot, cwd) => {
   if (!/^output\/private\/[^/.][^/]*\.json$/.test(file)) {
     throw new Error("Invalid private capture destination");
@@ -231,8 +231,12 @@ The drawer/button roles and current exact post ID must match. Mixed menu and
 drawer choices, duplicate controls, wrong roles or wrong labels remain held.
 It verifies the current rendered post ID and proves no portal pin options are
 visible before opening that post's trigger, so a stale unrelated menu cannot be
-relabelled as current proof. If the initial card needs to open the full mobile
-post, its observed heading is followed and the resulting root is revalidated.
+relabelled as current proof. An initial standalone card can hydrate into a modal
+while both title nodes remain visible. The reader waits briefly for the modal,
+takes fresh AX and exact-root observations, and never clicks a post heading to
+open it. The first owner-menu click and its bounded retry require a currently
+observed trigger of the exact supported kind; unavailable controls leave pin
+state unresolved rather than guessing from the category button.
 It dismisses only an actually observed open menu with native Escape and waits
 for all pin options to become hidden before
 thread work, and never executes either action. Missing, ambiguous or mismatched

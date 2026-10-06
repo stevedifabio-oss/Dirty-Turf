@@ -690,17 +690,18 @@ describe("CUA only orchestration", () => {
     await expect(captureCommunityThreads(args)).rejects.toThrow("detail root identity mismatch");
   });
 
-  it("fails closed on Members navigation with immutable per-thread action diagnostics", async () => {
+  it("fails closed on Members navigation during hydration with immutable per-thread action diagnostics", async () => {
     const home = "https://academy.example.com/communities/groups/turf/home";
     const cards = [{ externalId: "post-1", sourceUrl }, { externalId: "post-2", sourceUrl: home + "/posts/post-2" }];
     let route, currentPostId, returnedThreads, callerOffset = 60, progressCalls = 0, routeReads = 0;
     const actions = [];
     const locator = selector => ({ last: () => locator(selector), first: () => locator(selector), locator,
-      waitFor: async () => {}, click: async () => {
-        expect(selector).toBe('[id="post-view-content-title"]');
-        actions.push("heading"); callerOffset = 20;
-        route = "https://academy.example.com/communities/groups/turf/members?credential=secret#private";
-      } });
+      waitFor: async () => {
+        if (selector === '[id="post-view-modal-"]' && currentPostId === "post-2") {
+          actions.push("hydrate-route"); callerOffset = 20;
+          route = "https://academy.example.com/communities/groups/turf/members?credential=secret#private";
+        }
+      }, click: async () => { throw Error("An unobserved control must not be clicked"); } });
     const tab = { goto: async url => { actions.push("goto"); route = url; currentPostId = url.split("/").at(-1); },
       url: async () => { routeReads++; return route; }, scroll: async () => {}, getAXState: async () => {},
       playwright: { locator, evaluate: async () => {
@@ -716,7 +717,7 @@ describe("CUA only orchestration", () => {
     } catch (caught) { error = caught; }
     expect(error.message).toBe("Source detail root identity mismatch");
     expect(error.communityReaderDiagnostics).toEqual({ expectedPostId: "post-2", observedPostId: null, observedRootId: null,
-      sourceActionPhase: "detail_heading_open", sourceActionSequence: 2, sourceActionCompleted: true,
+      sourceActionPhase: "post_navigate", sourceActionSequence: 1, sourceActionCompleted: true,
       sourceRoutePathname: "/communities/groups/turf/members" });
     expect(Object.isFrozen(error.communityReaderDiagnostics)).toBe(true);
     expect(Object.getOwnPropertyDescriptor(error, "communityReaderDiagnostics")).toMatchObject({ writable: false, configurable: false });
@@ -724,7 +725,7 @@ describe("CUA only orchestration", () => {
     expect(() => { error.communityReaderDiagnostics.expectedPostId = "post-mutated"; }).toThrow(TypeError);
     expect(error.communityReaderDiagnostics.expectedPostId).toBe("post-2");
     expect(callerOffset).toBe(20); expect(progressCalls).toBe(1); expect(returnedThreads).toBeUndefined();
-    expect(routeReads).toBe(1); expect(actions).toEqual(["goto", "goto", "heading"]);
+    expect(routeReads).toBe(1); expect(actions).toEqual(["goto", "goto", "hydrate-route"]);
     expect(JSON.stringify(error.communityReaderDiagnostics)).not.toMatch(/credential|secret|private|memberEmail|body|example\.com/);
   });
 
@@ -812,20 +813,97 @@ describe("CUA only orchestration", () => {
     }
   });
 
+  it.each(["before-trigger", "after-ignored-trigger"])("never clicks a heading while a standalone card hydrates into the current modal: %s", async mode => {
+    let modalHydrated = false, menuOpen = false, route = sourceUrl;
+    const clicks = [], waits = [], ax = [];
+    const locator = (selector, root = selector) => ({
+      last: () => locator(selector, root), first: () => locator(selector, root),
+      locator: child => locator(child, root),
+      getByRole: (role, options) => {
+        expect(role).toBe("button"); expect(options).toEqual({ name: "Post actions menu", exact: true });
+        return locator("modal-owner-trigger", root);
+      },
+      waitFor: async ({ state }) => {
+        waits.push([selector, state]);
+        if (selector === '[id="post-view-modal-"]' && state === "visible") {
+          if (mode === "after-ignored-trigger") throw Error("timed out");
+          modalHydrated = true;
+        }
+        if (selector.includes("hr-dropdown-option-") && state === "visible" && !menuOpen) throw Error("timed out");
+      },
+      click: async () => {
+        // Both title nodes remain visible after hydration. Clicking either is
+        // a regression: the source would navigate away to Members.
+        if (selector === '[id="post-view-content-title"]') { route = sourceUrl.replace(/\/home\/posts\/[^/]+$/, "/members"); throw Error("Unsafe heading click"); }
+        clicks.push([selector, root]);
+        if (selector === '[id="post-card-actions-trigger"]') {
+          expect(mode).toBe("after-ignored-trigger"); expect(modalHydrated).toBe(false);
+          modalHydrated = true; // first click ignored while the outer modal mounts
+        } else {
+          expect(selector).toBe("modal-owner-trigger"); expect(root).toBe('[id="post-view-modal-"]');
+          menuOpen = true;
+        }
+      },
+    });
+    const tab = {
+      goto: async url => { route = url; }, url: async () => route, scroll: async () => {},
+      getAXState: async () => { ax.push(modalHydrated); },
+      pressKey: async (index, key) => { expect(index).toBeNull(); expect(key).toBe("Escape"); menuOpen = false; },
+      playwright: { locator, evaluate: async () => {
+        const source = observation(); source.detailRootId = modalHydrated ? "post-view-modal-" : "post-view-content-card";
+        source.ownerPinTriggerObserved = true; source.ownerPinTriggerKind = modalHydrated ? "modal_actions" : "post_card_actions";
+        source.homePinMenuVisible = menuOpen;
+        if (menuOpen) source.homePinMenu = { postExternalId: "post-1", actionId: "options-drawer-option-pinToHome", pinned: false };
+        return source;
+      } },
+    };
+    const [result] = await captureCommunityThreads({ tab, scope: { groupId: "group-1", locationId: "location-1" },
+      feedUrl: "https://academy.example.com/communities/groups/turf/home", cards: [{ externalId: "post-1", sourceUrl }], authors, resolvePinned: true });
+    expect(result.complete).toBe(true); expect(result.post).toMatchObject({ externalId: "post-1", pinnedComplete: true, pinned: false });
+    expect(result.evidence.homePinMenuProof).toMatchObject({ actionId: "options-drawer-option-pinToHome", menuAbsentBeforeTrigger: true, currentTriggerOpenedMenu: true });
+    expect(waits).toContainEqual(['[id="post-view-modal-"]', "visible"]); expect(ax.length).toBeGreaterThan(1);
+    expect(clicks).toEqual(mode === "before-trigger" ? [["modal-owner-trigger", '[id="post-view-modal-"]']]
+      : [['[id="post-card-actions-trigger"]', '[id="post-view-content-card"]'], ["modal-owner-trigger", '[id="post-view-modal-"]']]);
+    expect(route).toBe(sourceUrl); expect(menuOpen).toBe(false);
+  });
+
+  it.each(["missing", "ambiguous", "unknown-kind", "removed-before-click", "removed-before-retry"])("holds pin state without guessing an unavailable owner trigger: %s", async mode => {
+    let reads = 0, triggerClicks = 0;
+    const locator = selector => ({ last: () => locator(selector), first: () => locator(selector), locator,
+      waitFor: async ({ state }) => { if (selector.includes("hr-dropdown-option-") && state === "visible") throw Error("timed out"); },
+      click: async () => { expect(selector).toBe('[id="post-card-actions-trigger"]'); triggerClicks++; },
+    });
+    const tab = { goto: async () => {}, scroll: async () => {}, getAXState: async () => {}, playwright: { locator,
+      evaluate: async () => {
+        reads++;
+        const source = observation(); source.detailRootId = "post-view-modal-";
+        source.thread.categoryControlKind = "standalone_button"; // never substitutes for an owner trigger
+        source.ownerPinTriggerObserved = !["missing", "ambiguous"].includes(mode)
+          && !(mode === "removed-before-click" && reads >= 3) && !(mode === "removed-before-retry" && triggerClicks > 0);
+        source.ownerPinTriggerKind = mode === "unknown-kind" ? "profile_link" : "post_card_actions";
+        source.homePinMenuVisible = false;
+        return source;
+      },
+    } };
+    const [result] = await captureCommunityThreads({ tab, scope: { groupId: "group-1", locationId: "location-1" },
+      feedUrl: "https://academy.example.com/communities/groups/turf/home", cards: [{ externalId: "post-1", sourceUrl }], authors, resolvePinned: true });
+    expect(result.post.pinnedComplete).toBe(false); expect(result.evidence.homePinMenuProof).toBeUndefined();
+    expect(result.evidence.pinnedResolutionIssue).toBe("explicit_home_pin_state_not_observed");
+    expect(triggerClicks).toBe(mode === "removed-before-retry" ? 1 : 0);
+  });
+
   it("reads and closes the pin menu before thread work, holds unavailable state and rejects a wrong post", async () => {
     for (const mode of ["valid", "missing", "ambiguous", "wrong-post", "foreign-preexisting", "nested-modal", "menu-root-change"]) {
-      let menuOpen = mode === "foreign-preexisting", triggerClicks = 0, currentMenu = false, headingDismissed = false; const events = [];
+      let menuOpen = mode === "foreign-preexisting", triggerClicks = 0, currentMenu = false, modalHydrated = false; const events = [];
       const locator = (selector, root = selector) => ({ last: () => locator(selector, root), first: () => locator(selector, root), locator: child => locator(child, root),
         waitFor: async ({ state }) => {
+          if (selector === '[id="post-view-modal-"]' && state === "visible" && mode === "menu-root-change") modalHydrated = true;
           if (selector.includes("hr-dropdown-option-") && state === "visible" && (mode === "missing" || !menuOpen)) throw Error("timed out");
         },
         click: async () => {
-          if (selector === '[id="post-view-content-title"]') { events.push("close-menu"); menuOpen = false; headingDismissed = true; }
-          else {
-            expect(selector).toBe('[id="post-card-actions-trigger"]'); events.push("open-menu"); triggerClicks++;
-            if (mode === "menu-root-change") expect(root).toBe('[id="post-view-modal-"]');
-            if (mode !== "missing" && (mode !== "foreign-preexisting" || triggerClicks > 1)) { menuOpen = true; currentMenu = true; }
-          }
+          expect(selector).toBe('[id="post-card-actions-trigger"]'); events.push("open-menu"); triggerClicks++;
+          if (mode === "menu-root-change") expect(root).toBe('[id="post-view-modal-"]');
+          if (mode !== "missing" && (mode !== "foreign-preexisting" || triggerClicks > 1)) { menuOpen = true; currentMenu = true; }
         },
       });
       const tab = { goto: async () => {}, scroll: async () => {}, getAXState: async () => {},
@@ -833,11 +911,12 @@ describe("CUA only orchestration", () => {
         playwright: { locator, evaluate: async () => {
           events.push(menuOpen ? "read-menu" : "read-thread");
           const source = observation(); source.thread.categoryControlKind = "standalone_button";
+          source.ownerPinTriggerObserved = true; source.ownerPinTriggerKind = "post_card_actions";
           if (mode === "nested-modal") {
             delete source.thread.categoryControlKind; source.detailRootId = "post-view-modal-"; source.ownerPinTriggerObserved = true;
           }
           if (mode === "menu-root-change") {
-            source.detailRootId = headingDismissed ? "post-view-modal-" : "post-view-content-card"; source.ownerPinTriggerObserved = true;
+            source.detailRootId = modalHydrated ? "post-view-modal-" : "post-view-content-card";
           }
           source.homePinMenuVisible = menuOpen && mode !== "missing";
           if (menuOpen && ["valid", "foreign-preexisting", "nested-modal", "menu-root-change"].includes(mode)) source.homePinMenu = { postExternalId: "post-1",
