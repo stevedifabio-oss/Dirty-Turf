@@ -89,14 +89,21 @@ export function extractCommunityDom(options = {}, suppliedDocument) {
     const featured = root.closest('.featured-post-card, [id="posts-featured-section"]');
     const regular = root.closest('.post-item, [id="posts-regular-feed-section"]');
     const categoryTitle = detail ? root.querySelector('[id="post-view-modal--title"]') : null;
-    const categoryControl = categoryTitle ? all(categoryTitle, 'p.cursor-pointer')
+    const modalCategoryControl = categoryTitle ? all(categoryTitle, 'p.cursor-pointer')
       .find(element => /^\s*#[^\n]+$/.test(text(element))) : null;
+    // October 5 source permalinks render a standalone detail card. Read only
+    // its observed channel button; the resulting allowlisted route still
+    // establishes the channel identity, never the displayed label.
+    const standaloneCategoryControl = detail && root.id === "post-view-content-card"
+      ? root.querySelector('[id="post-card-channel-clickable"]') : null;
+    const categoryControl = modalCategoryControl ?? (text(standaloneCategoryControl).trim() ? standaloneCategoryControl : null);
     const bodyComplete = Boolean(detail && bodyNode && (text(bodyNode).trim() || attachmentState.mediaComplete && attachmentState.media.length));
     return {
       externalId, title: text(titleNode), body: text(bodyNode), bodyComplete,
       authorExternalId: idFrom(avatar?.id, /^popover-avatar-trigger-(.+)$/),
       categoryName: categoryControl ? text(categoryControl).trim() : all(root, "p").map(text).find(value => /^\s*#[^\n]+$/.test(value))?.trim(),
       ...(categoryControl ? { categoryControlText: text(categoryControl).trim() } : {}),
+      ...(categoryControl === standaloneCategoryControl && categoryControl ? { categoryControlKind: "standalone_button" } : {}),
       sourceUrl, displayedCommentCount: countFrom(text(countNode)) === undefined ? null : Number(countFrom(text(countNode))),
       sourceCreatedAtLabel: sourceTimestampLabel(root), ...attachmentState, ...(detail && !bodyComplete ? { mediaComplete: false } : {}),
       ...(!detail ? { pinnedComplete: Boolean(featured || regular && featuredCaptureComplete),
@@ -105,8 +112,17 @@ export function extractCommunityDom(options = {}, suppliedDocument) {
   };
   const cards = all(dom, '[id^="post-card-"][id$="-card"]').filter(element => visible(element) && /^post-card-[A-Za-z0-9._:-]+-card$/.test(element.id));
   const modals = all(dom, '[id="post-view-modal-"]').filter(visible);
-  const modal = modals.at(-1);
+  const standaloneCards = all(dom, '[id="post-view-content-card"]').filter(visible);
+  const modal = modals.at(-1) ?? standaloneCards.at(-1);
   const thread = modal ? post(modal, true) : null;
+  const homePinOptions = all(dom, '[id="hr-dropdown-option-pinToHome"], [id="hr-dropdown-option-unpinFromHome"]').filter(visible);
+  const homePinOption = homePinOptions.length === 1 ? homePinOptions[0] : null;
+  const homePinActions = { "hr-dropdown-option-pinToHome": { label: "Pin to All Posts", pinned: false },
+    "hr-dropdown-option-unpinFromHome": { label: "Unpin from All Posts", pinned: true } };
+  const homePinAction = homePinOption && homePinActions[homePinOption.id];
+  const homePinMenu = thread?.externalId && homePinAction && homePinOption.getAttribute("role") === "menuitem"
+    && text(homePinOption).trim() === homePinAction.label
+    ? { postExternalId: thread.externalId, actionId: homePinOption.id, pinned: homePinAction.pinned } : null;
   const comments = modal ? all(modal, '[id^="comment-"][id$="-content-div"]').map(element => {
     const externalId = idFrom(element.id, /^comment-(.+)-content-div$/);
     const ownBody = element.querySelector(`[id="comment-content-${externalId}"]`);
@@ -152,6 +168,8 @@ export function extractCommunityDom(options = {}, suppliedDocument) {
     announcementOpen: Boolean(announcement),
     announcementClosable: Boolean(announcement?.querySelector('[id="hr-modal__close-button"]')),
     loading: Boolean(modal?.querySelector('.hr-skeleton, [aria-busy="true"]')),
+    homePinMenu,
+    homePinMenuVisible: homePinOptions.length > 0,
     zeroCommentsObserved,
     expectedFeaturedCount, observedFeaturedCount: featuredIds.size, featuredCaptureComplete, featuredToggleVisible: visible(featuredToggle),
   };
@@ -354,7 +372,7 @@ export async function captureCommunityFeed({ tab, scope, sourceGroupId, feedUrl,
   return feed;
 }
 
-export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedUrl, cards, authors = [], channelByPost = {}, pinnedByPost = {}, resolveCategory = false, sourceObservedChannels = [], expectedMediaByRecord = {}, maxThreadActions = 100, onProgress = () => {} }) {
+export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedUrl, cards, authors = [], channelByPost = {}, pinnedByPost = {}, resolveCategory = false, resolvePinned = false, sourceObservedChannels = [], expectedMediaByRecord = {}, maxThreadActions = 100, onProgress = () => {} }) {
   const { base, verifiedSourceGroupId, read, observeAction } = browserContext({ tab, scope, sourceGroupId, feedUrl });
   const channels = observedChannelUrls(base, sourceObservedChannels);
   if (resolveCategory && channels.size === 0) throw new Error("Category resolution requires independently observed source channel URLs");
@@ -377,13 +395,55 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
     await observeAction(() => tab.goto(link));
     // Navigation can expose an initial Loading AX state. Wait for the observed
     // detail surface before reading it, rather than accepting an empty thread.
-    const detail = tab.playwright.locator('[id="post-view-modal-"]').last();
+    const detail = tab.playwright.locator('[id="post-view-modal-"], [id="post-view-content-card"]').last();
     await detail.waitFor({ state: "visible", timeoutMs: 15000 });
     await detail.locator('[id="post-view-content-title"]').waitFor({ state: "attached", timeoutMs: 15000 });
     await detail.locator(`[id="post-card-${card.externalId}-comment-button"]`).waitFor({ state: "attached", timeoutMs: 15000 });
     await detail.locator('[id="comments-container"]').waitFor({ state: "attached", timeoutMs: 15000 });
     await tab.getAXState({ emit: false });
     let observation = await read();
+    let pinnedMenuProof;
+    if (resolvePinned && observation.thread?.categoryControlKind === "standalone_button") {
+      const trigger = detail.locator('[id="post-card-actions-trigger"]');
+      // Document-level portal options have no owner ID. Establish their
+      // absence before opening the current exact post's trigger so an ignored
+      // click cannot relabel a stale menu from a different post as this one.
+      await observeAction(() => detail.locator('[id="post-view-content-title"]').click());
+      await tab.playwright.locator('[id="hr-dropdown-option-pinToHome"], [id="hr-dropdown-option-unpinFromHome"]').first()
+        .waitFor({ state: "hidden", timeoutMs: 3000 });
+      const beforePinMenu = await read();
+      if (beforePinMenu.thread?.externalId !== card.externalId) throw new Error("Source pin menu post identity mismatch");
+      if (beforePinMenu.homePinMenuVisible) throw new Error("Preexisting source pin menu did not close");
+      // Open/read/close only. Pin actions themselves are never executed.
+      // A newly mounted source header can ignore the first click; one bounded
+      // retry follows a fresh observation, with all uncertainty held.
+      try {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          await observeAction(() => trigger.click());
+          try {
+            await tab.playwright.locator('[id="hr-dropdown-option-pinToHome"], [id="hr-dropdown-option-unpinFromHome"]').first()
+              .waitFor({ state: "visible", timeoutMs: 2500 });
+          } catch (error) {
+            if (!/timeout|timed out|deadline exceeded/i.test(String(error?.message ?? error))) throw error;
+            await tab.getAXState({ emit: false });
+          }
+          const pinObservation = await read();
+          if (pinObservation.thread?.externalId !== card.externalId) throw new Error("Source pin menu post identity mismatch");
+          if (pinObservation.homePinMenu?.postExternalId === card.externalId) pinnedMenuProof = {
+            ...pinObservation.homePinMenu, menuAbsentBeforeTrigger: true, currentTriggerOpenedMenu: true,
+          };
+          if (pinnedMenuProof || pinObservation.homePinMenuVisible) break;
+        }
+      } finally {
+        // A neutral detail heading dismisses the observed dropdown without
+        // selecting an action; wait through its exit transition before work.
+        await observeAction(() => detail.locator('[id="post-view-content-title"]').click());
+        await tab.playwright.locator('[id="hr-dropdown-option-pinToHome"], [id="hr-dropdown-option-unpinFromHome"]').first()
+          .waitFor({ state: "hidden", timeoutMs: 3000 });
+      }
+      observation = await read();
+      if (observation.homePinMenuVisible) throw new Error("Source pin menu did not close");
+    }
     if ((observation.thread?.displayedCommentCount ?? card.displayedCommentCount) > 0 && observation.comments.length === 0) {
       await detail.locator('[id^="comment-"][id$="-content-div"]').first().waitFor({ state: "attached", timeoutMs: 15000 });
       await tab.getAXState({ emit: false });
@@ -411,7 +471,7 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
       if (!control) break;
       const previouslyLoaded = observation.comments.map(comment => comment.externalId).filter(sourceId);
       // These exact IDs were observed on read-only comment/reply pagination controls.
-      await observeAction(() => tab.playwright.locator('[id="post-view-modal-"]').last().locator(`[id="${control.id}"]`).first().click());
+      await observeAction(() => detail.locator(`[id="${control.id}"]`).first().click());
       const unseenCommentSelector = '[id^="comment-"][id$="-content-div"]'
         + previouslyLoaded.map(id => `:not([id="comment-${id}-content-div"])`).join("");
       await detail.locator(unseenCommentSelector).first().waitFor({ state: "attached", timeoutMs: 15000 });
@@ -498,13 +558,17 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
     observation = { ...observation, thread: guardMedia(observation.thread, "post"), comments: observation.comments.map(row => guardMedia(row, "comment")) };
     if (observation.observedGroupIds.some(groupId => groupId !== verifiedSourceGroupId)) throw new Error("Source thread scope mismatch");
     const normalizeOptions = { expectedPostId: card.externalId, sourceUrl: link, authors,
-      channelExternalId: resolveCategory ? undefined : channelByPost[card.externalId], pinned: pinnedByPost[card.externalId] ?? (card.pinnedComplete ? card.pinned : undefined) };
+      channelExternalId: resolveCategory ? undefined : channelByPost[card.externalId],
+      pinned: pinnedMenuProof?.pinned ?? pinnedByPost[card.externalId] ?? (card.pinnedComplete ? card.pinned : undefined) };
     let normalized = normalizeCommunityThread(observation, normalizeOptions);
     if (resolveCategory && normalized.complete && observation.thread?.categoryControlText) {
       const label = observation.thread.categoryControlText;
       // Literal text locates the observed control. Only the resulting URL
       // establishes identity; duplicate channel names never choose a mapping.
-      await observeAction(() => detail.locator('[id="post-view-modal--title"]').getByText(label, { exact: true }).click());
+      const categoryControl = observation.thread.categoryControlKind === "standalone_button"
+        ? detail.locator('[id="post-card-channel-clickable"]')
+        : detail.locator('[id="post-view-modal--title"]');
+      await observeAction(() => categoryControl.getByText(label, { exact: true }).click());
       const categoryUrl = new URL(await tab.url());
       if (!channels.has(categoryUrl.href)) throw new Error("Category route did not match an independently observed source channel URL");
       const categoryExternalId = categoryUrl.pathname.slice(`${base.pathname.replace(/\/home\/?$/, "")}/channels/`.length);
@@ -513,6 +577,10 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
       normalized.evidence.categoryIdentityFromObservedRoute = true;
     } else if (resolveCategory) normalized.evidence.categoryResolutionIssue = "observed_category_control_unavailable_or_thread_incomplete";
     if (fieldSettlingIssue) normalized.evidence.fieldSettlingIssue = fieldSettlingIssue;
+    if (resolvePinned && observation.thread?.categoryControlKind === "standalone_button") {
+      if (pinnedMenuProof) normalized.evidence.homePinMenuProof = pinnedMenuProof;
+      else normalized.evidence.pinnedResolutionIssue = "explicit_home_pin_state_not_observed";
+    }
     normalized.evidence.mediaLoadState = mediaLoadState;
     threads.push(normalized);
     await onProgress({ phase: "threads", processed: threads.length, total: cards.length, complete: threads.at(-1).complete });
