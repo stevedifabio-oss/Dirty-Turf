@@ -196,13 +196,17 @@ settling leaves media unknown; unhydrated bodies are omitted with
 The production endpoint decides which records can be applied safely.
 
 The October 5 GHL permalink UI uses `post-view-content-card` instead of the older
-modal wrapper. The reader verifies the same rendered source post ID, comment
+modal wrapper, and another observed layout nests that card inside the modal.
+The reader retargets the exact visible root selected by DOM extraction; the
+outer modal keeps its category header and current-post owner menu in scope.
+The reader verifies the same rendered source post ID, comment
 graph and attachment ownership in both layouts. Its standalone category button
 must navigate to one of the independently observed exact channel routes.
 
-The standalone Featured Posts heading no longer includes a total. Do not infer
+The current Featured Posts heading no longer includes a total. Do not infer
 an unpinned state from that missing count. With `resolvePinned:true`, the reader
-opens the current post's owner menu, reads exactly one visible `menuitem` with
+opens the observed current post's owner menu in either detail layout and reads
+exactly one visible `menuitem` with
 ID `hr-dropdown-option-pinToHome` and text `Pin to All Posts` (unpinned), or ID
 `hr-dropdown-option-unpinFromHome` and text `Unpin from All Posts` (pinned).
 It verifies the current rendered post ID and proves no portal pin options are

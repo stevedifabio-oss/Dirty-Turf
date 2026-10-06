@@ -115,6 +115,7 @@ export function extractCommunityDom(options = {}, suppliedDocument) {
   const standaloneCards = all(dom, '[id="post-view-content-card"]').filter(visible);
   const modal = modals.at(-1) ?? standaloneCards.at(-1);
   const thread = modal ? post(modal, true) : null;
+  const ownerPinTrigger = modal?.querySelector('[id="post-card-actions-trigger"]');
   const homePinOptions = all(dom, '[id="hr-dropdown-option-pinToHome"], [id="hr-dropdown-option-unpinFromHome"]').filter(visible);
   const homePinOption = homePinOptions.length === 1 ? homePinOptions[0] : null;
   const homePinActions = { "hr-dropdown-option-pinToHome": { label: "Pin to All Posts", pinned: false },
@@ -170,6 +171,8 @@ export function extractCommunityDom(options = {}, suppliedDocument) {
     loading: Boolean(modal?.querySelector('.hr-skeleton, [aria-busy="true"]')),
     homePinMenu,
     homePinMenuVisible: homePinOptions.length > 0,
+    detailRootId: modal?.id ?? null,
+    ownerPinTriggerObserved: ownerPinTrigger?.tagName === "BUTTON" && visible(ownerPinTrigger),
     zeroCommentsObserved,
     expectedFeaturedCount, observedFeaturedCount: featuredIds.size, featuredCaptureComplete, featuredToggleVisible: visible(featuredToggle),
   };
@@ -395,15 +398,26 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
     await observeAction(() => tab.goto(link));
     // Navigation can expose an initial Loading AX state. Wait for the observed
     // detail surface before reading it, rather than accepting an empty thread.
-    const detail = tab.playwright.locator('[id="post-view-modal-"], [id="post-view-content-card"]').last();
+    let detail = tab.playwright.locator('[id="post-view-modal-"], [id="post-view-content-card"]').last();
     await detail.waitFor({ state: "visible", timeoutMs: 15000 });
     await detail.locator('[id="post-view-content-title"]').waitFor({ state: "attached", timeoutMs: 15000 });
     await detail.locator(`[id="post-card-${card.externalId}-comment-button"]`).waitFor({ state: "attached", timeoutMs: 15000 });
     await detail.locator('[id="comments-container"]').waitFor({ state: "attached", timeoutMs: 15000 });
     await tab.getAXState({ emit: false });
     let observation = await read();
+    // Some source layouts nest a standalone card inside the modal. Match the
+    // extractor's exact visible root so its outer category header remains in
+    // scope; the inner card alone cannot establish the current modal identity.
+    if (observation.detailRootId !== undefined) {
+      if (!["post-view-modal-", "post-view-content-card"].includes(observation.detailRootId)
+        || observation.thread?.externalId !== card.externalId) throw new Error("Source detail root identity mismatch");
+      detail = tab.playwright.locator(`[id="${observation.detailRootId}"]`).last();
+      await detail.locator(`[id="post-card-${card.externalId}-comment-button"]`).waitFor({ state: "attached", timeoutMs: 15000 });
+    }
     let pinnedMenuProof;
-    if (resolvePinned && observation.thread?.categoryControlKind === "standalone_button") {
+    const pinResolutionAttempted = resolvePinned && (observation.ownerPinTriggerObserved === true
+      || observation.thread?.categoryControlKind === "standalone_button");
+    if (pinResolutionAttempted) {
       const trigger = detail.locator('[id="post-card-actions-trigger"]');
       // Document-level portal options have no owner ID. Establish their
       // absence before opening the current exact post's trigger so an ignored
@@ -577,7 +591,7 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
       normalized.evidence.categoryIdentityFromObservedRoute = true;
     } else if (resolveCategory) normalized.evidence.categoryResolutionIssue = "observed_category_control_unavailable_or_thread_incomplete";
     if (fieldSettlingIssue) normalized.evidence.fieldSettlingIssue = fieldSettlingIssue;
-    if (resolvePinned && observation.thread?.categoryControlKind === "standalone_button") {
+    if (pinResolutionAttempted) {
       if (pinnedMenuProof) normalized.evidence.homePinMenuProof = pinnedMenuProof;
       else normalized.evidence.pinnedResolutionIssue = "explicit_home_pin_state_not_observed";
     }

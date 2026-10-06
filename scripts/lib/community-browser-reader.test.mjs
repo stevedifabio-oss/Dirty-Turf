@@ -142,6 +142,19 @@ describe("read-only observed DOM extraction", () => {
     expect(extractCommunityDom({}, documentFixture).thread.externalId).toBe("post-1");
   });
 
+  it("keeps the outer modal category root when it contains a standalone detail card", () => {
+    const { documentFixture, modal } = domFixture();
+    const card = element("div", { id: "post-view-content-card" }, "", [...modal.children,
+      element("button", { id: "post-card-actions-trigger" })]);
+    const header = element("div", { id: "post-view-modal--title" }, "", [element("p", { class: "cursor-pointer" }, "#Equipment")]);
+    card.parentElement = modal; header.parentElement = modal; modal.children = [header, card];
+    const result = extractCommunityDom({}, documentFixture);
+    expect(result).toMatchObject({ detailRootId: "post-view-modal-", ownerPinTriggerObserved: true });
+    expect(result.thread).toMatchObject({ externalId: "post-1", categoryControlText: "#Equipment" });
+    expect(result.thread).not.toHaveProperty("categoryControlKind");
+    expect(result.comments[1]).toMatchObject({ externalId: "comment-2", parentExternalId: "comment-1", mediaComplete: false });
+  });
+
   it("accepts only one exact visible owner-menu pin action for the current rendered post", () => {
     const { documentFixture } = domFixture();
     const option = element("div", { id: "hr-dropdown-option-pinToHome", role: "menuitem" }, "Pin to All Posts");
@@ -637,8 +650,24 @@ describe("CUA only orchestration", () => {
     await expect(captureCommunityThreads(args)).rejects.toThrow("independently observed");
   });
 
+  it("retargets nested detail guards and category navigation to the exact observed modal root", async () => {
+    const source = observation(); source.detailRootId = "post-view-modal-"; source.thread.categoryControlText = "#Announcements";
+    const channelUrl = "https://academy.example.com/communities/groups/turf/channels/Announcements-5xMN0C", clicked = [];
+    const locator = path => ({ last: () => locator(path), first: () => locator(path), locator: child => locator(path + " >> " + child),
+      waitFor: async () => {}, getByText: () => locator(path), click: async () => { clicked.push(path); } });
+    const tab = { goto: async () => {}, scroll: async () => {}, url: async () => channelUrl, getAXState: async () => {},
+      playwright: { evaluate: async () => source, locator } };
+    const args = { tab, scope: { groupId: "group-1", locationId: "location-1" }, feedUrl: "https://academy.example.com/communities/groups/turf/home",
+      cards: [{ externalId: "post-1", sourceUrl }], authors, resolveCategory: true, sourceObservedChannels: [channelUrl] };
+    const [result] = await captureCommunityThreads(args);
+    expect(result.post).toMatchObject({ categoryComplete: true, categoryExternalId: "Announcements-5xMN0C" });
+    expect(clicked).toEqual(['[id="post-view-modal-"] >> [id="post-view-modal--title"]']);
+    source.detailRootId = "unexpected-wrapper";
+    await expect(captureCommunityThreads(args)).rejects.toThrow("detail root identity mismatch");
+  });
+
   it("reads and closes the pin menu before thread work, holds unavailable state and rejects a wrong post", async () => {
-    for (const mode of ["valid", "missing", "ambiguous", "wrong-post", "foreign-preexisting"]) {
+    for (const mode of ["valid", "missing", "ambiguous", "wrong-post", "foreign-preexisting", "nested-modal"]) {
       let menuOpen = mode === "foreign-preexisting", triggerClicks = 0, currentMenu = false; const events = [];
       const locator = selector => ({ last: () => locator(selector), first: () => locator(selector), locator: child => locator(child),
         waitFor: async ({ state }) => {
@@ -656,8 +685,11 @@ describe("CUA only orchestration", () => {
         playwright: { locator, evaluate: async () => {
           events.push(menuOpen ? "read-menu" : "read-thread");
           const source = observation(); source.thread.categoryControlKind = "standalone_button";
+          if (mode === "nested-modal") {
+            delete source.thread.categoryControlKind; source.detailRootId = "post-view-modal-"; source.ownerPinTriggerObserved = true;
+          }
           source.homePinMenuVisible = menuOpen && mode !== "missing";
-          if (menuOpen && ["valid", "foreign-preexisting"].includes(mode)) source.homePinMenu = { postExternalId: "post-1",
+          if (menuOpen && ["valid", "foreign-preexisting", "nested-modal"].includes(mode)) source.homePinMenu = { postExternalId: "post-1",
             actionId: currentMenu ? "hr-dropdown-option-pinToHome" : "hr-dropdown-option-unpinFromHome", pinned: !currentMenu };
           if (menuOpen && mode === "wrong-post") source.thread.externalId = "post-other";
           return source;
@@ -667,8 +699,8 @@ describe("CUA only orchestration", () => {
       if (mode === "wrong-post") await expect(captureCommunityThreads(args)).rejects.toThrow("pin menu post identity");
       else {
         const [result] = await captureCommunityThreads(args);
-        expect(result.post.pinnedComplete).toBe(["valid", "foreign-preexisting"].includes(mode));
-        if (["valid", "foreign-preexisting"].includes(mode)) expect(result.evidence.homePinMenuProof).toMatchObject({ postExternalId: "post-1", pinned: false,
+        expect(result.post.pinnedComplete).toBe(["valid", "foreign-preexisting", "nested-modal"].includes(mode));
+        if (["valid", "foreign-preexisting", "nested-modal"].includes(mode)) expect(result.evidence.homePinMenuProof).toMatchObject({ postExternalId: "post-1", pinned: false,
           menuAbsentBeforeTrigger: true, currentTriggerOpenedMenu: true });
         else expect(result.evidence.pinnedResolutionIssue).toBe("explicit_home_pin_state_not_observed");
       }
