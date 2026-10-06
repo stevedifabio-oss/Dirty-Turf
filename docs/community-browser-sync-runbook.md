@@ -38,7 +38,7 @@ or print its contents. CLI commands load it with `node --env-file`.
    Display names alone never resolve an author; historical synthetic member IDs
    are not proof of a current GHL author ID.
 4. Read all source threads in sequential batches of up to eight with
-   `resolveCategory:true`, the current observed channel URL allowlist, and
+   `resolveCategory:true`, `resolvePinned:true`, the current observed channel URL allowlist, and
    `expectedMediaByRecord`. Keep each CUA tool invocation within 60 seconds;
    reduce the batch size if necessary. Never run source navigation concurrently.
    Await the reader's comment/body, pagination, network-idle and known-wrapper
@@ -145,6 +145,7 @@ var communityBatch = await communityReader.captureCommunityThreads({
   cards: communityFeedBefore.cards.slice(communityBatchOffset, communityBatchOffset + 8),
   authors: communityAuthors,
   resolveCategory: true,
+  resolvePinned: true,
   sourceObservedChannels: communityChannels,
   expectedMediaByRecord: communityKnownMedia
 });
@@ -193,6 +194,24 @@ It does not resolve field holds. Network-idle timeout or unavailable media
 settling leaves media unknown; unhydrated bodies are omitted with
 `bodyComplete:false`; unresolved authors are omitted with `authorComplete:false`.
 The production endpoint decides which records can be applied safely.
+
+The October 5 GHL permalink UI uses `post-view-content-card` instead of the older
+modal wrapper. The reader verifies the same rendered source post ID, comment
+graph and attachment ownership in both layouts. Its standalone category button
+must navigate to one of the independently observed exact channel routes.
+
+The standalone Featured Posts heading no longer includes a total. Do not infer
+an unpinned state from that missing count. With `resolvePinned:true`, the reader
+opens the current post's owner menu, reads exactly one visible `menuitem` with
+ID `hr-dropdown-option-pinToHome` and text `Pin to All Posts` (unpinned), or ID
+`hr-dropdown-option-unpinFromHome` and text `Unpin from All Posts` (pinned).
+It verifies the current rendered post ID and proves no portal pin options are
+visible before opening that post's trigger, so a stale unrelated menu cannot be
+relabelled as current proof. It dismisses the menu through the neutral
+detail heading and waits for the menu to become hidden before
+thread work, and never executes either action. Missing, ambiguous or mismatched
+menu evidence remains an unknown pin field; an already observed featured card
+can still prove a true pin. The older modal path retains its prior feed guards.
 
 ## CLI examples
 

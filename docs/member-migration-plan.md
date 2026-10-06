@@ -1,7 +1,10 @@
 # Dirty Turf member migration plan
 
-Prepared October 3, 2026. This is a rollout plan and communication draft; the
-Community bridge still needs complete capture, guarded application and scheduling.
+Prepared October 3, 2026; readiness tooling updated October 5. This is a rollout
+plan and communication draft. A guarded temporary Community bridge is built;
+the remaining source holds, current member reconciliation and installed-device
+pilot must pass before the full member move. The bridge depends on this Mac,
+Codex and Steve's signed-in Chrome session being available.
 
 **Destination:** Dirty Turf's own Academy and Community on web, iPhone and Android.
 GHL stays in use during the overlap. Its activity flows one way into the app until
@@ -43,6 +46,11 @@ pilot and source bridge pass.
   Reconcile existing billing agreements before introducing any replacement
   subscription, so migration cannot charge someone twice. The measuring-tool
   subscription remains a separate optional entitlement.
+- Run the [private member-readiness audit](member-migration-readiness.md) with a
+  fresh complete exact group roster, a fresh app export and the approved free
+  cohort. Resolve its identity, account, access and billing exceptions before
+  provisioning or inviting. The audit reads local evidence and never creates
+  accounts, changes grants, charges members or sends messages.
 - Preserve native lesson completions and imported course percentage progress.
   Do not turn a percentage into invented lesson completions or certificates.
 - Verify a full Community catch-up: all pages, source authors, posts, comments,

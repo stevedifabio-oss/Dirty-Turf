@@ -117,6 +117,50 @@ describe("read-only observed DOM extraction", () => {
     expect(JSON.stringify(result.thread.media)).not.toMatch(/avatar|blur/);
   });
 
+  it("reads the observed standalone detail card with the same exact identity and reply ownership guards", () => {
+    const { documentFixture, modal } = domFixture();
+    documentFixture.body.children = documentFixture.body.children.filter(node => node === modal || node.id === "communities-layout-main");
+    modal.id = modal.attrs.id = "post-view-content-card";
+    const channel = element("button", { id: "post-card-channel-clickable" }, "", [
+      element("p", { id: "post-card-channel-clickable-label" }, "Announcements"),
+    ]);
+    channel.parentElement = modal; modal.children.push(channel);
+    const result = extractCommunityDom({}, documentFixture);
+    expect(result.thread).toMatchObject({ externalId: "post-1", bodyComplete: true, authorExternalId: "author-1",
+      displayedCommentCount: 2, categoryControlText: "Announcements", categoryControlKind: "standalone_button" });
+    expect(result.comments[0]).toMatchObject({ externalId: "comment-1", parentExternalId: null, media: [] });
+    expect(result.comments[1]).toMatchObject({ externalId: "comment-2", parentExternalId: "comment-1", mediaComplete: false });
+    expect(result.comments[1].unsupported).toContainEqual({ code: "non_durable_media_url", tag: "VIDEO" });
+    modal.children = modal.children.filter(node => node.id !== "post-card-post-1-comment-button");
+    expect(normalizeCommunityThread(extractCommunityDom({}, documentFixture), options).complete).toBe(false);
+  });
+
+  it("keeps modal identity authoritative over a stale standalone detail card", () => {
+    const { documentFixture } = domFixture();
+    const stale = element("div", { id: "post-view-content-card" }, "", [element("div", { id: "post-card-stale-comment-button" })]);
+    stale.parentElement = documentFixture.body; documentFixture.body.children.push(stale);
+    expect(extractCommunityDom({}, documentFixture).thread.externalId).toBe("post-1");
+  });
+
+  it("accepts only one exact visible owner-menu pin action for the current rendered post", () => {
+    const { documentFixture } = domFixture();
+    const option = element("div", { id: "hr-dropdown-option-pinToHome", role: "menuitem" }, "Pin to All Posts");
+    option.parentElement = documentFixture.body; documentFixture.body.children.push(option);
+    expect(extractCommunityDom({}, documentFixture).homePinMenu).toEqual({ postExternalId: "post-1", actionId: "hr-dropdown-option-pinToHome", pinned: false });
+    option.id = option.attrs.id = "hr-dropdown-option-unpinFromHome"; option.ownText = "Unpin from All Posts";
+    expect(extractCommunityDom({}, documentFixture).homePinMenu.pinned).toBe(true);
+    option.ownText = "Pin to Channel";
+    expect(extractCommunityDom({}, documentFixture).homePinMenu).toBeNull();
+    option.ownText = "Unpin from All Posts"; option.attrs.role = "button";
+    expect(extractCommunityDom({}, documentFixture).homePinMenu).toBeNull();
+    option.attrs.role = "menuitem";
+    const contradictory = element("div", { id: "hr-dropdown-option-pinToHome", role: "menuitem" }, "Pin to All Posts");
+    contradictory.parentElement = documentFixture.body; documentFixture.body.children.push(contradictory);
+    expect(extractCommunityDom({}, documentFixture).homePinMenu).toBeNull();
+    option.attrs.hidden = true; contradictory.attrs.hidden = true;
+    expect(extractCommunityDom({}, documentFixture).homePinMenu).toBeNull();
+  });
+
   it("derives a scroll point inside the visible viewport intersection", () => {
     const result = extractCommunityDom({}, domFixture().documentFixture);
     expect(result.feedScrollPoint).toEqual([313, 569]);
@@ -574,5 +618,67 @@ describe("CUA only orchestration", () => {
     await expect(captureCommunityThreads({ tab, scope: { groupId: "group-1", locationId: "location-1" },
       feedUrl: "https://academy.example.com/communities/groups/turf/home", cards: [{ externalId: "post-1", sourceUrl }], authors,
       resolveCategory: true, sourceObservedChannels: ["https://academy.example.com/communities/groups/turf/channels/Equipment-0kVK8Z"] })).rejects.toThrow("independently observed");
+  });
+
+  it("routes the standalone channel button through the same exact observed URL allowlist", async () => {
+    const source = observation(); Object.assign(source.thread, { categoryControlText: "Announcements", categoryControlKind: "standalone_button" });
+    const channelUrl = "https://academy.example.com/communities/groups/turf/channels/Announcements-5xMN0C", selectors = [];
+    let routedUrl = channelUrl;
+    const locator = { last: () => locator, first: () => locator, locator: selector => { selectors.push(selector); return locator; },
+      waitFor: async () => {}, getByText: () => locator, click: async () => {} };
+    const tab = { goto: async () => {}, scroll: async () => {}, url: async () => routedUrl, getAXState: async () => {},
+      playwright: { evaluate: async () => source, locator: selector => { selectors.push(selector); return locator; } } };
+    const args = { tab, scope: { groupId: "group-1", locationId: "location-1" }, feedUrl: "https://academy.example.com/communities/groups/turf/home",
+      cards: [{ externalId: "post-1", sourceUrl }], authors, resolveCategory: true, sourceObservedChannels: [channelUrl] };
+    const result = await captureCommunityThreads(args);
+    expect(selectors).toContain('[id="post-card-channel-clickable"]');
+    expect(result[0].post).toMatchObject({ categoryComplete: true, categoryExternalId: "Announcements-5xMN0C" });
+    routedUrl = "https://academy.example.com/communities/groups/other/channels/Announcements-5xMN0C";
+    await expect(captureCommunityThreads(args)).rejects.toThrow("independently observed");
+  });
+
+  it("reads and closes the pin menu before thread work, holds unavailable state and rejects a wrong post", async () => {
+    for (const mode of ["valid", "missing", "ambiguous", "wrong-post", "foreign-preexisting"]) {
+      let menuOpen = mode === "foreign-preexisting", triggerClicks = 0, currentMenu = false; const events = [];
+      const locator = selector => ({ last: () => locator(selector), first: () => locator(selector), locator: child => locator(child),
+        waitFor: async ({ state }) => {
+          if (selector.includes("hr-dropdown-option-") && state === "visible" && (mode === "missing" || !menuOpen)) throw Error("timed out");
+        },
+        click: async () => {
+          if (selector === '[id="post-view-content-title"]') { events.push("close-menu"); menuOpen = false; }
+          else {
+            expect(selector).toBe('[id="post-card-actions-trigger"]'); events.push("open-menu"); triggerClicks++;
+            if (mode !== "foreign-preexisting" || triggerClicks > 1) { menuOpen = true; currentMenu = true; }
+          }
+        },
+      });
+      const tab = { goto: async () => {}, scroll: async () => {}, getAXState: async () => {},
+        playwright: { locator, evaluate: async () => {
+          events.push(menuOpen ? "read-menu" : "read-thread");
+          const source = observation(); source.thread.categoryControlKind = "standalone_button";
+          source.homePinMenuVisible = menuOpen && mode !== "missing";
+          if (menuOpen && ["valid", "foreign-preexisting"].includes(mode)) source.homePinMenu = { postExternalId: "post-1",
+            actionId: currentMenu ? "hr-dropdown-option-pinToHome" : "hr-dropdown-option-unpinFromHome", pinned: !currentMenu };
+          if (menuOpen && mode === "wrong-post") source.thread.externalId = "post-other";
+          return source;
+        } } };
+      const args = { tab, scope: { groupId: "group-1", locationId: "location-1" }, feedUrl: "https://academy.example.com/communities/groups/turf/home",
+        cards: [{ externalId: "post-1", sourceUrl }], authors, resolvePinned: true };
+      if (mode === "wrong-post") await expect(captureCommunityThreads(args)).rejects.toThrow("pin menu post identity");
+      else {
+        const [result] = await captureCommunityThreads(args);
+        expect(result.post.pinnedComplete).toBe(["valid", "foreign-preexisting"].includes(mode));
+        if (["valid", "foreign-preexisting"].includes(mode)) expect(result.evidence.homePinMenuProof).toMatchObject({ postExternalId: "post-1", pinned: false,
+          menuAbsentBeforeTrigger: true, currentTriggerOpenedMenu: true });
+        else expect(result.evidence.pinnedResolutionIssue).toBe("explicit_home_pin_state_not_observed");
+      }
+      expect(menuOpen).toBe(false);
+      expect(events).toContain("close-menu");
+      expect(events.lastIndexOf("close-menu")).toBeGreaterThan(events.indexOf("read-menu"));
+      if (mode === "foreign-preexisting") {
+        expect(events.indexOf("close-menu")).toBeLessThan(events.indexOf("open-menu"));
+        expect(triggerClicks).toBe(2);
+      }
+    }
   });
 });
