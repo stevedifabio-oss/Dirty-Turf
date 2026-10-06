@@ -454,14 +454,23 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
     await tab.getAXState({ emit: false });
     let observation = await readThread();
     if (resolvePinned && observation.detailRootId === "post-view-content-card") {
-      // The mobile source opens the full post modal from this initial card.
-      // Follow the observed heading, then revalidate its current exact root.
-      await threadAction("detail_heading_open", () => detail.locator('[id="post-view-content-title"]').click());
+      // The source can hydrate an outer modal while the background card stays
+      // visible. Wait for that surface without clicking either changing title.
+      try {
+        await tab.playwright.locator('[id="post-view-modal-"]').last()
+          .waitFor({ state: "visible", timeoutMs: 3000 });
+      } catch (error) {
+        if (!/timeout|timed out|deadline exceeded/i.test(String(error?.message ?? error))) throw error;
+      }
+    }
+    if (resolvePinned) {
+      await tab.getAXState({ emit: false });
       observation = await readThread();
     }
     let pinnedMenuProof;
-    const pinResolutionAttempted = resolvePinned && (observation.ownerPinTriggerObserved === true
-      || observation.thread?.categoryControlKind === "standalone_button");
+    const pinResolutionAttempted = resolvePinned;
+    const observedPinTrigger = current => current.ownerPinTriggerObserved === true
+      && ["post_card_actions", "modal_actions"].includes(current.ownerPinTriggerKind);
     if (pinResolutionAttempted) {
       // Document-level portal options have no owner ID. Establish their
       // absence before opening the current exact post's trigger so an ignored
@@ -480,6 +489,9 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
       // retry follows a fresh observation, with all uncertainty held.
       try {
         for (let attempt = 0; attempt < 2; attempt++) {
+          // A category button is not evidence of an owner control. Hydration
+          // can remove or replace a trigger between the first read and retry.
+          if (!observedPinTrigger(observation)) break;
           await threadAction(observation.ownerPinTriggerKind === "modal_actions" ? "mobile_owner_menu_open" : "legacy_owner_menu_open", () => observation.ownerPinTriggerKind === "modal_actions"
             ? detail.getByRole("button", { name: "Post actions menu", exact: true }).click()
             : detail.locator('[id="post-card-actions-trigger"]').click());
