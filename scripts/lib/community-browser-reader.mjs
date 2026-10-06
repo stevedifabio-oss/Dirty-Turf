@@ -401,11 +401,18 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
   const threads = [];
   const pinOptionSelector = '[id="hr-dropdown-option-pinToHome"], [id="hr-dropdown-option-unpinFromHome"], [id="options-drawer-option-pinToHome"], [id="options-drawer-option-unpinFromHome"]';
   for (const card of cards) {
+    const expectedPostId = card.externalId;
+    let sourceActionSequence = 0, lastSourceAction;
+    const threadAction = async (phase, action) => {
+      lastSourceAction = Object.freeze({ phase, sequence: ++sourceActionSequence, completed: false });
+      await observeAction(action);
+      lastSourceAction = Object.freeze({ ...lastSourceAction, completed: true });
+    };
     const link = card.sourceUrl ? new URL(card.sourceUrl, base).href : null;
     if (!link || new URL(link).origin !== base.origin || new URL(link).pathname !== `${base.pathname.replace(/\/$/, "")}/posts/${card.externalId}`) {
       throw new Error("Source post permalink missing or outside the verified group");
     }
-    await observeAction(() => tab.goto(link));
+    await threadAction("post_navigate", () => tab.goto(link));
     // Navigation can expose an initial Loading AX state. Wait for the observed
     // detail surface before reading it, rather than accepting an empty thread.
     let detail = tab.playwright.locator('[id="post-view-modal-"], [id="post-view-content-card"]').last();
@@ -413,7 +420,29 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
       const current = await read();
       if (current.detailRootId !== undefined) {
         if (!["post-view-modal-", "post-view-content-card"].includes(current.detailRootId)
-          || current.thread?.externalId !== card.externalId) throw new Error("Source detail root identity mismatch");
+          || current.thread?.externalId !== card.externalId) {
+          const error = new Error("Source detail root identity mismatch");
+          const observedPostId = sourceId(current.thread?.externalId) ? current.thread.externalId : null;
+          const observedRootId = sourceId(current.detailRootId) ? current.detailRootId : null;
+          const sourceAction = lastSourceAction;
+          let sourceRoutePathname = null;
+          try {
+            // Failure-only route metadata: no query/hash, credentials, member
+            // profile routes or arbitrary source strings leave this reader.
+            const route = new URL(await tab.url()), groupPath = base.pathname.replace(/\/home\/?$/, "");
+            const knownPaths = new Set([groupPath, ...["home", "members", "about", "learning", "events", "leaderboard", "settings", "settings/details"]
+              .map(path => `${groupPath}/${path}`), ...[...channels].map(url => new URL(url).pathname),
+            `${base.pathname.replace(/\/$/, "")}/posts/${expectedPostId}`]);
+            if (observedPostId) knownPaths.add(`${base.pathname.replace(/\/$/, "")}/posts/${observedPostId}`);
+            if (route.origin === base.origin && !route.username && !route.password && knownPaths.has(route.pathname)) sourceRoutePathname = route.pathname;
+          } catch { /* Diagnostic reads never replace the original identity error. */ }
+          Object.defineProperty(error, "communityReaderDiagnostics", { enumerable: true, value: Object.freeze({
+            expectedPostId, observedPostId, observedRootId, sourceActionPhase: sourceAction?.phase ?? null,
+            sourceActionSequence: sourceAction?.sequence ?? 0, sourceActionCompleted: sourceAction?.completed ?? false,
+            sourceRoutePathname,
+          }) });
+          throw error;
+        }
         detail = tab.playwright.locator(`[id="${current.detailRootId}"]`).last();
       }
       return current;
@@ -427,7 +456,7 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
     if (resolvePinned && observation.detailRootId === "post-view-content-card") {
       // The mobile source opens the full post modal from this initial card.
       // Follow the observed heading, then revalidate its current exact root.
-      await observeAction(() => detail.locator('[id="post-view-content-title"]').click());
+      await threadAction("detail_heading_open", () => detail.locator('[id="post-view-content-title"]').click());
       observation = await readThread();
     }
     let pinnedMenuProof;
@@ -439,7 +468,7 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
       // click cannot relabel a stale menu from a different post as this one.
       if (observation.homePinMenuVisible) {
         if (typeof tab.pressKey !== "function") throw new Error("Native source menu dismissal unavailable");
-        await observeAction(() => tab.pressKey(null, "Escape"));
+        await threadAction("owner_menu_escape_close", () => tab.pressKey(null, "Escape"));
         await tab.playwright.locator(pinOptionSelector).first().waitFor({ state: "hidden", timeoutMs: 3000 });
       }
       const beforePinMenu = await readThread();
@@ -451,7 +480,7 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
       // retry follows a fresh observation, with all uncertainty held.
       try {
         for (let attempt = 0; attempt < 2; attempt++) {
-          await observeAction(() => observation.ownerPinTriggerKind === "modal_actions"
+          await threadAction(observation.ownerPinTriggerKind === "modal_actions" ? "mobile_owner_menu_open" : "legacy_owner_menu_open", () => observation.ownerPinTriggerKind === "modal_actions"
             ? detail.getByRole("button", { name: "Post actions menu", exact: true }).click()
             : detail.locator('[id="post-card-actions-trigger"]').click());
           try {
@@ -475,7 +504,7 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
         const openMenu = await readThread();
         if (openMenu.homePinMenuVisible) {
           if (typeof tab.pressKey !== "function") throw new Error("Native source menu dismissal unavailable");
-          await observeAction(() => tab.pressKey(null, "Escape"));
+          await threadAction("owner_menu_escape_close", () => tab.pressKey(null, "Escape"));
           await tab.playwright.locator(pinOptionSelector).first().waitFor({ state: "hidden", timeoutMs: 3000 });
         }
       }
@@ -510,7 +539,7 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
       if (!control) break;
       const previouslyLoaded = observation.comments.map(comment => comment.externalId).filter(sourceId);
       // These exact IDs were observed on read-only comment/reply pagination controls.
-      await observeAction(() => detail.locator(`[id="${control.id}"]`).first().click());
+      await threadAction("semantic_comment_pagination", () => detail.locator(`[id="${control.id}"]`).first().click());
       const unseenCommentSelector = '[id^="comment-"][id$="-content-div"]'
         + previouslyLoaded.map(id => `:not([id="comment-${id}-content-div"])`).join("");
       try {
@@ -530,7 +559,7 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
             return match && match[2].trim() === control.label && match[3].trim() === control.id ? [Number(match[1])] : [];
           });
           if (matches.length !== 1) throw error;
-          await observeAction(() => tab.click(matches[0]));
+          await threadAction("native_comment_pagination", () => tab.click(matches[0]));
           nativePaginationFallbacks++;
           await detail.locator(unseenCommentSelector).first().waitFor({ state: "attached", timeoutMs: 15000 });
         }
@@ -628,7 +657,7 @@ export async function captureCommunityThreads({ tab, scope, sourceGroupId, feedU
       const categoryControl = observation.thread.categoryControlKind === "standalone_button"
         ? detail.locator('[id="post-card-channel-clickable"]')
         : detail.locator('[id="post-view-modal--title"]');
-      await observeAction(() => categoryControl.getByText(label, { exact: true }).click());
+      await threadAction("category_navigate", () => categoryControl.getByText(label, { exact: true }).click());
       const categoryUrl = new URL(await tab.url());
       if (!channels.has(categoryUrl.href)) throw new Error("Category route did not match an independently observed source channel URL");
       const categoryExternalId = categoryUrl.pathname.slice(`${base.pathname.replace(/\/home\/?$/, "")}/channels/`.length);

@@ -66,6 +66,18 @@ or print its contents. CLI commands load it with `node --env-file`.
    and lease; a later observation needs a new ID. Never apply an old observation
    after a newer accepted baseline.
 
+On `Source detail root identity mismatch`, save the error's
+`communityReaderDiagnostics` in a unique private `0600` failure receipt. This
+frozen per-thread payload records the expected and observed post/root IDs, the
+last local source action phase/sequence and completion state, and a recognized
+pathname within the verified group. It omits query strings, fragments,
+credentials, member profile routes and content. The expected ID comes from that
+reader call's local card, so caller progress variables cannot relabel it. A
+missing or unreadable safe route is `null`. These diagnostics identify the
+failed guard and preceding action; they do not prove what caused the route to
+change. Keep partial batches as diagnostics and release the lease; never apply
+them as a complete capture.
+
 ## Source configuration
 
 - Home: `https://academy.dirtyturf.com/communities/groups/7-figure-turf-cleaning/home`
@@ -94,7 +106,7 @@ lease safely and request sign-in; restart with a new capture afterward.
 
 Run this setup after the browser entry point. Set `communityWorkspace` to the
 checkout containing this runbook, and use the same fresh ID as the CLI begin.
-The examples use the verified `modal-hydration-20261006` reader; use a new import suffix after
+The examples use the `action-diagnostics-20261006` reader; use a new import suffix after
 future code changes so the CUA module cache does not retain an older reader.
 
 ```js
@@ -104,7 +116,7 @@ var communityFs = await import("node:fs/promises");
 var communityUrl = await import("node:url");
 var communityReader = await import(communityUrl.pathToFileURL(
   communityWorkspace + "/scripts/lib/community-browser-reader.mjs"
-).href + "?v=modal-hydration-20261006");
+).href + "?v=action-diagnostics-20261006");
 var communitySave = async (file, snapshot, cwd) => {
   if (!/^output\/private\/[^/.][^/]*\.json$/.test(file)) {
     throw new Error("Invalid private capture destination");
