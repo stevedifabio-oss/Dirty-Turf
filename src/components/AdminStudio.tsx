@@ -1,9 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
-import { ArrowRight, Award, BookOpen, CalendarDays, Check, ChevronDown, ChevronRight, CircleAlert, FilePlus2, GraduationCap, LayoutDashboard, LoaderCircle, Megaphone, Pencil, Pin, Plus, RefreshCw, Search, ShieldCheck, Upload, Users, X } from "lucide-react";
+import { ArrowRight, Award, BookOpen, BriefcaseBusiness, CalendarDays, Check, ChevronDown, ChevronRight, CircleAlert, FilePlus2, GraduationCap, LayoutDashboard, LoaderCircle, Megaphone, Pencil, Pin, Plus, RefreshCw, Search, ShieldCheck, Upload, Users, X } from "lucide-react";
+import { GrowthAdmin } from "./GrowthAdmin";
+import { AdminMemberSetup } from "./AdminMemberSetup";
 import { emptyQuizQuestion, existingQuizBody, quizEditorState, quizOptionsFor, serializeQuizQuestion, updateQuizQuestion, type QuizQuestionDraft } from "../lib/adminContent";
 import { isLessonContentUrl, lessonContentBlocks, lessonContentBody, type LessonContentBlock } from "../lib/lessonContent";
 import { LessonContentEditor } from "./LessonContentEditor";
 import { memberAccessPresentation } from "../lib/memberPresentation";
+import { useNativeNumberDrafts } from "../lib/useNativeNumberDrafts";
 import {
   createAdminMember,
   issueAdminCertificate,
@@ -13,7 +16,6 @@ import {
   MemberInvitePartialFailure,
   removeAdminComment,
   revokeAdminCertificate,
-  runMemberInviteAction,
   saveAdminCategory,
   saveAdminCourse,
   saveAdminEvent,
@@ -37,7 +39,7 @@ import {
 
 import "./admin-studio.css";
 
-type AdminTab = "overview" | "courses" | "community" | "events" | "members" | "certificates";
+type AdminTab = "overview" | "courses" | "community" | "events" | "members" | "certificates" | "services";
 
 type Props = {
   onToast: (message: string) => void;
@@ -142,6 +144,7 @@ export function AdminStudio({ onToast, onContentChange, onExit, leaveGuardRef, r
     { id: "community", label: "Community", icon: Megaphone },
     { id: "events", label: "Events", icon: CalendarDays },
     { id: "certificates", label: "Certificates", icon: Award },
+    { id: "services", label: "Offers & services", icon: BriefcaseBusiness },
   ] as const;
 
   return <DraftContext.Provider value={drafts}><div className="view-content admin-view"><fieldset className="admin-workspace-fields" disabled={readOnly || Boolean(busy)}>
@@ -184,7 +187,14 @@ export function AdminStudio({ onToast, onContentChange, onExit, leaveGuardRef, r
     {tab === "events" && <EventsAdmin snapshot={snapshot} busy={busy} act={act} />}
     {tab === "members" && <MembersAdmin snapshot={snapshot} busy={busy} act={act} />}
     {tab === "certificates" && <CertificatesAdmin snapshot={snapshot} busy={busy} act={act} />}
+    {tab === "services" && <GrowthAdminBridge communityId={snapshot.communityId} readOnly={readOnly} onToast={onToast} />}
   </fieldset></div></DraftContext.Provider>;
+}
+
+function GrowthAdminBridge(props: { communityId: string; readOnly: boolean; onToast: (message: string) => void }) {
+  const [dirty, setDirty] = useState(false);
+  useDraftGuard(dirty);
+  return <GrowthAdmin {...props} onDirtyChange={setDirty} />;
 }
 
 function CoursesAdmin({ snapshot, busy, act }: AdminSectionProps) {
@@ -199,7 +209,7 @@ function CoursesAdmin({ snapshot, busy, act }: AdminSectionProps) {
   const editing = snapshot.courses.find((course) => course.id === editor) ?? null;
   const visible = snapshot.courses.filter((course) => (statusFilter === "all" || course.status === statusFilter) && `${course.title} ${course.category}`.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()));
   const lessons = selected?.modules.flatMap((module) => module.lessons) ?? [];
-  const publishedLessons = lessons.filter((lesson) => lesson.status === "published").length;
+  const publishedLessons = selected?.modules.filter(module => !hiddenSourceModule(module)).flatMap(module => module.lessons).filter(lesson => lesson.status === "published").length ?? 0;
   const query = lessonSearch.trim().toLocaleLowerCase();
   const modules = selected?.modules.filter((module) => !query || `${module.title} ${module.groupTitle}`.toLocaleLowerCase().includes(query) || module.lessons.some((lesson) => lesson.title.toLocaleLowerCase().includes(query))) ?? [];
   const closeEditor = () => { if (confirmDiscard(drafts)) setEditor(null); };
@@ -233,11 +243,14 @@ function CourseForm({ course, nextOrder, busy, onCancel, onSave }: { course: Adm
   const [description, setDescription] = useState(course?.description ?? "");
   const [category, setCategory] = useState(course?.category ?? "Core");
   const [instructorName, setInstructorName] = useState(course?.instructorName ?? "Steve DiFabio");
-  const [accessType, setAccessType] = useState<AdminCourse["accessType"]>(course?.accessType ?? "open");
+  const initialAccessType = course?.accessType ?? "purchase";
+  const initialPrice = (course?.priceCents ?? (course ? 0 : 14995)) / 100;
+  const [accessType, setAccessType] = useState<AdminCourse["accessType"]>(initialAccessType);
   const [requiredLevel, setRequiredLevel] = useState(course?.requiredLevel ?? 1);
-  const [priceDollars, setPriceDollars] = useState((course?.priceCents ?? 0) / 100);
+  const [priceDollars, setPriceDollars] = useState(initialPrice);
   const [status, setStatus] = useState<AdminStatus>(course?.status ?? "draft");
-  const dirty = title !== (course?.title ?? "") || description !== (course?.description ?? "") || category !== (course?.category ?? "Core") || instructorName !== (course?.instructorName ?? "Steve DiFabio") || accessType !== (course?.accessType ?? "open") || requiredLevel !== (course?.requiredLevel ?? 1) || priceDollars !== (course?.priceCents ?? 0) / 100 || status !== (course?.status ?? "draft");
+  const numberDraft = useNativeNumberDrafts();
+  const dirty = title !== (course?.title ?? "") || description !== (course?.description ?? "") || category !== (course?.category ?? "Core") || instructorName !== (course?.instructorName ?? "Steve DiFabio") || accessType !== initialAccessType || requiredLevel !== (course?.requiredLevel ?? 1) || priceDollars !== initialPrice || status !== (course?.status ?? "draft");
   useDraftGuard(dirty);
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
@@ -250,9 +263,9 @@ function CourseForm({ course, nextOrder, busy, onCancel, onSave }: { course: Adm
       <label>Course title<input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} maxLength={160} placeholder="e.g. Professional Turf Cleaning" required /></label>
       <label>Description<textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={4} placeholder="What will members learn?" /></label>
       <div className="admin-form-grid"><label>Category<input value={category} onChange={(event) => setCategory(event.target.value)} /></label><label>Instructor<input value={instructorName} onChange={(event) => setInstructorName(event.target.value)} /></label></div>
-      <div className="admin-form-grid"><label>Access<select value={accessType} onChange={(event) => setAccessType(event.target.value as AdminCourse["accessType"])}><option value="open">Included for members with access</option><option value="level">Required member level</option><option value="purchase">Separate purchase / assignment</option></select></label>{accessType === "level" && <label>Required level<input type="number" min="1" step="1" value={requiredLevel} onChange={(event) => setRequiredLevel(Number(event.target.value))} required /></label>}{accessType === "purchase" && <label>Price (USD)<input type="number" min="0" step="0.01" value={priceDollars} onChange={(event) => setPriceDollars(Number(event.target.value))} required /></label>}</div>
-      {accessType === "purchase" && <p className="admin-form-note">This is the course’s listed price. A connected payment offer is needed to sell it; saving a price does not create a Stripe checkout.</p>}
-      {course && <label>Status<select value={status} onChange={(event) => setStatus(event.target.value as AdminStatus)}><option value="draft">Draft</option><option value="published" disabled={!course.modules.some((module) => module.lessons.some((lesson) => lesson.status === "published"))}>Published</option><option value="archived">Archived</option></select></label>}
+      <div className="admin-form-grid"><label>Access<select value={accessType} onChange={(event) => setAccessType(event.target.value as AdminCourse["accessType"])}><option value="open">Included for members with access</option><option value="level">Required member level</option><option value="purchase">Separate purchase / assignment</option></select></label>{accessType === "level" && <label>Required level<input type="number" min="1" step="1" {...numberDraft("level", requiredLevel, setRequiredLevel)} required /></label>}{accessType === "purchase" && <label>Price (USD)<input type="number" min="0" step="0.01" {...numberDraft("price", priceDollars, setPriceDollars)} required /></label>}</div>
+      {accessType === "purchase" && <p className="admin-form-note">Additional courses are a separate one-time purchase. This listed price does not activate checkout; connect a payment offer before selling the course. Prior member access is preserved.</p>}
+      {course && <label>Status<select value={status} onChange={(event) => setStatus(event.target.value as AdminStatus)}><option value="draft">Draft</option><option value="published" disabled={!course.modules.some((module) => !hiddenSourceModule(module) && module.lessons.some((lesson) => lesson.status === "published"))}>Published</option><option value="archived">Archived</option></select></label>}
       <div className="admin-form-actions"><button className="primary-button" disabled={Boolean(busy) || !title.trim()}>{busy === "course" ? <><LoaderCircle size={17} className="spin" /> Saving…</> : <><Check size={17} /> {course ? "Save changes" : "Create draft course"}</>}</button><button type="button" className="secondary-button" disabled={Boolean(busy)} onClick={onCancel}>Cancel</button></div>
     </form>
   </section>;
@@ -263,11 +276,17 @@ function ModuleEditor({ module, courseId, query, busy, act }: { module: AdminMod
   const drafts = useContext(DraftContext);
   const matchingModule = `${module.title} ${module.groupTitle}`.toLocaleLowerCase().includes(query);
   const lessons = module.lessons.filter((lesson) => !query || matchingModule || lesson.title.toLocaleLowerCase().includes(query));
-  return <details className="admin-module" open={query || !module.lessons.length ? true : undefined}><summary className="admin-module-heading"><span className="admin-module-index">{module.sortOrder + 1}</span><span><small>{module.groupTitle || "Module"}</small><strong>{module.title}</strong></span><span className="admin-module-count">{module.lessons.length} {module.lessons.length === 1 ? "lesson" : "lessons"}</span><ChevronDown size={18} /></summary><div className="admin-module-content"><div className="admin-inline-actions"><button className="admin-text-action" disabled={Boolean(busy)} onClick={() => { if (!editing || confirmDiscard(drafts)) setEditing((value) => !value); }}><Pencil size={15} /> {editing ? "Close module settings" : "Edit module"}</button></div>{editing && <ModuleComposer key={`${module.id}-${module.title}`} module={module} courseId={courseId} nextOrder={module.sortOrder} busy={busy} act={act} onSaved={() => setEditing(false)} />}
-      <div className="admin-lesson-list">{lessons.map((lesson) => <LessonRow key={lesson.id} lesson={lesson} courseId={courseId} busy={busy} act={act} />)}</div>
-      {!module.lessons.length && <p className="admin-muted">Your module is ready. Add a lesson below, then fill it with videos, text, photos or links.</p>}
-      <LessonComposer courseId={courseId} moduleId={module.id} nextOrder={nextSortOrder(module.lessons)} busy={busy} act={act} />
+  const hidden = hiddenSourceModule(module);
+  const editingBusy = busy || (hidden ? "hidden-source-module" : "");
+  return <details className="admin-module" open={query || !module.lessons.length ? true : undefined}><summary className="admin-module-heading"><span className="admin-module-index">{module.sortOrder + 1}</span><span><small>{hidden ? module.memberVisibility === "source-archived" ? "Archived module · hidden from members" : "Source module · hidden from members" : module.groupTitle || "Module"}</small><strong>{module.title}</strong></span><span className="admin-module-count">{module.lessons.length} {module.lessons.length === 1 ? "lesson" : "lessons"}</span><ChevronDown size={18} /></summary><div className="admin-module-content">{hidden ? <p className="admin-form-note" role="status">{module.memberVisibility === "source-archived" ? "This imported module was archived and is hidden from members." : "This imported module is hidden in GoHighLevel."} Use Add module above to create new member lessons here.</p> : <div className="admin-inline-actions"><button className="admin-text-action" disabled={Boolean(busy)} onClick={() => { if (!editing || confirmDiscard(drafts)) setEditing((value) => !value); }}><Pencil size={15} /> {editing ? "Close module settings" : "Edit module"}</button></div>}{editing && !hidden && <ModuleComposer key={`${module.id}-${module.title}`} module={module} courseId={courseId} nextOrder={module.sortOrder} busy={busy} act={act} onSaved={() => setEditing(false)} />}
+      <div className="admin-lesson-list">{lessons.map((lesson) => <LessonRow key={lesson.id} lesson={lesson} courseId={courseId} busy={editingBusy} act={act} />)}</div>
+      {!module.lessons.length && !hidden && <p className="admin-muted">Your module is ready. Add a lesson below, then fill it with videos, text, photos or links.</p>}
+      {!hidden && <LessonComposer courseId={courseId} moduleId={module.id} nextOrder={nextSortOrder(module.lessons)} busy={busy} act={act} />}
     </div></details>;
+}
+
+function hiddenSourceModule(module: AdminModule) {
+  return module.memberVisibility === "source-hidden" || module.memberVisibility === "source-archived";
 }
 
 function ModuleComposer({ courseId, nextOrder, busy, act, module, onSaved }: { courseId: string; nextOrder: number; busy: string; act: ActionRunner; module?: AdminModule; onSaved?: () => void }) {
@@ -302,6 +321,7 @@ function LessonComposer({ courseId, moduleId, nextOrder, busy, act, lesson, onSa
   const initialQuiz = useMemo(() => quizEditorState(lesson?.body), [lesson?.body]);
   const [quizQuestions, setQuizQuestions] = useState<QuizQuestionDraft[]>(initialQuiz.questions);
   const [passingPercent, setPassingPercent] = useState(initialQuiz.passingPercent);
+  const numberDraft = useNativeNumberDrafts();
   useDraftGuard(title !== (lesson?.title ?? "") || JSON.stringify(blocks) !== JSON.stringify(initialBlocks) || Object.keys(files).length > 0 || videoUrl !== (lesson?.videoUrl ?? "") || lessonType !== (lesson?.lessonType ?? "guide") || durationMinutes !== Math.round((lesson?.durationSeconds ?? 0) / 60) || status !== (lesson?.status ?? "draft") || JSON.stringify(quizQuestions.map(serializeQuizQuestion)) !== JSON.stringify(initialQuiz.questions.map(serializeQuizQuestion)) || passingPercent !== initialQuiz.passingPercent);
   useEffect(() => {
     const urls = Object.fromEntries(Object.entries(files).map(([id, file]) => [id, URL.createObjectURL(file)]));
@@ -319,11 +339,12 @@ function LessonComposer({ courseId, moduleId, nextOrder, busy, act, lesson, onSa
     return source ? [[block.id, source]] : [];
   }));
   const changeFile = (id: string, file: File | undefined) => setFiles(current => { const next = { ...current }; if (file) next[id] = file; else delete next[id]; return next; });
-  const quizIsValid = quizQuestions.length > 0 && quizQuestions.every((question) => question.prompt.trim() && quizOptionsFor(question).length >= 2 && question.correctOption >= 1 && question.correctOption <= quizOptionsFor(question).length);
+  const quizIsValid = quizQuestions.length > 0 && quizQuestions.every((question) => question.prompt.trim() && quizOptionsFor(question).length >= 2 && Number.isInteger(question.correctOption) && question.correctOption >= 1 && question.correctOption <= quizOptionsFor(question).length);
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!title.trim() || busy || initialContent.error || (lessonType === "quiz" && !quizIsValid)) return;
     setFormError("");
+    if (lessonType === "quiz" && (!Number.isInteger(passingPercent) || passingPercent < 1 || passingPercent > 100)) { setFormError("Choose a passing score from 1 to 100."); return; }
     for (const [index, block] of blocks.entries()) {
       if (block.type === "legacy") continue;
       if (block.type === "text" && !block.text.trim()) { setFormError(`Add text to block ${index + 1}, or remove the empty block.`); return; }
@@ -375,13 +396,13 @@ function LessonComposer({ courseId, moduleId, nextOrder, busy, act, lesson, onSa
         <div className="admin-quiz-question-heading"><strong>Question {index + 1}</strong>{quizQuestions.length > 1 && <button type="button" onClick={() => setQuizQuestions((current) => current.filter((item) => item.id !== question.id))}>Remove</button>}</div>
         <label>Question<input value={question.prompt} onChange={(event) => setQuizQuestions((current) => updateQuizQuestion(current, question.id, { prompt: event.target.value }))} required /></label>
         <label>Answer choices<textarea rows={4} value={question.optionLines} onChange={(event) => setQuizQuestions((current) => updateQuizQuestion(current, question.id, { optionLines: event.target.value }))} placeholder={'One choice per line'} required /></label>
-        <div className="admin-form-grid"><label>Correct choice number<input type="number" min="1" max={Math.max(1, quizOptionsFor(question).length)} value={question.correctOption} onChange={(event) => setQuizQuestions((current) => updateQuizQuestion(current, question.id, { correctOption: Number(event.target.value) }))} required /></label><label>Answer explanation<input value={question.explanation} onChange={(event) => setQuizQuestions((current) => updateQuizQuestion(current, question.id, { explanation: event.target.value }))} placeholder="Shown after submitting" /></label></div>
+        <div className="admin-form-grid"><label>Correct choice number<input type="number" min="1" max={Math.max(1, quizOptionsFor(question).length)} {...numberDraft(`choice-${question.id}`, question.correctOption, value => setQuizQuestions(current => updateQuizQuestion(current, question.id, { correctOption: value })))} required /></label><label>Answer explanation<input value={question.explanation} onChange={(event) => setQuizQuestions((current) => updateQuizQuestion(current, question.id, { explanation: event.target.value }))} placeholder="Shown after submitting" /></label></div>
       </div>)}
       <button type="button" className="secondary-button" onClick={() => setQuizQuestions((current) => [...current, emptyQuizQuestion()])}><Plus size={15} /> Add question</button>
-      <label>Passing score<input type="number" min="1" max="100" value={passingPercent} onChange={(event) => setPassingPercent(Number(event.target.value))} /></label>
+      <label>Passing score<input type="number" min="1" max="100" {...numberDraft("passing", passingPercent, setPassingPercent)} /></label>
       {!quizIsValid && <p className="admin-form-error">Every quiz needs a question, at least two choices, and a valid correct-choice number.</p>}
     </div>}
-    <div className="admin-form-grid"><label>Minutes<input type="number" min="0" value={durationMinutes} onChange={(event) => setDurationMinutes(Number(event.target.value))} /></label><label>Status<select value={status} onChange={(event) => setStatus(event.target.value as AdminStatus)}><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></select></label></div>
+    <div className="admin-form-grid"><label>Minutes<input type="number" min="0" {...numberDraft("minutes", durationMinutes, setDurationMinutes)} /></label><label>Status<select value={status} onChange={(event) => setStatus(event.target.value as AdminStatus)}><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></select></label></div>
     <p className="admin-form-note">Draft lessons stay private. Published lessons appear in a published course for members with access.</p>
     {formError && <p className="admin-form-error" role="alert">{formError}</p>}
     {uploadStatus && <p className="lesson-upload-status" role="status"><LoaderCircle className="spin" size={16} /> {uploadStatus}</p>}
@@ -400,7 +421,7 @@ function LessonRow({ lesson, courseId, busy, act }: { lesson: AdminLesson; cours
   };
   return <div className="admin-lesson">
     <span><strong>{lesson.title}</strong><small><StatusBadge status={lesson.status} /> {lesson.lessonType} · {Math.round(lesson.durationSeconds / 60)} min</small></span>
-    <div><button aria-label={`Edit ${lesson.title}`} disabled={Boolean(busy)} onClick={() => { if (!editing || confirmDiscard(drafts)) setEditing((value) => !value); }}><Pencil size={15} /> {editing ? "Close" : "Edit"}</button><label className="admin-upload-button" title={editing ? "Save or close this editor before adding a download." : "Add a PDF, document or audio download."}><Upload size={15} /><span>{busy === `asset-${lesson.id}` ? "Uploading…" : "Add download"}</span><input aria-label={`Upload file for ${lesson.title}`} type="file" accept="audio/*,.pdf,.doc,.docx" disabled={Boolean(busy) || editing} onChange={(event) => void upload(event)} /></label></div>
+    <div><button aria-label={`Edit ${lesson.title}`} disabled={Boolean(busy)} onClick={() => { if (!editing || confirmDiscard(drafts)) setEditing((value) => !value); }}><Pencil size={15} /> {editing ? "Close" : "Edit"}</button><label className="admin-upload-button" title={editing ? "Save or close this editor before adding a download." : "Add a PDF, Word document or audio download up to 20 MB."}><Upload size={15} /><span>{busy === `asset-${lesson.id}` ? "Uploading…" : "Add download"}</span><input aria-label={`Upload file for ${lesson.title}`} type="file" accept="audio/*,.pdf,.doc,.docx" disabled={Boolean(busy) || editing} onChange={(event) => void upload(event)} /></label></div>
     {editing && <LessonComposer lesson={lesson} courseId={courseId} moduleId={lesson.moduleId} nextOrder={lesson.sortOrder} busy={busy} act={act} onSaved={() => setEditing(false)} onCancel={() => { if (confirmDiscard(drafts)) setEditing(false); }} />}
   </div>;
 }
@@ -461,7 +482,7 @@ function MembersAdmin({ snapshot, busy, act }: AdminSectionProps) {
   return <section className="admin-panel">
     <SectionHeading icon={<Users size={21} />} title="Members and access" detail="Find a member, check account setup, and manage course access." />
     <details className="admin-composer"><summary><Plus size={17} /> Add member</summary><form onSubmit={(event) => { event.preventDefault(); if (!name.trim() || !email.trim() || busy) return; void act("member", () => createAdminMember({ displayName: name, email, role }), "Member added. Set up the account when ready.").then((saved) => { if (saved) { setName(""); setEmail(""); setRole("member"); } }); }}><div className="admin-form-grid"><label>Name<input value={name} onChange={(event) => setName(event.target.value)} required /></label><label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label>Role<select value={role} onChange={(event) => setRole(event.target.value as AdminMember["role"])}><option value="member">Member</option><option value="moderator">Moderator</option><option value="admin">Admin</option></select></label></div><button className="primary-button" disabled={Boolean(busy)}>Add member</button></form></details>
-    <details className="admin-composer admin-account-setup"><summary><ShieldCheck size={17} /> Account setup and sign-in emails</summary><div><p>These actions use the whole community’s pending account queue, not the filtered list below. Review member eligibility and account details before running them. Setting up accounts does not send email.</p><div className="admin-member-actions"><button className="secondary-button" disabled={Boolean(busy)} onClick={() => { if (window.confirm("Set up up to 50 accounts from the whole community’s pending queue? This does not send email and does not target your search results.")) void act("provision", () => runMemberInviteAction("provision"), "Account setup batch completed.", false); }}>Set up pending accounts</button><button className="secondary-button" disabled={Boolean(busy)} onClick={() => { if (window.confirm("Send sign-in emails to up to 25 eligible people in the whole community’s invitation queue? This does not target your search results.")) void act("notify", () => runMemberInviteAction("notify"), "Sign-in email batch completed.", false); }}>Send sign-in emails</button></div></div></details>
+    <AdminMemberSetup disabled={Boolean(busy)} onRun={(action, execute, message) => act(action, execute, message, false)} />
     <div className="admin-member-toolbar"><SearchField label="Search members" value={search} onChange={setSearch} placeholder="Search name, email or company…" /><label className="admin-filter-label">Show<select value={filter} onChange={(event) => setFilter(event.target.value)}><option value="all">All members</option><option value="review">Needs account review</option><option value="active">Active</option><option value="pending">Pending</option><option value="suspended">Suspended</option><option value="cancelled">Cancelled</option></select></label></div>
     <p className="admin-results-count" role="status">Showing {members.length} of {snapshot.members.length} members</p>
     <div className="admin-record-list">{members.map((member) => <MemberRow key={member.id} member={member} courses={snapshot.courses} busy={busy} act={act} />)}{!members.length && <EmptyAdmin text="No matching members. Try another search or filter." />}</div>

@@ -81,14 +81,49 @@ eq((await ids('authenticated',owner,'academy_assets')).length,8,'admin asset man
 eq((await ids('authenticated',owner,'storage.objects')).length,10,'admin can inspect orphan uploads');
 eq((await as('authenticated',owner,"update course_lessons set title='Admin revised draft' where id=$1 returning id",[draft])).length,1,'admin draft editing retained');
 eq((await as('authenticated',memberUser,"update course_lessons set title='Forbidden edit' where id=$1 returning id",[draft])).length,0,'member cannot update hidden lesson');
+// The same visibility window must protect SECURITY DEFINER mutations. Knowing
+// an old/draft UUID must not let a member complete it or submit hidden quizzes.
+for (const lessonId of [draft,archived,hiddenParent,retiredParent,hiddenCourseLesson]) {
+ await assert.rejects(as('authenticated',memberUser,'select set_academy_lesson_completion($1,true)',[lessonId]), /Lesson is not available/); assertions++;
+}
+const quizBody=JSON.stringify({quiz:{requiresPassing:true,passingPercent:100,questions:[{prompt:'Choose the safe option',options:['Correct','Wrong'],correctOptionIndex:0}]}});
+for (const lessonId of [published,draft,archived,hiddenParent,retiredParent,hiddenCourseLesson]) {
+ await db.query("update course_lessons set lesson_type='quiz',body=$2::jsonb where id=$1",[lessonId,quizBody]);
+}
+for (const lessonId of [draft,archived,hiddenParent,retiredParent,hiddenCourseLesson]) {
+ await assert.rejects(as('authenticated',memberUser,"select record_academy_quiz_attempt($1,100,'[0]'::jsonb)",[lessonId]), /Quiz lesson not found|Quiz is not available/); assertions++;
+}
+eq((await db.query('select count(*)::integer as total from academy_member_lesson_progress where academy_member_id=$1',[member])).rows[0].total,0,'hidden mutation attempts write no progress');
+eq((await db.query('select count(*)::integer as total from academy_quiz_attempts where academy_member_id=$1',[member])).rows[0].total,0,'hidden quiz attempts write no attempts');
+await assert.rejects(as('authenticated',outsider,"select record_academy_quiz_attempt($1,100,'[0]'::jsonb)",[published]), /Quiz is not available/); assertions++;
+await assert.rejects(as('authenticated',memberUser,'select set_academy_lesson_completion($1,true)',[published]), /Pass the quiz/); assertions++;
+eq((await as('authenticated',memberUser,'select issue_my_academy_certificate($1) as id',[course]))[0].id,null,'unfinished visible lessons do not issue a certificate');
+await as('authenticated',memberUser,'select set_academy_lesson_completion($1,true)',[localOverride]);
+eq((await db.query('select completed_at is not null as complete from academy_member_lesson_progress where academy_member_id=$1 and lesson_id=$2',[member,localOverride])).rows[0].complete,true,'visible locally owned lesson stays completable');
+eq((await as('authenticated',memberUser,"select record_academy_quiz_attempt($1,0,'[1]'::jsonb) as result",[published]))[0].result.passed,false,'incorrect answers stay incomplete');
+await assert.rejects(as('authenticated',memberUser,"select record_academy_quiz_attempt($1,100,'[1]'::jsonb)",[published]), /score does not match/); assertions++;
+eq((await as('authenticated',memberUser,"select record_academy_quiz_attempt($1,100,'[0]'::jsonb) as result",[published]))[0].result.passed,true,'published visible quiz can pass with a server-verified score');
+const visibleCertificate=(await as('authenticated',memberUser,'select issue_my_academy_certificate($1) as id',[course]))[0].id;
+eq(typeof visibleCertificate,'string','hidden/draft/archived lessons do not block the visible course certificate');
+eq((await as('authenticated',memberUser,'select issue_my_academy_certificate($1) as id',[course]))[0].id,visibleCertificate,'repeated certificate request stays idempotent');
+// Verified historical completion remains valid; empty courses are never enough.
+const importedCourse=uuid(),emptyCourse=uuid(),importedModule=uuid(),importedLesson=uuid();
+for(const id of [importedCourse,emptyCourse]) await db.query("insert into courses(id,organization_id,academy_community_id,title,status,access_type,external_id) values($1::uuid,$2,$3,'Imported completion','published','open',$1::text)",[id,org,community]);
+await db.query("insert into course_modules(id,course_id,title) values($1,$2,'Imported module')",[importedModule,importedCourse]);
+await db.query("insert into course_lessons(id,module_id,title,status,external_id,body) values($1::uuid,$2,'Imported lesson','published',$1::text,'{\"text\":\"Training\"}')",[importedLesson,importedModule]);
+for(const id of [importedCourse,emptyCourse]) await db.query("insert into course_enrollments(academy_community_id,academy_member_id,course_id,status,source_progress_percent) values($1,$2,$3,'active',99)",[community,member,id]);
+eq((await as('authenticated',memberUser,'select issue_my_academy_certificate($1) as id',[importedCourse]))[0].id,null,'partial historical progress is not completion');
+await db.query('update course_enrollments set source_progress_percent=100 where academy_member_id=$1 and course_id=any($2::uuid[])',[member,[importedCourse,emptyCourse]]);
+eq(typeof (await as('authenticated',memberUser,'select issue_my_academy_certificate($1) as id',[importedCourse]))[0].id,'string','verified imported 100 percent completion is preserved');
+eq((await as('authenticated',memberUser,'select issue_my_academy_certificate($1) as id',[emptyCourse]))[0].id,null,'imported 100 percent on an empty course cannot issue a certificate');
 // Simulate an atomic sync retirement. Previously visible assets lose new signing eligibility.
 await db.query("update course_lessons set status='archived' where id=$1",[published]);
-eq(await ids('authenticated',memberUser,'course_lessons'),[localOverride],'retirement removes body access');
+eq(await ids('authenticated',memberUser,'course_lessons'),sorted([localOverride,importedLesson]),'retirement removes body access');
 eq(await ids('authenticated',memberUser,'academy_assets'),sorted([localOverride,shared]),'retirement removes asset metadata access');
 eq(await ids('authenticated',memberUser,'storage.objects'),sorted([localOverride,shared,unrelated]),'retirement removes direct Storage SELECT');
 // Explicit course denial and inactive membership remain authoritative.
 await db.query('insert into academy_course_access_denials(academy_member_id,course_id,academy_community_id) values($1,$2,$3)',[member,course,community]);
-eq(await ids('authenticated',memberUser,'course_lessons'),[],'course denial');
+eq(await ids('authenticated',memberUser,'course_lessons'),[importedLesson],'course denial');
 eq(await ids('authenticated',memberUser,'storage.objects'),sorted([shared,unrelated]),'course denial preserves shared library');
 await db.query("update academy_members set status='suspended' where id=$1",[member]);
 eq(await ids('authenticated',memberUser,'academy_assets'),[],'suspended member');

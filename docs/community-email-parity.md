@@ -1,10 +1,65 @@
 # Community email parity
 
+## October 22 migration readiness review
+
+Read-only production aggregates at **2026-10-22 16:40 UTC** show 69 provider-accepted
+HighLevel deliveries, 5 cancelled deliveries, one failed weekly digest at its
+attempt limit after a provider HTTP 400, and no pending or processing queue.
+Provider acceptance does not prove receipt or rendering in a member's inbox. The
+failed digest was not retried or reset during this audit.
+
+The following upgrades are prepared and tested **locally, not deployed**:
+
+- Course content emails honor explicit member/course denials. Own course
+  cancellation notices can still reach a former member after access ends, but
+  only for a real cancelled or cancelling subscription mapped to that course.
+- Weekly digest counts exclude imported history, future posts and blocked authors.
+  Counts are refreshed immediately before submission; no visible posts cancels
+  the digest. Existing Monday 9am recipient-timezone and deduplication behavior is
+  preserved.
+- The worker rechecks app preferences, access and target eligibility after the
+  HighLevel contact read, immediately before provider submission. A member who
+  unsubscribes while that contact lookup runs is not emailed from a stale claim.
+- HighLevel recipient verification honors both current v3 `dndSettings.email` and
+  legacy `dndSettings.Email`. Current v3 endpoint/version usage was checked against
+  [Get Contact](https://marketplace.gohighlevel.com/docs/ghl/contacts/get-contact/)
+  and [Send a new message](https://marketplace.gohighlevel.com/docs/ghl/conversations/send-a-new-message/).
+- Welcome links open Academy without promising paid tool access. Billing-related
+  cancellation links open web billing; comment/reply links include their exact
+  parent post and validated comment ID. These are web targets; direct opening of
+  installed app content is not established by this audit.
+- Unsubscribe confirmation, success and error pages share the actual logo,
+  Poppins/Outfit fonts and app colors. The proxy permits only same-origin logo/font
+  assets and retains no-script, no-referrer and same-origin form protections.
+
+Release the new email guard migration, worker and unsubscribe proxy together after
+approval. Do not replay the existing failed digest or send a migration wave as part
+of that release. Local rendering was verified on desktop and phone-width browser
+previews; actual Gmail, Apple Mail, Outlook and installed-device delivery remain
+separate acceptance checks.
+
+### Remaining transport dependency
+
+60 active app members have a saved HighLevel contact mapping; two active app-only
+members do not. The existing HighLevel transport deliberately fails closed for
+unmapped app-only recipients and never creates a contact. Complete independence
+from GHL therefore needs a verified direct email transport for those recipients.
+The Vault has no `MAILGUN_*` configuration names; the Edge environment name inventory
+was not confirmed here, so absence in Vault alone does not prove those credentials
+are absent everywhere. Existing Supabase Auth SMTP and the notification HTTP API
+transport are separate configurations. Verify the direct transport and one
+authorized inbox/unsubscribe test before changing provider or retiring GHL email.
+
+## September 29 deployment baseline (historical)
+
+The counts and activation notes in this section describe the September 29
+baseline; use the dated review above for the current audit's verified scope.
+
 The templates, triggers and Edge Function were deployed on September 29. Supabase Auth continues using the existing Mailgun SMTP account. Community notifications now reuse the existing HighLevel email connection, whose default provider is the verified `mail.dirtyturf.com` Mailgun domain. The worker is active with a five-minute schedule and cutover at **2026-09-29 20:39:07 UTC**. Five historical deliveries remain cancelled. No test or bulk campaign was sent. Provider inbox delivery remains unverified until a real future notification is accepted and received.
 
 The HighLevel transport requires a pre-existing imported contact, then verifies its contact ID, location and current primary email against the prepared app recipient. It respects HighLevel DND plus app notification preferences. Missing/mismatched mappings become explicit failed deliveries requiring review; no contact is created or guessed. There are 60 imported mappings for 63 app members. Branded HTML and signed body unsubscribe links are preserved. HighLevel's API does not expose custom List-Unsubscribe headers or per-message tracking settings; those remain provider-managed. The original Mailgun API transport remains available through `ACADEMY_EMAIL_PROVIDER=mailgun`.
 
-The preview catalog contains **38 synthetic emails**. Regenerate it with `node scripts/preview-academy-emails.mjs`, then open `output/email-preview/index.html`.
+The preview catalog contains **38 synthetic emails and two preference pages**. Regenerate it with `node scripts/preview-academy-emails.mjs`, then open `output/email-preview/index.html`.
 
 ## Brand styling
 

@@ -25,8 +25,9 @@ add a purchase link to either native listing or reviewer notes.
 
 The machine-readable submission values live in `store/metadata.json`. Run
 `npm run store:check` before entering any value in a store console; the check
-enforces platform character limits, native identity and version parity,
-required permissions, legal routes, and the 1024-pixel opaque iOS icon.
+enforces platform character limits, Apple public copy without other mobile
+platform references, native identity and version parity, required permissions,
+legal routes, and the 1024-pixel opaque iOS icon.
 
 ## Store copy
 
@@ -43,14 +44,14 @@ Academy, community, measurement, and infill tools for turf cleaning pros.
 Train with Dirty Turf Academy, connect with operators, and measure jobs with
 practical turf tools in one member app.
 
-### Full description
+### Apple full description
 
 Dirty Turf Academy gives professional turf cleaning owners and operators one
 place to learn, connect, and work in the field.
 
 Members can continue Academy courses, track lesson progress, join the private
 operator community, view events, and use practical turf tools from the same
-account on desktop, iPhone, and Android.
+account on iPhone and iPad.
 
 Field tools include point-to-point live camera measurement on supported
 devices, property tracing with current and historical map imagery, manual
@@ -61,6 +62,9 @@ charge per square foot and save job history to the company workspace.
 
 An existing Dirty Turf Academy membership is required. Members sign in to
 access the training, community, and field tools included with their account.
+
+For Google Play, use `googlePlay.fullDescription` in `store/metadata.json`.
+Its cross-platform description is maintained separately from the Apple copy.
 
 ### Keywords
 

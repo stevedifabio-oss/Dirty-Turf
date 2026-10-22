@@ -191,12 +191,25 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .legal-document-backdrop { position: fixed; inset: 0; z-index: 1600; display: grid; place-items: center; padding: max(14px,env(safe-area-inset-top)) 14px max(14px,env(safe-area-inset-bottom)); background: rgba(0,25,12,.75); }
 .legal-document-dialog { display: flex; flex-direction: column; width: min(100%,860px); height: min(90dvh,900px); overflow: hidden; border-radius: 12px; background: var(--chalk); box-shadow: 0 24px 70px rgba(0,0,0,.3); }
 .legal-document-dialog header { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; }
-.legal-document-dialog h2 { margin: 0; font-family: "Outfit",sans-serif; font-size: 1.1rem; }
+.legal-document-dialog h2 { flex: 1; min-width: 0; margin: 0; font-family: "Outfit",sans-serif; font-size: 1.1rem; }
+.legal-document-dialog > header > .secondary-button { flex: 0 0 auto; width: auto; min-width: 88px; }
 .legal-document-dialog .secondary-button { min-height: 44px; margin: 0; }
 .legal-document-tabs { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: 8px; padding: 0 18px 12px; }
 .legal-document-tabs .secondary-button { flex: 1; font-size: .72rem; }
 .legal-document-tabs [aria-pressed="true"] { border-color: var(--turf); background: var(--mist); color: var(--turf-dark); }
-.legal-document-dialog iframe { flex: 1; min-height: 0; width: 100%; border: 0; background: white; }
+.legal-document-content { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 20px 24px 32px; background: white; color: var(--asphalt); font-size: .84rem; line-height: 1.7; }
+.legal-document-content:focus-visible { outline: 3px solid rgba(255,144,2,.52); outline-offset: -3px; }
+.legal-document-content h3, .legal-document-content h4, .legal-document-content h5, .legal-document-content h6 { font-family: "Outfit", sans-serif; color: var(--turf-dark); line-height: 1.2; }
+.legal-document-content h3 { margin: 8px 0 18px; font-size: 1.7rem; }
+.legal-document-content h4 { margin: 24px 0 12px; font-size: 1.15rem; }
+.legal-document-content p { margin: 0 0 14px; }
+.legal-document-content .eyebrow, .legal-document-content .updated { color: var(--ink-soft); font-size: .74rem; }
+.legal-document-content .document { margin-top: 24px; }
+.legal-document-content .document section { padding: 6px 0 18px; border-top: 1px solid var(--line); }
+.legal-document-content .document li + li { margin-top: 8px; }
+.legal-document-content .callout { margin: 14px 0; padding: 14px; border-left: 3px solid var(--lime); background: var(--chalk); }
+.legal-document-content .callout strong { display: block; }
+.legal-document-content .contact-actions { display: flex; flex-wrap: wrap; gap: 12px; }
 .legal-document-status { display: grid; flex: 1; align-content: center; justify-items: center; padding: 24px; text-align: center; color: var(--ink-soft); }
 .launch-message { margin: 14px 0 0; padding: 10px; border-left: 3px solid var(--lime); background: white; color: var(--turf-dark); font-size: .68rem; line-height: 1.45; }
 .launch-support { margin: 20px 0 0; color: var(--ink-soft); font-size: .65rem; text-align: center; }
@@ -338,7 +351,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .hub-sheet { width: min(100%,560px); max-height: calc(100dvh - 56px); border-radius: 8px; }
   .leaflet-measure-wrap { height: 380px; }
   .view-content { padding-bottom: 28px; }
-  .home-view { display: grid; grid-template-areas: "hero hero" "actions actions" "summary summary" "tools checklist" "history history" "jobs jobs"; grid-template-columns: minmax(0,1.25fr) minmax(300px,.75fr); align-content: start; }
+  .home-view { display: grid; grid-template-areas: "hero hero" "actions actions" "growth growth" "summary summary" "tools checklist" "history history" "jobs jobs"; grid-template-columns: minmax(0,1.25fr) minmax(300px,.75fr); align-content: start; }
   .home-view > .field-hero { grid-area: hero; margin: 12px 24px 16px; min-height: 250px; padding: 26px; border-radius: 8px; }
   .home-view > .quick-actions { grid-area: actions; padding: 0 24px; }
   .home-view > .tool-panel { grid-area: summary; }
@@ -346,6 +359,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .home-view > .dashboard-checklist { grid-area: checklist; margin: 14px 24px 0 12px; }
   .home-view > .history-strip { grid-area: history; }
   .home-view > .jobs { grid-area: jobs; }
+  .home-view > .dashboard-growth-card { grid-area: growth; margin: 16px 24px 0; }
   .home-view > .tool-panel, .home-view > .history-strip, .home-view > .jobs { margin-left: 24px; }
   .home-view > .tool-panel, .home-view > .history-strip, .home-view > .jobs { margin-right: 24px; }
   .tool-panel, .history-strip, .jobs, .checklist-panel, .course-list { border-radius: 8px; }
@@ -489,6 +503,14 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 @media print { body * { visibility:hidden !important; }.academy-certificate,.academy-certificate * { visibility:visible !important; }.academy-certificate { position:fixed; inset:20mm; margin:0; }.academy-certificate button { display:none; } }
 
 .course-progress-note { margin: 0 16px 14px; }
+
+.dashboard-growth-card { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin: 16px; padding: 20px; border: 1px solid var(--line); border-radius: 10px; background: white; }
+.dashboard-growth-icon { display: grid; flex: 0 0 auto; place-items: center; width: 44px; height: 44px; border-radius: 9px; color: var(--turf); background: var(--chalk); }
+.dashboard-growth-card > div { flex: 1 1 230px; min-width: 0; }
+.dashboard-growth-card h3 { margin: 0 0 4px; font: 700 1.2rem/1.2 "Outfit", sans-serif; }
+.dashboard-growth-card p { margin: 0; color: var(--ink-soft); font-size: .82rem; line-height: 1.6; }
+.dashboard-growth-card button { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 44px; white-space: normal; }
+@media (max-width: 480px) { .dashboard-growth-card button { width: 100%; } }
 
 .event-card.requested-event { outline: 2px solid var(--lime); outline-offset: 3px; }
 

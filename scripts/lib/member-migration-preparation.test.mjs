@@ -15,13 +15,13 @@ function inputs() {
     { schemaVersion: 1, source: "ghl-exact-community-roster", coverage: "complete", scope, groupSlug: "group-slug", capturedAt: "2026-10-20T11:30:00Z", members: [{ externalId: "source-1", contactId: "contact-1", email: "one@example.test", status: "active", role: "member" }] },
     { schemaVersion: 1, source: "dirty-turf-member-readonly-export", coverage: "complete", scope, capturedAt: "2026-10-20T11:40:00Z", academyCommunityId: "community-1",
       sourceMapping: { groupId: "group-1", groupSlug: "group-slug", databaseExternalGroupId: "group-slug", externalProvider: "highlevel", verificationReference: "proof-1", verifiedAt: "2026-10-20T11:30:00Z" },
-      members: [{ id: "member-1", academy_community_id: "community-1", user_id: "user-1", role: "member", status: "active" }],
+      members: [{ id: "member-1", academy_community_id: "community-1", user_id: "user-1", role: "member", level: 1, status: "active" }],
       links: [{ academy_community_id: "community-1", academy_member_id: "member-1", external_provider: "highlevel", external_member_id: "source-1", external_contact_id: "contact-1" }],
       invites: [{ id: "invite-1", academy_community_id: "community-1", academy_member_id: "member-1", invited_user_id: "user-1", email: "one@example.test", status: "accepted" }],
       authUsers: [{ id: "user-1", email: "one@example.test", email_confirmed_at: "2026-09-20T00:00:00Z", banned_until: null, deleted_at: null, last_sign_in_at: "2026-10-20T11:50:00Z" }],
-      courses: [{ id: "course-1", academy_community_id: "community-1", status: "published" }],
+      courses: [{ id: "course-1", academy_community_id: "community-1", status: "published", access_type: "purchase", required_level: null }],
       accessGrants: [null, "course-1"].map((course_id, index) => ({ id: `grant-${index}`, academy_community_id: "community-1", academy_member_id: "member-1", course_id, status: "active", source_type: "import", starts_at: "2026-09-20T00:00:00Z", ends_at: null })),
-      billingPlans: [], billingSubscriptions: [],
+      courseAccessDenials: [], billingPlans: [], billingSubscriptions: [],
     },
     { schemaVersion: 1, scope, approvedAt: "2026-10-03T10:00:00Z", approvedBy: "actual-approved-cohort-reference", freeMemberExternalIds: ["source-1"], currentAcademyCourseIds: ["course-1"] },
   ];
@@ -57,7 +57,7 @@ describe("member migration preparation", () => {
     expect(result.technicalReady).toBe(false);
     expect(result.counts.provisioningReviewCandidates).toBe(1);
     expect(result.provisioningPlan.reviewCandidates[0]).toMatchObject({ reviewOnly: true, approvedForExecution: false });
-    expect(result.provisioningPlan.reviewBatches).toEqual([{ reviewBatch: 1, reviewOnly: true, approvedForExecution: false, sourceMemberIds: ["source-1"] }]);
+    expect(result.provisioningPlan.reviewBatches).toEqual([{ reviewBatch: 1, reviewOnly: true, approvedForExecution: false, sourceMemberIds: ["source-1"], academyMemberIds: ["member-1"] }]);
     expect(result.provisioningPlan.executionGates.join(" ")).toContain("no member-ID filter");
     expect(result.provisioningPlan.executable).toBe(false);
   });
@@ -67,7 +67,7 @@ describe("member migration preparation", () => {
     source.members = []; app.members = []; app.links = []; app.invites = []; app.authUsers = []; app.accessGrants = []; cohort.freeMemberExternalIds = [];
     for (let index = 1; index <= 51; index++) {
       source.members.push({ externalId: `source-${index}`, contactId: `contact-${index}`, email: `member-${index}@example.test`, status: "active", role: "member" });
-      app.members.push({ id: `member-${index}`, academy_community_id: "community-1", user_id: null, role: "member", status: "active" });
+      app.members.push({ id: `member-${index}`, academy_community_id: "community-1", user_id: null, role: "member", level: 1, status: "active" });
       app.links.push({ academy_community_id: "community-1", academy_member_id: `member-${index}`, external_provider: "highlevel", external_member_id: `source-${index}`, external_contact_id: `contact-${index}` });
       app.invites.push({ id: `invite-${index}`, academy_community_id: "community-1", academy_member_id: `member-${index}`, invited_user_id: null, email: `member-${index}@example.test`, status: "pending" });
       for (const [target, course_id] of [null, "course-1"].entries()) app.accessGrants.push({ id: `grant-${index}-${target}`, academy_community_id: "community-1", academy_member_id: `member-${index}`, course_id, status: "active", source_type: "import", starts_at: "2026-09-20T00:00:00Z", ends_at: null });

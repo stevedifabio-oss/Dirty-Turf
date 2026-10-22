@@ -13,8 +13,8 @@ const executionGates = [
   "Resolve identity, role, access and billing exceptions; reconcile source billing agreements separately.",
   "Obtain separate authorization before any live account provisioning, access changes or messages.",
   "Refresh exact source and app evidence immediately before execution and run a fresh server preview.",
-  "The existing provisioning endpoint selects the community-wide queue and has no member-ID filter. Reconcile its full queue to reviewed eligible members; a limit of 50 does not target this plan's candidates.",
-  "Preview returns counts only and uses a different candidate predicate from provision. A matching preview count cannot prove the execution queue; independently reconcile the exact provision candidates or first implement and review exact member targeting.",
+  "Verify the deployed endpoint supports exact academyMemberIds and a fresh server-signed previewToken. The older community-wide endpoint has no member-ID filter and must not execute this plan; a limit of 50 is not recipient targeting.",
+  "Review every selected member returned by action preview with previewAction provision or notify. The preview and mutation must use the same exact IDs and action; changed status, identities or an expired preview require a fresh review. Never turn a read-only review batch into automatic execution.",
   "After any authorized account work, capture a new app export and rerun readiness before invitations.",
 ];
 
@@ -102,7 +102,7 @@ export function prepareMemberMigration(source, app, cohort, options = {}) {
   }).map(member => ({ sourceMemberId: member.sourceMemberId, appMemberId: member.appMemberId, email: member.email, reviewOnly: true, proposedReview: "review_silent_account_provisioning", approvedForExecution: false }));
   const reviewBatches = [];
   for (let index = 0; index < reviewCandidates.length; index += 50) {
-    reviewBatches.push({ reviewBatch: reviewBatches.length + 1, reviewOnly: true, approvedForExecution: false, sourceMemberIds: reviewCandidates.slice(index, index + 50).map(row => row.sourceMemberId) });
+    reviewBatches.push({ reviewBatch: reviewBatches.length + 1, reviewOnly: true, approvedForExecution: false, sourceMemberIds: reviewCandidates.slice(index, index + 50).map(row => row.sourceMemberId), academyMemberIds: reviewCandidates.slice(index, index + 50).map(row => row.appMemberId) });
   }
   return {
     ...base,

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Eye, ImagePlus, Link2, Pencil, Plus, Trash2, Type, Undo2, Upload, Video } from "lucide-react";
 import { LessonContent } from "./LessonContent";
 import type { LessonContentBlock } from "../lib/lessonContent";
+import { ADMIN_LESSON_BLOCK_IMAGE_LIMIT_BYTES, ADMIN_LESSON_BLOCK_VIDEO_LIMIT_BYTES } from "../lib/lessonUploadLimits";
 
 type Props = {
   blocks: LessonContentBlock[];
@@ -48,9 +49,9 @@ export function LessonContentEditor({ blocks, files, localMedia, disabled, onCha
   const pickFile = (block: LessonContentBlock, file: File | undefined) => {
     if (!file || (block.type !== "image" && block.type !== "video")) return;
     const types = block.type === "image" ? ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"] : ["video/mp4", "video/webm", "video/quicktime"];
-    const limit = block.type === "image" ? 20 : 500;
-    if (!types.includes(file.type) || file.size <= 0 || file.size > limit * 1024 * 1024) {
-      setFileError(block.type === "image" ? "Choose a JPG, PNG, WebP, GIF or AVIF photo up to 20 MB." : "Choose an MP4, WebM or MOV video up to 500 MB.");
+    const limit = block.type === "image" ? ADMIN_LESSON_BLOCK_IMAGE_LIMIT_BYTES : ADMIN_LESSON_BLOCK_VIDEO_LIMIT_BYTES;
+    if (!types.includes(file.type) || file.size <= 0 || file.size > limit) {
+      setFileError(block.type === "image" ? "Choose a JPG, PNG, WebP, GIF or AVIF photo up to 20 MB." : "Choose an MP4, WebM or MOV video up to 50 MB. Use a video link for a larger video.");
       return;
     }
     setFileError("");
@@ -73,7 +74,7 @@ export function LessonContentEditor({ blocks, files, localMedia, disabled, onCha
             {block.type === "text" && <label htmlFor={inputId}>Text<textarea id={inputId} aria-label={`Text ${index + 1}`} value={block.text} disabled={disabled} rows={5} onChange={event => update(block.id, { text: event.target.value })} placeholder="Explain the steps, share a tip, or introduce the next video…" required /></label>}
             {block.type === "legacy" && <><p className="admin-form-note">Your imported formatting and media are kept. Add new content below, or remove this block to replace it.</p><div className="lesson-imported-preview"><LessonContent blocks={[block]} /></div></>}
             {(block.type === "video" || block.type === "image") && <>
-              <div className="lesson-media-source"><label className="lesson-media-upload"><Upload size={18} /><span><strong>{files[block.id] ? "Change file" : `Upload ${block.type === "image" ? "photo" : "video"}`}</strong><small>{files[block.id]?.name ?? (block.type === "image" ? "JPG, PNG, WebP, GIF or AVIF · up to 20 MB" : "MP4, WebM or MOV · up to 500 MB")}</small></span><input type="file" aria-label={`Upload ${label.toLowerCase()} ${index + 1}`} accept={block.type === "image" ? "image/jpeg,image/png,image/webp,image/gif,image/avif" : "video/mp4,video/webm,video/quicktime"} disabled={disabled} onChange={event => { pickFile(block, event.target.files?.[0]); event.target.value = ""; }} /></label>{block.url.startsWith("academy-asset:") ? <div className="lesson-saved-media"><strong>{label} saved to this lesson</strong><button type="button" disabled={disabled} onClick={() => update(block.id, { url: "" })}>Replace with a link</button></div> : <><span className="lesson-source-or">or paste a link</span><label htmlFor={inputId}>{block.type === "video" ? "Video link" : "Photo link"}<input id={inputId} aria-label={`${label} link ${index + 1}`} type="url" value={block.url} disabled={disabled} onChange={event => { update(block.id, { url: event.target.value }); onFileChange(block.id, undefined); }} placeholder={block.type === "video" ? "https://youtube.com/watch?v=…" : "https://…/photo.jpg"} required={!files[block.id]} /></label></>}</div>
+              <div className="lesson-media-source"><label className="lesson-media-upload"><Upload size={18} /><span><strong>{files[block.id] ? "Change file" : `Upload ${block.type === "image" ? "photo" : "video"}`}</strong><small>{files[block.id]?.name ?? (block.type === "image" ? "JPG, PNG, WebP, GIF or AVIF · up to 20 MB" : "MP4, WebM or MOV · up to 50 MB; use a video link for larger videos")}</small></span><input type="file" aria-label={`Upload ${label.toLowerCase()} ${index + 1}`} accept={block.type === "image" ? "image/jpeg,image/png,image/webp,image/gif,image/avif" : "video/mp4,video/webm,video/quicktime"} disabled={disabled} onChange={event => { pickFile(block, event.target.files?.[0]); event.target.value = ""; }} /></label>{block.url.startsWith("academy-asset:") ? <div className="lesson-saved-media"><strong>{label} saved to this lesson</strong><button type="button" disabled={disabled} onClick={() => update(block.id, { url: "" })}>Replace with a link</button></div> : <><span className="lesson-source-or">or paste a link</span><label htmlFor={inputId}>{block.type === "video" ? "Video link" : "Photo link"}<input id={inputId} aria-label={`${label} link ${index + 1}`} type="url" value={block.url} disabled={disabled} onChange={event => { update(block.id, { url: event.target.value }); onFileChange(block.id, undefined); }} placeholder={block.type === "video" ? "https://youtube.com/watch?v=…" : "https://…/photo.jpg"} required={!files[block.id]} /></label></>}</div>
               {localMedia[block.id] && block.type === "image" && <img className="lesson-selected-photo" src={localMedia[block.id]} alt={block.alt || "Selected photo preview"} />}
               {files[block.id] && <p className="lesson-file-ready"><CheckFile />{files[block.id].name} · ready to upload when you save</p>}
               {block.type === "image" && <label>Photo description<input aria-label={`Photo description ${index + 1}`} value={block.alt} disabled={disabled} onChange={event => update(block.id, { alt: event.target.value })} placeholder="Describe the photo for members who use a screen reader" required /></label>}

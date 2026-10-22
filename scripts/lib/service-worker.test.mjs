@@ -27,7 +27,7 @@ describe("production service worker", () => {
       },
       fetch: async (input) => String(input) === "/vite-manifest.json"
         ? new Response(JSON.stringify(manifest), { status: 200 })
-        : new Response(`asset:${input}`, { status: 200 }),
+        : new Response(String(input) === "/" ? '<html><script src="/assets/index.js"></script></html>' : `asset:${input}`, { status: 200, headers: { "content-type": String(input).endsWith(".js") ? "application/javascript" : String(input).endsWith(".css") ? "text/css" : "text/html" } }),
       self: {
         addEventListener: (type, listener) => listeners.set(type, listener),
         clients: { claim: async () => undefined },
@@ -45,5 +45,7 @@ describe("production service worker", () => {
     expect(cached).toContain("/assets/index.js");
     expect(cached).toContain("/assets/index.css");
     expect(cached).toContain("/assets/Academy.js");
+    expect(cached).toContain("/support.html");
+    expect(cached).toContain("/delete-account.html");
   });
 });

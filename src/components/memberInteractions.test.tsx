@@ -8,6 +8,8 @@ import { loadNotificationPreferences, saveNotificationPreferences } from "../lib
 
 // Exercise real handlers and rerenders without adding a DOM test dependency.
 const hooks = vi.hoisted(() => ({ active: null as null | { slots: any[]; cursor: number; effects: (() => void)[] } }));
+const platform = vi.hoisted(() => ({ native: false }));
+vi.mock("@capacitor/core", () => ({ Capacitor: { isNativePlatform: () => platform.native } }));
 vi.mock("react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("react")>();
   const next = () => {
@@ -85,6 +87,7 @@ const submitEvent = { preventDefault: vi.fn() };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  platform.native = false;
   vi.stubGlobal("window", Object.assign(new EventTarget(), {
     location: { href: "https://app.dirtyturf.com/?view=community" },
     history: { state: null, replaceState: vi.fn() }, scrollTo: vi.fn(),
@@ -152,7 +155,9 @@ describe("Member interaction regressions", () => {
     const quizElement = find(academy.render(), (e) => typeof e.type === "function" && e.type.name === "QuizLesson");
     const lesson = harness(() => (quizElement.type as (props: any) => ReactNode)(quizElement.props));
     find(lesson.render(), (e) => e.props.className === "quiz-option").props.onClick();
-    find(lesson.render(), (e) => e.props.className === "primary-button wide quiz-submit").props.onClick();
+    const submit = find(lesson.render(), (e) => e.props.className === "primary-button wide quiz-submit");
+    submit.props.onClick(); submit.props.onClick(); // A rapid second tap uses the same handler before a rerender.
+    expect(onQuizAttempt).toHaveBeenCalledOnce();
     const pending = lesson.render();
     const wrong = elements(pending).filter((e) => e.props.className?.startsWith("quiz-option"))[1];
     expect(wrong.props.disabled).toBe(true);
@@ -160,6 +165,65 @@ describe("Member interaction regressions", () => {
     request.resolve({ passed: true, requiredScore: 100 }); await request.promise; await Promise.resolve();
     expect(onQuizAttempt).toHaveBeenCalledWith("lesson", 100, [0]);
     expect(text(lesson.render())).toContain("Passed · 100%");
+  });
+
+  it.each([false, true])("preserves certificate readiness from verified imported completion (lessons completed in this app: %s)", completed => {
+    const onRequestCertificate = vi.fn().mockResolvedValue(undefined);
+    const courses = [{ id: "course", title: "Course", description: "Training", category: "Core", instructor: "Steve", progress: 100, importedProgress: 100, duration: "1 min", access: "open" as const, modules: [{ title: "Module", lessons: [{ id: "lesson", title: "Lesson", type: "guide" as const, duration: "1 min", completed, body: "Instructions" }] }] }];
+    const academy = harness(() => AcademyView({ courses, certificates: [], dataMode: "cloud", onCoursesChange: vi.fn(), onLessonCompletion: vi.fn(), onQuizAttempt: vi.fn(), onRequestCertificate, onToast: vi.fn(), onDiscuss: vi.fn() }));
+    find(academy.render(), e => e.props.className === "course-card course-button").props.onClick();
+    const tree = academy.render();
+    expect(text(tree)).toContain("100% complete");
+    expect(text(tree)).toContain("Your certificate is ready");
+    expect(text(tree).includes("Includes progress carried over")).toBe(!completed);
+    expect(onRequestCertificate).not.toHaveBeenCalled();
+    academy.dispose();
+  });
+
+  it("does not offer a certificate for an imported empty course", () => {
+    const courses = [{ id: "course", title: "Course", description: "Training", category: "Core", instructor: "Steve", progress: 100, importedProgress: 100, duration: "0 min", access: "open" as const, modules: [] }];
+    const academy = harness(() => AcademyView({ courses, certificates: [], dataMode: "cloud", onCoursesChange: vi.fn(), onLessonCompletion: vi.fn(), onQuizAttempt: vi.fn(), onRequestCertificate: vi.fn(), onToast: vi.fn(), onDiscuss: vi.fn() }));
+    find(academy.render(), e => e.props.className === "course-card course-button").props.onClick();
+    expect(text(academy.render())).toContain("No published lessons yet");
+    expect(text(academy.render())).not.toContain("Your certificate is ready");
+    academy.dispose();
+  });
+
+  it.each([
+    { name: "iOS", native: true, base: "capacitor://localhost/" },
+    { name: "Android", native: true, base: "https://localhost/" },
+    { name: "web", native: false, base: "https://preview.example/" },
+  ])("keeps $name certificate verification in its intended browsing context", ({ native, base }) => {
+    platform.native = native;
+    const code = "certificate /?&=#";
+    const courses = [{ id: "course", title: "Course", description: "Training", category: "Core", instructor: "Steve", progress: 100, duration: "1 min", access: "open" as const, modules: [{ title: "Module", lessons: [{ id: "lesson", title: "Lesson", type: "guide" as const, duration: "1 min", completed: true, body: "Instructions" }] }] }];
+    const certificate = { id: "certificate", courseId: "course", recipientName: "Test operator", courseTitle: "Course", verificationCode: code, status: "active" as const, issuedAt: "2026-10-22T12:00:00Z", certificateTitle: "Certificate of completion", certificateDescription: "completed", signatoryName: "Steve", signatoryTitle: "Instructor" };
+    const academy = harness(() => AcademyView({ courses, certificates: [certificate], dataMode: "cloud", onCoursesChange: vi.fn(), onLessonCompletion: vi.fn(), onQuizAttempt: vi.fn(), onRequestCertificate: vi.fn(), onToast: vi.fn(), onDiscuss: vi.fn() }));
+    find(academy.render(), e => e.props.className === "course-card course-button").props.onClick();
+    const card = find(academy.render(), e => typeof e.type === "function" && e.props.certificate === certificate);
+    const link = find((card.type as (props: any) => ReactNode)(card.props), e => e.type === "a" && text(e) === "Verify certificate");
+    const path = `/?certificate=${encodeURIComponent(code)}`;
+    expect(link.props.href).toBe(native ? path : `https://app.dirtyturf.com${path}`);
+    expect(link.props.target).toBe(native ? undefined : "_blank");
+    const destination = new URL(link.props.href, base);
+    const expectedContext = new URL(native ? base : "https://app.dirtyturf.com/");
+    expect(destination.protocol).toBe(expectedContext.protocol);
+    expect(destination.host).toBe(expectedContext.host);
+    expect(destination.pathname).toBe("/");
+    expect([...destination.searchParams]).toEqual([["certificate", code]]);
+    expect(destination.hash).toBe("");
+    academy.dispose();
+  });
+
+  it("explains an empty course filter and offers a way back to the assigned courses", () => {
+    const courses = [{ id: "course", title: "Core training", description: "Training", category: "Core", instructor: "Steve", progress: 0, duration: "1 min", access: "open" as const, modules: [] }];
+    const academy = harness(() => AcademyView({ courses, certificates: [], dataMode: "cloud", onCoursesChange: vi.fn(), onLessonCompletion: vi.fn(), onQuizAttempt: vi.fn(), onRequestCertificate: vi.fn(), onToast: vi.fn(), onDiscuss: vi.fn() }));
+    find(academy.render(), e => e.props.role === "tab" && e.props.children === "Sales").props.onClick();
+    expect(text(academy.render())).toContain("No sales courses yet");
+    expect(text(academy.render())).not.toContain("No courses assigned");
+    find(academy.render(), e => e.type === "button" && e.props.children === "View all courses").props.onClick();
+    expect(text(academy.render())).toContain("Core training");
+    academy.dispose();
   });
 
   it("opens a course email target once content has loaded", () => {

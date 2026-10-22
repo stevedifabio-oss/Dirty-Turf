@@ -6,6 +6,8 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, BookOpen, CreditCard, LockKeyhole, Mail, Users } from "lucide-react";
 import { loadAcademyBillingOverview, openAcademyBillingPortal, requestMagicLink, supabase, type AcademyBillingOverview } from "../lib/backend";
 import { beginMembershipCheckout, loadMembershipCatalog, membershipPrice, membershipRequestId, type BillingPageRoute, type MembershipCatalog, type MembershipPlan } from "../lib/membershipBilling";
+import { beginServiceBillingPortal, loadOwnServiceOrders, type ServiceOrder } from "../lib/serviceCheckout";
+import { serviceName, serviceOrderHasPortal, serviceOrderStatus } from "../lib/serviceBillingPresentation";
 import "./MembershipPages.css";
 
 export function MembershipPages({ route }: { route: BillingPageRoute }) {
@@ -49,8 +51,13 @@ function MembershipEnrollment() {
   </div>;
 }
 
+function defaultEnrollmentPlan(plans: MembershipPlan[], access?: AccessState) {
+  const available = access ? plans.filter(plan => planPurchaseState(plan, access) === "available") : plans;
+  return available.find(plan => (plan.offerKind ?? "membership") === "membership") ?? available[0];
+}
+
 export function EnrollmentForm({ plans, verifiedAccess, verifiedEmail }: { plans: MembershipPlan[]; verifiedAccess?: AccessState; verifiedEmail?: string }) {
-  const [selectedId, setSelectedId] = useState(() => { const requested = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("plan") : null; return plans.find((plan) => plan.id === requested && (!verifiedAccess || planPurchaseState(plan, verifiedAccess) === "available"))?.id ?? (verifiedAccess ? plans.find((plan) => planPurchaseState(plan, verifiedAccess) === "available")?.id : plans[0]?.id) ?? ""; });
+  const [selectedId, setSelectedId] = useState(() => { const requested = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("plan") : null; return plans.find((plan) => plan.id === requested && (!verifiedAccess || planPurchaseState(plan, verifiedAccess) === "available"))?.id ?? defaultEnrollmentPlan(plans, verifiedAccess)?.id ?? ""; });
   const [email, setEmail] = useState(verifiedEmail ?? "");
   const billingAccess = useBillingAccess();
   const access = verifiedAccess ?? billingAccess.access;
@@ -65,7 +72,7 @@ export function EnrollmentForm({ plans, verifiedAccess, verifiedEmail }: { plans
   const eligibility = selected ? planPurchaseState(selected, access) : "unavailable";
   useEffect(() => {
     if (access.status === "loading" || access.status === "error") return;
-    if (!selected || planPurchaseState(selected, access) === "owned") setSelectedId(plans.find((plan) => planPurchaseState(plan, access) === "available")?.id ?? "");
+    if (!selected || planPurchaseState(selected, access) === "owned") setSelectedId(defaultEnrollmentPlan(plans, access)?.id ?? "");
   }, [access, plans, selected]);
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -87,11 +94,11 @@ export function EnrollmentForm({ plans, verifiedAccess, verifiedEmail }: { plans
   };
   if (Capacitor.isNativePlatform()) return null;
   return <form onSubmit={submit}>
-    <h2>Membership and upgrades.</h2><p>Your price and payment details are confirmed at secure checkout.</p>
+    <h2>Membership and upgrades.</h2><p>Choose one option, review its terms, then continue to Stripe. Existing access stays with your account.</p>
     {(["membership", "course", "tool"] as const).map((kind) => {
       const group = plans.filter((plan) => (plan.offerKind ?? "membership") === kind);
       if (!group.length) return null;
-      return <fieldset className="membership-options" disabled={busy} key={kind}><legend>{kind === "membership" ? "Community and certification membership" : kind === "course" ? "Individual course upgrades" : "Tool subscriptions"}</legend>{group.map((plan) => {
+      return <fieldset className="membership-options" disabled={busy} key={kind}><legend>{kind === "membership" ? "Community + Turf Cleaning Academy" : kind === "course" ? "Individual course upgrades" : "Tool subscriptions"}</legend>{group.map((plan) => {
         const state = planPurchaseState(plan, access);
         return <label className={`membership-option${selectedId === plan.id ? " selected" : ""}`} key={plan.id}>
           <input type="radio" name="membership-plan" value={plan.id} disabled={state === "owned"} checked={selectedId === plan.id} onChange={() => setSelectedId(plan.id)} />
@@ -105,6 +112,7 @@ export function EnrollmentForm({ plans, verifiedAccess, verifiedEmail }: { plans
     {eligibility === "unavailable" && access.status === "no_access" && <p className="membership-notice">This account is not ready for this upgrade. Contact the Academy team to check your account.</p>}
     {eligibility === "membership_required" && <p className="membership-notice">This upgrade requires active community membership.</p>}
     {eligibility === "owned" && <p className="membership-notice">This option is already included in your access.</p>}
+    {selected && eligibility === "available" && <CheckoutSummary plan={selected} />}
     <label className="membership-email">Your email address<input type="email" autoComplete="email" inputMode="email" maxLength={254} required readOnly={Boolean(accountEmail)} disabled={busy} value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@company.com" aria-describedby="membership-email-help" /></label>
     <p id="membership-email-help" className="membership-fine">{accountEmail ? <>Checkout uses your signed-in Academy account. To use a different email, <a href="/">return to your workspace</a> and sign out first.</> : <>Use this same email when signing into the Academy. Already have an account? <a href="/">Sign in before buying.</a></>}</p>
     {eligibility === "available" && selected?.billingInterval !== "one_time" && <p className="membership-fine">This subscription renews automatically until cancelled. Manage cancellation through web billing.</p>}
@@ -112,6 +120,17 @@ export function EnrollmentForm({ plans, verifiedAccess, verifiedEmail }: { plans
     <button className="primary-button wide" disabled={busy || !selected || eligibility !== "available" || !email.trim()}><CreditCard size={18} />{busy ? "Opening secure checkout…" : "Continue to secure checkout"}</button>
     <p className="membership-secure"><LockKeyhole size={14} /> Payments are processed by Stripe.</p>
   </form>;
+}
+
+export function CheckoutSummary({ plan }: { plan: MembershipPlan }) {
+  const once = plan.billingInterval === "one_time";
+  return <section className="checkout-summary" aria-label="Order review" aria-live="polite">
+    <div className="checkout-summary-heading"><CreditCard size={18} /><h3>Your selection</h3><span>{once ? "One-time" : "Subscription"}</span></div>
+    <dl><div><dt>{plan.name}</dt><dd>{membershipPrice(plan)}{!once && <small> / {plan.billingInterval}</small>}</dd></div></dl>
+    <p>{once ? "One payment. No recurring charge for this purchase." : `Renews every ${plan.billingInterval} until cancelled. This is a separate subscription.`}</p>
+    {plan.trialDays > 0 && <p>{plan.trialDays}-day trial, followed by the recurring price above.</p>}
+    <p className="checkout-summary-tax">Stripe will show the final total and any applicable tax before you pay. Nothing else is added automatically.</p>
+  </section>;
 }
 
 export function CheckoutReturn() {
@@ -141,35 +160,104 @@ export function CheckoutReturn() {
 
 function MembershipManagement() {
   const { access, accountEmail, refresh: refreshAccess } = useBillingAccess();
+  const native = Capacitor.isNativePlatform();
+  const [online, setOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine !== false);
   const [overview, setOverview] = useState<AcademyBillingOverview | null>(null);
   const [state, setState] = useState<"loading" | "signed_out" | "ready" | "error">("loading");
+  const [serviceOrders, setServiceOrders] = useState<ServiceOrder[]>([]);
+  const [serviceState, setServiceState] = useState<"loading" | "signed_out" | "ready" | "error">("loading");
   const [retry, setRetry] = useState(0);
+  const [serviceRetry, setServiceRetry] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [serviceBusy, setServiceBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [serviceError, setServiceError] = useState("");
   const pending = useRef(false);
+  const operation = useRef(0);
+  const account = useRef(accountEmail);
+  const loadedAccount = useRef(accountEmail);
+  const mounted = useRef(true);
+  const writable = useRef(!native && online && Boolean(accountEmail));
+  account.current = accountEmail;
+  writable.current = !native && online && Boolean(accountEmail);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; operation.current += 1; }; }, []);
+  useEffect(() => {
+    const update = () => setOnline(navigator.onLine !== false);
+    window.addEventListener("online", update); window.addEventListener("offline", update);
+    return () => { window.removeEventListener("online", update); window.removeEventListener("offline", update); };
+  }, []);
+  useEffect(() => {
+    loadedAccount.current = accountEmail;
+    operation.current += 1; pending.current = false; setBusy(false); setServiceBusy(null); setError(""); setServiceError(""); setOverview(null); setServiceOrders([]);
+  }, [accountEmail]);
   useEffect(() => {
     let active = true;
+    if (native || !online) return () => { active = false; };
     setState("loading"); setOverview(null);
     if (access.status === "loading") return () => { active = false; };
     if (access.status === "error") { setState("error"); return () => { active = false; }; }
     if (!accountEmail) { setState("signed_out"); return () => { active = false; }; }
-    void (async () => {
-      const next = await loadAcademyBillingOverview();
-      if (active) { setOverview(next); setState("ready"); }
-    })().catch(() => { if (active) setState("error"); });
+    void loadAcademyBillingOverview().then(next => { if (active) { setOverview(next); setState("ready"); } }).catch(() => { if (active) setState("error"); });
     return () => { active = false; };
-  }, [retry, access.status, accountEmail]);
+  }, [retry, access.status, accountEmail, online, native]);
+  useEffect(() => {
+    let active = true;
+    if (native || !online) return () => { active = false; };
+    setServiceState("loading"); setServiceOrders([]);
+    if (!accountEmail) {
+      setServiceState(access.status === "loading" ? "loading" : access.status === "error" ? "error" : "signed_out");
+      return () => { active = false; };
+    }
+    // An authenticated customer can manage an existing service subscription even
+    // after Academy access expires. This load is independent of Academy billing.
+    void loadOwnServiceOrders().then(next => { if (active) { setServiceOrders(next); setServiceState("ready"); } }).catch(() => { if (active) setServiceState("error"); });
+    return () => { active = false; };
+  }, [serviceRetry, access.status, accountEmail, online, native]);
   const openPortal = async () => {
-    if (pending.current) return;
+    if (pending.current || !writable.current || accountEmail !== account.current) return;
     pending.current = true; setBusy(true); setError("");
     try { await openAcademyBillingPortal(); }
-    catch { setError("Billing management could not open. Please try again or contact support."); pending.current = false; setBusy(false); }
+    catch { if (mounted.current) { setError("Billing management could not open. Please try again or contact support."); pending.current = false; setBusy(false); } }
   };
-  return <section className="membership-panel membership-centered"><span className="membership-symbol"><CreditCard size={26} /></span><h1>Manage your membership.</h1>
-    {state === "loading" ? <p role="status">Checking your billing account…</p> : state === "error" ? <div role="alert"><p>We couldn't check your billing account. Your membership has not changed.</p><button className="secondary-button wide" onClick={() => { refreshAccess(); setRetry((value) => value + 1); }}>Try again</button></div>
-      : state === "signed_out" ? <><p>Sign in with your Academy email to manage payments securely. You can also open billing from your workspace settings after signing in.</p><a className="primary-button wide" href="/">Member sign in <ArrowRight size={17} /></a></>
-      : (overview?.subscriptions?.length || overview?.subscription) ? <>{(overview.subscriptions ?? (overview.subscription ? [overview.subscription] : [])).map((subscription, index) => <article key={index}><h2>{subscription.planName}</h2><p className="membership-notice">{subscription.cancelAtPeriodEnd ? "Cancellation is scheduled at the end of your billing period." : `Status: ${subscription.status.replaceAll("_", " ")}.`}</p></article>)}<p>View invoices, update your payment method, or manage your subscription in Stripe.</p><button className="primary-button wide" disabled={busy} onClick={() => void openPortal()}>{busy ? "Opening…" : "Open secure billing"}</button></>
-      : <><p>No Stripe billing account is connected to this login yet. Existing Academy access is unchanged.</p><p>Already paying through another arrangement? Contact the Academy team before starting a new subscription.</p></>}
-    {error && <p className="membership-error" role="alert">{error}</p>}<a className="membership-contact" href="/"><ArrowLeft size={16} /> Back to Academy</a>
+  const openServicePortal = async (order: ServiceOrder) => {
+    if (pending.current || !writable.current || accountEmail !== account.current || !serviceOrderHasPortal(order)) return;
+    const run = ++operation.current;
+    const email = accountEmail;
+    pending.current = true; setServiceBusy(order.id); setServiceError("");
+    try {
+      const url = await beginServiceBillingPortal(order.id);
+      if (!mounted.current || run !== operation.current || email !== account.current) return;
+      if (!writable.current) throw new Error("Reconnect before opening billing.");
+      window.location.assign(url);
+    } catch {
+      if (mounted.current && run === operation.current) { setServiceError("Secure service billing could not open. Your subscription has not changed. Try again or contact support."); pending.current = false; setServiceBusy(null); }
+    }
+  };
+  if (native) return null;
+  const sameAccount = loadedAccount.current === accountEmail;
+  const academyState = sameAccount ? state : "loading";
+  const businessState = sameAccount ? serviceState : "loading";
+  const visibleOrders = sameAccount ? serviceOrders : [];
+  return <section className="membership-panel membership-centered membership-billing">
+    <span className="membership-symbol"><CreditCard size={26} /></span><h1>Manage your billing.</h1>
+    {!online && <p className="membership-notice" role="status">You’re offline. Reconnect to load billing or manage a subscription.</p>}
+    {academyState === "signed_out" && businessState === "signed_out" ? <><p>Sign in with your Academy email to manage your payments securely.</p><a className="primary-button wide" href="/">Member sign in <ArrowRight size={17} /></a></> : <>
+      <section className="membership-billing-section" aria-labelledby="academy-billing-heading"><h2 id="academy-billing-heading">Academy membership</h2>
+        {academyState === "loading" ? <p role="status">{online ? "Checking your Academy billing account…" : "Reconnect to check Academy billing."}</p> : academyState === "error" ? <div role="alert"><p>We couldn't check your Academy billing account. Your membership has not changed.</p><button type="button" className="secondary-button wide" disabled={!online || busy || Boolean(serviceBusy)} onClick={() => { refreshAccess(); setRetry(value => value + 1); }}>Retry Academy billing</button></div>
+          : academyState === "signed_out" ? <p>Sign in to check your Academy billing account.</p>
+          : (overview?.subscriptions?.length || overview?.subscription) ? <>{(overview.subscriptions ?? (overview.subscription ? [overview.subscription] : [])).map((subscription, index) => <article key={index}><h3>{subscription.planName}</h3><p className="membership-notice">{subscription.cancelAtPeriodEnd ? "Cancellation is scheduled at the end of your billing period." : `Status: ${subscription.status.replaceAll("_", " ")}.`}</p></article>)}<p>View invoices, update your payment method, or manage your Academy subscription in Stripe.</p><button type="button" className="primary-button wide" disabled={!online || busy || Boolean(serviceBusy)} onClick={() => void openPortal()}>{busy ? "Opening…" : "Open Academy billing"}</button></>
+          : <><p>No Academy Stripe subscription is connected to this login.</p><p>Already paying through another arrangement? Contact the Academy team before starting a new subscription.</p></>}
+        {error && <p className="membership-error" role="alert">{error}</p>}
+      </section>
+      <section className="membership-billing-section" aria-labelledby="service-billing-heading"><h2 id="service-billing-heading">Business services</h2>
+        <p>Manage service invoices, payment details, and cancellation separately from your Academy membership.</p>
+        {accountEmail && access.status === "no_access" && <p className="membership-notice">You can manage existing service subscriptions even when your Academy access has ended.</p>}
+        {businessState === "loading" ? <p role="status">{online ? "Checking your service payments…" : "Reconnect to check service payments."}</p> : businessState === "error" ? <div role="alert"><p>Service payments could not load. Retry this section independently of your Academy billing.</p><button type="button" className="secondary-button wide" disabled={!online || busy || Boolean(serviceBusy)} onClick={() => setServiceRetry(value => value + 1)}>Retry service billing</button></div>
+          : businessState === "signed_out" ? <p>Sign in to check your service payments.</p>
+          : visibleOrders.length ? <ul className="membership-service-orders">{visibleOrders.map(order => <li key={order.id}><h3>{serviceName(order.serviceKey)}</h3><strong>{new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(order.amountCents / 100)} <small>{order.billingInterval === "month" ? "per month" : "one-time"}</small></strong><p className="membership-notice">{serviceOrderStatus(order)}</p>{serviceOrderHasPortal(order) && <button type="button" className="secondary-button wide" disabled={!online || busy || Boolean(serviceBusy)} onClick={() => void openServicePortal(order)} aria-label={`Manage billing for ${serviceName(order.serviceKey)}`}>{serviceBusy === order.id ? "Opening billing…" : "Manage billing"}<ArrowRight size={16} /></button>}</li>)}</ul> : <p>No service payments are linked to this account.</p>}
+        {serviceError && <p className="membership-error" role="alert">{serviceError}</p>}
+      </section>
+    </>}
+    <a className="membership-contact" href="/"><ArrowLeft size={16} /> Back to Academy</a>
   </section>;
 }

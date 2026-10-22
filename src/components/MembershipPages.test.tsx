@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 const platform = vi.hoisted(() => ({ native: false }));
 vi.mock("@capacitor/core", () => ({ Capacitor: { isNativePlatform: () => platform.native } }));
 vi.mock("../lib/backend", () => ({ supabase: null }));
-import { CheckoutReturn, EnrollmentForm } from "./MembershipPages";
+vi.mock("../lib/serviceCheckout", () => ({ beginServiceBillingPortal: vi.fn(), loadOwnServiceOrders: vi.fn() }));
+import { CheckoutReturn, CheckoutSummary, EnrollmentForm } from "./MembershipPages";
 
 describe("membership pages", () => {
   it("never treats reaching a return URL as proof of payment", () => {
@@ -36,9 +37,23 @@ const offers = [
   { id: "tool", name: "Measuring tool", description: "Map and camera", amountCents: 2995, currency: "usd", billingInterval: "month" as const, trialDays: 0, offerKind: "tool" as const, featureKeys: ["measuring_tool"] },
 ];
 describe("upgrade presentation", () => {
+  it.each([undefined, { status: "signed_out" } as AccessState])("starts a new visitor on membership even when the provider lists a tool first (%j)", (access) => {
+    const html = renderToStaticMarkup(<EnrollmentForm plans={[offers[2], offers[1], offers[0]]} verifiedAccess={access} />);
+    const radios = html.match(/<input\b[^>]*type="radio"[^>]*>/g) ?? [];
+    expect(radios.find(input => input.includes('value="membership"'))).toContain('checked=""');
+    expect(radios.find(input => input.includes('value="tool"'))).not.toContain('checked=""');
+  });
+  it("preserves an explicit tool selection from its offer link", () => {
+    vi.stubGlobal("window", { location: { search: "?plan=tool" } });
+    try {
+      const html = renderToStaticMarkup(<EnrollmentForm plans={offers} />);
+      const radios = html.match(/<input\b[^>]*type="radio"[^>]*>/g) ?? [];
+      expect(radios.find(input => input.includes('value="tool"'))).toContain('checked=""');
+    } finally { vi.unstubAllGlobals(); }
+  });
   it("separates independent offers and identifies access already owned", () => {
     const html = renderToStaticMarkup(<EnrollmentForm plans={offers} verifiedAccess={member} verifiedEmail="fixture@example.test" />);
-    expect(html).toContain("Community and certification membership");
+    expect(html).toContain("Community + Turf Cleaning Academy");
     expect(html).toContain("Individual course upgrades");
     expect(html).toContain("Tool subscriptions");
     expect(html).toContain("Already included in your access");
@@ -63,5 +78,22 @@ describe("upgrade presentation", () => {
       expect(notice).not.toContain("href");
       expect(notice).not.toContain("$");
     } finally { platform.native = false; }
+  });
+});
+
+describe("checkout order review", () => {
+  const plan = { id: "measuring-v2", name: "Measuring Tool", description: "Camera and map", amountCents: 1000, currency: "usd", billingInterval: "month" as const, trialDays: 0 };
+  it("reviews the configured price and recurrence without silently adding anything", () => {
+    const html = renderToStaticMarkup(<CheckoutSummary plan={plan} />);
+    expect(html).toContain("$10.00");
+    expect(html).toContain("Renews every month until cancelled");
+    expect(html).toContain("Nothing else is added automatically");
+    expect(html).toContain('aria-label="Order review"');
+  });
+  it("makes a one-time course purchase distinct from a subscription", () => {
+    const html = renderToStaticMarkup(<CheckoutSummary plan={{ ...plan, name: "Additional course", amountCents: 14995, billingInterval: "one_time" }} />);
+    expect(html).toContain("$149.95");
+    expect(html).toContain("No recurring charge");
+    expect(html).not.toContain("Renews every");
   });
 });

@@ -1,6 +1,6 @@
 import { BookOpen, Home, Settings2 } from "lucide-react";
 
-export type PrimaryNavigationView = "home" | "learn" | "community" | "events" | "admin";
+export type PrimaryNavigationView = "home" | "learn" | "community" | "events" | "admin" | "grow";
 
 type PrimaryNavigationProps = {
   activeView: PrimaryNavigationView;
@@ -12,8 +12,8 @@ type PrimaryNavigationProps = {
 export function PrimaryNavigation({ activeView, settingsOpen, onNavigate, onOpenSettings }: PrimaryNavigationProps) {
   return (
     <footer className="bottom-nav" aria-label="App sections">
-      <NavigationItem icon={<BookOpen size={20} />} label="Academy" active={!settingsOpen && activeView !== "home"} onClick={() => onNavigate("learn")} />
-      <NavigationItem icon={<Home size={23} />} label="Dashboard" active={!settingsOpen && activeView === "home"} emphasis onClick={() => onNavigate("home")} />
+      <NavigationItem icon={<BookOpen size={20} />} label="Academy" active={!settingsOpen && ["learn", "community", "events", "admin"].includes(activeView)} onClick={() => onNavigate("learn")} />
+      <NavigationItem icon={<Home size={23} />} label="Dashboard" active={!settingsOpen && ["home", "grow"].includes(activeView)} emphasis onClick={() => onNavigate("home")} />
       <NavigationItem icon={<Settings2 size={20} />} label="Settings" active={settingsOpen} onClick={onOpenSettings} />
     </footer>
   );

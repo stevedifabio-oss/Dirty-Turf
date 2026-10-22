@@ -35,3 +35,18 @@ describe("community post presentation", () => {
       .toBe("https://app.dirtyturf.com/tools?view=community&post=post-123");
   });
 });
+
+
+describe("community notification destinations", () => {
+  it("preserves an exact parent and reply from an email link", async () => {
+    const {communityRequestFromSearch}=await import("./communityPost");
+    expect(communityRequestFromSearch("?view=community&post=post-123&comment=reply-456")).toEqual({postId:"post-123",commentId:"reply-456"});
+  });
+  it("ignores orphan, ambiguous and malformed reply destinations", async () => {
+    const {communityRequestFromSearch}=await import("./communityPost");
+    expect(communityRequestFromSearch("?comment=reply-456")).toEqual({postId:undefined,commentId:undefined});
+    expect(communityRequestFromSearch("?post=first&post=other&comment=reply")).toEqual({postId:undefined,commentId:undefined});
+    expect(communityRequestFromSearch("?post=valid&comment=https://example.invalid/path")).toEqual({postId:"valid",commentId:undefined});
+    expect(communityRequestFromSearch("?post="+"a".repeat(129))).toEqual({postId:undefined,commentId:undefined});
+  });
+});

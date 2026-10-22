@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   buildAcademyEmail,
+  buildNotificationPreferenceStatus,
+  buildUnsubscribeConfirmation,
   createUnsubscribeToken,
   preferenceForTemplate,
   verifyUnsubscribeToken,
@@ -58,6 +60,47 @@ describe("Academy notification email", () => {
     const tamperedToken = `${token.slice(0, -1)}${token.endsWith("x") ? "y" : "x"}`;
     expect(await verifyUnsubscribeToken(tamperedToken, secret)).toBeNull();
     expect(await verifyUnsubscribeToken(token, secret, expiresAt + 1)).toBeNull();
+    expect(await verifyUnsubscribeToken(token, secret, expiresAt)).toBeNull();
+    expect(await verifyUnsubscribeToken("x".repeat(1025), secret)).toBeNull();
+  });
+
+  it("opens the Academy for welcome without promising paid tool access", () => {
+    const email = buildAcademyEmail({ ...delivery, template_key: "welcome", target_type: "community" }, { appUrl: "https://app.dirtyturf.com", unsubscribeUrl: "https://example.test/unsubscribe" });
+    expect(new URL(email.actionUrl).searchParams.get("view")).toBe("learn");
+    expect(email.text).toContain("Optional courses and tools depend on your account access.");
+    expect(email.text).not.toContain("use the field tools");
+  });
+
+  it.each(["group_payment_received", "group_subscription_cancelled", "course_subscription_cancelled"])("routes %s to billing even after course/community access ends", template => {
+    const email = buildAcademyEmail({ ...delivery, template_key: template, target_type: "course" }, { appUrl: "https://app.dirtyturf.com", unsubscribeUrl: "https://example.test/unsubscribe" });
+    expect(email.actionUrl).toBe("https://app.dirtyturf.com/billing");
+  });
+
+  it.each(["comment", "reply", "mention", "comment_reaction"])("links %s to the exact parent post and comment", template => {
+    const commentId = "abc55555-abcd-4abc-8abc-111111111111";
+    const email = buildAcademyEmail({ ...delivery, template_key: template, payload: { ...delivery.payload, commentId } }, { appUrl: "https://app.dirtyturf.com", unsubscribeUrl: "https://example.test/unsubscribe" });
+    const url = new URL(email.actionUrl);
+    expect(url.searchParams.get("view")).toBe("community");
+    expect(url.searchParams.get("post")).toBe(delivery.target_id);
+    expect(url.searchParams.get("comment")).toBe(commentId);
+    const invalid = buildAcademyEmail({ ...delivery, template_key: template, payload: { commentId: "javascript:bad" } }, { appUrl: "https://app.dirtyturf.com", unsubscribeUrl: "https://example.test/unsubscribe" });
+    expect(new URL(invalid.actionUrl).searchParams.has("comment")).toBe(false);
+  });
+
+  it("keeps unsubscribe confirmation and errors on brand and escapes their inputs", () => {
+    const confirmation = buildUnsubscribeConfirmation('token"><script>bad</script>', 'Comments <script>bad</script>', "https://app.dirtyturf.com");
+    const status = buildNotificationPreferenceStatus("<script>bad</script>", 'Private "example"');
+    for (const html of [confirmation, status]) {
+      expect(html).toContain("/dirty-turf-logo.png");
+      expect(html).toContain("poppins-latin-400-normal.woff2");
+      expect(html).toContain("outfit-latin-700-normal.woff2");
+      expect(html).toContain("#003113"); expect(html).toContain("#047631"); expect(html).toContain("#78c12e");
+      expect(html).not.toContain("<script>");
+      expect(html).toContain('name="viewport"');
+    }
+    expect(confirmation).toContain('<form method="post">');
+    expect(confirmation).toContain('name="token"');
+    expect(status).toContain("panel=settings&amp;section=notifications");
   });
 });
 

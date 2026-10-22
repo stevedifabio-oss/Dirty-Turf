@@ -67,9 +67,7 @@ export function buildAcademyEmail(delivery: AcademyEmailDelivery, options: Email
   const recipientName = firstName(delivery.recipient_name);
   const actorName = stringValue(payload.actorName, "The Dirty Turf team");
   const communityName = stringValue(payload.communityName, "7 Figure Turf Cleaning");
-  const actionUrl = delivery.template_key === "event_cancelled"
-    ? withQuery(options.appUrl, { view: "events" })
-    : targetUrl(options.appUrl, delivery.target_type, delivery.target_id);
+  const actionUrl = deliveryActionUrl(delivery, options.appUrl);
   const content = templateContent(delivery, recipientName, actorName, communityName);
   const eventDetails = buildEventDetails(delivery);
   const excerpt = stringValue(payload.excerpt, "").slice(0, 500);
@@ -102,7 +100,7 @@ export function buildAcademyEmail(delivery: AcademyEmailDelivery, options: Email
           <img src="${logoUrl}" alt="Dirty Turf" width="224" height="97" style="display:block;width:224px;max-width:100%;height:auto;border:0;color:#ffffff;font-size:24px;font-weight:700">
           <div style="font-family:${headingFont};font-size:20px;font-weight:700;line-height:1.3;margin-top:14px">Academy &amp; Community</div>
         </td></tr>
-        <tr><td style="padding:30px 28px 12px">
+        <tr><td style="padding:30px 28px 12px;overflow-wrap:anywhere;word-break:break-word">
           <p style="margin:0 0 12px;font-size:16px;line-height:1.55">Hi ${escapeHtml(recipientName)},</p>
           <h1 style="font-family:${headingFont};font-weight:700;margin:0 0 14px;font-size:25px;line-height:1.25;color:#003113">${escapeHtml(content.heading)}</h1>
           <p style="margin:0 0 22px;font-size:16px;line-height:1.6;color:#3d5c44">${escapeHtml(content.body)}</p>
@@ -154,6 +152,7 @@ export async function createUnsubscribeToken(
 }
 
 export async function verifyUnsubscribeToken(token: string, secret: string, now = Date.now()) {
+  if (typeof token !== "string" || token.length > 1024 || !Number.isFinite(now)) return null;
   const [encodedPayload, encodedSignature, extra] = token.split(".");
   if (!encodedPayload || !encodedSignature || extra) return null;
   try {
@@ -175,9 +174,10 @@ export async function verifyUnsubscribeToken(token: string, secret: string, now 
     if (
       payload.version !== 1 ||
       typeof payload.memberId !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payload.memberId) ||
       !emailPreferenceKeys.includes(payload.preference as EmailPreferenceKey) ||
       typeof payload.expiresAt !== "number" ||
-      payload.expiresAt < now
+      !Number.isSafeInteger(payload.expiresAt) || payload.expiresAt <= now
     ) return null;
     return payload as UnsubscribePayload;
   } catch {
@@ -192,6 +192,26 @@ export function escapeHtml(value: unknown) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+export function buildUnsubscribeConfirmation(token: string, label: string, appUrl: string) {
+  return preferencePage(`Turn off ${label} emails?`, "You will still see these updates in the Academy notification center.", appUrl,
+    `<form method="post"><input type="hidden" name="token" value="${escapeHtml(token)}"><button style="font:700 15px 'Poppins',Arial,sans-serif;border:0;border-radius:6px;background:#047631;color:#fff;padding:13px 20px;cursor:pointer">Unsubscribe</button></form>`);
+}
+
+export function buildNotificationPreferenceStatus(title: string, detail: string, appUrl = "https://app.dirtyturf.com") {
+  return preferencePage(title, detail, appUrl, `<a href="${escapeHtml(withQuery(appUrl, { panel: "settings", section: "notifications" }))}" style="display:inline-block;font-weight:700;color:#047631;margin:0 0 12px">Open notification settings</a>`);
+}
+
+function preferencePage(title: string, detail: string, appUrl: string, action: string) {
+  const logo = escapeHtml(new URL("/dirty-turf-logo.png", appUrl).href);
+  const font = (file: string) => escapeHtml(new URL(`/email-assets/${file}`, appUrl).href);
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} | Dirty Turf Academy</title><style>
+@font-face{font-family:Poppins;font-style:normal;font-weight:400;src:url('${font("poppins-latin-400-normal.woff2")}') format('woff2')}
+@font-face{font-family:Poppins;font-style:normal;font-weight:700;src:url('${font("poppins-latin-700-normal.woff2")}') format('woff2')}
+@font-face{font-family:Outfit;font-style:normal;font-weight:700;src:url('${font("outfit-latin-700-normal.woff2")}') format('woff2')}
+*{box-sizing:border-box}body{margin:0;padding:32px 16px;background:#f4faee;color:#111f14;font:16px/1.6 Poppins,Arial,Helvetica,sans-serif}main{max-width:560px;margin:5vh auto;background:white;border:1px solid #e8f5d0;border-radius:8px;overflow:hidden}header{padding:24px;background:#003113;border-bottom:4px solid #78c12e}header img{width:200px;max-width:100%;height:auto;display:block}.content{padding:28px;overflow-wrap:anywhere}h1{font-family:Outfit,Poppins,Arial,sans-serif;font-size:27px;line-height:1.2;color:#003113;margin:0 0 16px}p{margin:0 0 22px;color:#3d5c44}a{color:#047631}form{margin:0 0 24px}@media(max-width:400px){body{padding:16px 12px}.content{padding:24px 20px}h1{font-size:24px}}
+</style></head><body><main><header><img src="${logo}" alt="Dirty Turf"></header><section class="content"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(detail)}</p>${action}<p style="font-size:14px;margin-bottom:0"><a href="${escapeHtml(appUrl)}">Return to the Academy</a></p></section></main></body></html>`;
 }
 
 function templateContent(
@@ -212,8 +232,8 @@ function templateContent(
       subject: `Welcome to ${communityName}`,
       preheader: "Your Dirty Turf Academy account is ready.",
       heading: `Welcome to the community, ${recipientName}`,
-      body: "Your Academy account is ready. Join the community, continue your courses, and use the field tools from one place.",
-      action: "Start learning",
+      body: "Your Academy account is ready. Open your available training and community conversations from one place. Optional courses and tools depend on your account access.",
+      action: "Open the Academy",
     },
     new_post: {
       subject: `${actorName} posted in ${communityName}`,
@@ -320,6 +340,17 @@ function templateContent(
   const lifecycle = lifecycleEmailTemplates[delivery.template_key];
   if (lifecycle) return { ...fallback, subject: delivery.title, heading: delivery.title, body: lifecycle.body, action: lifecycle.action };
   return templates[delivery.template_key] ?? fallback;
+}
+
+function deliveryActionUrl(delivery: AcademyEmailDelivery, appUrl: string) {
+  if (delivery.template_key === "welcome") return withQuery(appUrl, { view: "learn" });
+  if (delivery.template_key === "event_cancelled") return withQuery(appUrl, { view: "events" });
+  if (["group_payment_received", "group_subscription_cancelled", "course_subscription_cancelled"].includes(delivery.template_key)) return new URL("/billing", appUrl).toString();
+  if (delivery.target_type === "post" && delivery.target_id && ["comment", "reply", "mention", "comment_reaction", "mention_everyone_comment"].includes(delivery.template_key)) {
+    const commentId = delivery.payload?.commentId;
+    if (typeof commentId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(commentId)) return withQuery(appUrl, { view: "community", post: delivery.target_id, comment: commentId });
+  }
+  return targetUrl(appUrl, delivery.target_type, delivery.target_id);
 }
 
 function targetUrl(appUrl: string, targetType: string | null, targetId: string | null) {

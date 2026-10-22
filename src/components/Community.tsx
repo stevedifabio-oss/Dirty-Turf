@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, AtSign, Bookmark, CalendarDays, Check, ChevronRight, Flag, Hash, Heart, Link2, LockKeyhole, MapPin, Megaphone, MessageSquare, MoreHorizontal, Pin, Plus, Search, Send, Share2, ThumbsUp, Trophy, UserX, Users, X } from "lucide-react";
+import { ArrowLeft, AtSign, Bookmark, CalendarDays, Check, ChevronRight, Flag, Hash, Heart, ImagePlus, Link2, LockKeyhole, MapPin, Megaphone, MessageSquare, MoreHorizontal, Pin, Plus, Search, Send, Share2, ThumbsUp, Trophy, UserX, Users, X } from "lucide-react";
 import type { AcademyEvent, CommunityComment, CommunityPost, Member } from "../domain";
 import { CommunityMediaGallery } from "./CommunityMediaGallery";
 import { communityChannels, communityLeaders, communityStats, featuredCommunityPost, postsFromFollowedMembers } from "../lib/communityOverview";
 import { communityBodyBlocks, communityBodyNeedsExpansion, communityPostShareUrl } from "../lib/communityPost";
-import { nextBlockedMemberIds, validReportReason, withoutMemberContent } from "../lib/communitySafety";
+import { communityWriteFailureMessage, isRemovedCommunityComment, nextBlockedMemberIds, validReportReason, withoutMemberContent } from "../lib/communitySafety";
 import { getNextUpcomingEvent } from "../lib/eventTiming";
+import { CommunityPhotoPostError, validateCommunityPhotoSelection, type CommunityPhotoPostResult } from "../lib/communityPhotos";
+import "./communityPhotos.css";
 
 type Props = {
   posts: CommunityPost[];
@@ -29,6 +31,7 @@ type Props = {
   hasMorePosts: boolean;
   loadingMorePosts: boolean;
   onCreatePost: (post: CommunityPost) => Promise<CommunityPost>;
+  onCreatePhotoPost?: (post: CommunityPost, photos: File[], requestId: string) => Promise<CommunityPhotoPostResult>;
   onCreateComment: (comment: CommunityComment, postCloudId?: string) => Promise<CommunityComment>;
   onToggleLike: (post: CommunityPost) => Promise<boolean | null>;
   onToggleCommentLike: (comment: CommunityComment) => Promise<boolean | null>;
@@ -41,7 +44,7 @@ type Props = {
   onToast: (message: string) => void;
 };
 
-export function CommunityView({ posts, comments, members, events, requestedPostCloudId, requestedCommentCloudId, onRequestedCommentOpened, requestedMemberCloudId, onRequestedMemberOpened, onRequestedPostOpened, onLoadRequestedPost, accessScopeKey = "preview", readOnly = false, onPostsChange, onCommentsChange, onMembersChange, onToggleFollow, onLoadMorePosts, hasMorePosts, loadingMorePosts, onCreatePost, onCreateComment, onToggleLike, onToggleCommentLike, onToggleBookmark, onReport, onBlockMember, onLoadBlockedMembers, onRefreshCommunity, onNavigate, onToast }: Props) {
+export function CommunityView({ posts, comments, members, events, requestedPostCloudId, requestedCommentCloudId, onRequestedCommentOpened, requestedMemberCloudId, onRequestedMemberOpened, onRequestedPostOpened, onLoadRequestedPost, accessScopeKey = "preview", readOnly = false, onPostsChange, onCommentsChange, onMembersChange, onToggleFollow, onLoadMorePosts, hasMorePosts, loadingMorePosts, onCreatePost, onCreatePhotoPost, onCreateComment, onToggleLike, onToggleCommentLike, onToggleBookmark, onReport, onBlockMember, onLoadBlockedMembers, onRefreshCommunity, onNavigate, onToast }: Props) {
   const [category, setCategory] = useState("All");
   const [sort, setSort] = useState<"Recent" | "Popular" | "Following" | "Saved">("Recent");
   const [composerOpen, setComposerOpen] = useState(false);
@@ -72,6 +75,37 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
   const [openPostMenuId, setOpenPostMenuId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const submissionPending = useRef(false);
+  const [photos, setPhotos] = useState<{file:File;url:string}[]>([]);
+  const photoUrls = useRef(new Set<string>());
+  const photoInput = useRef<HTMLInputElement>(null);
+  const photoGeneration = useRef(0);
+  const photoValidatingRef = useRef(false);
+  const [photoValidating, setPhotoValidating] = useState(false);
+  const [photoRetryLocked, setPhotoRetryLocked] = useState(false);
+  const photoSubmission = useRef<{requestId:string;post:CommunityPost;files:File[];uncertain?:boolean} | null>(null);
+  const postDraftLocked = saving || photoRetryLocked;
+  const clearPhotoDraft = () => {
+    photoGeneration.current += 1;
+    for (const url of photoUrls.current) URL.revokeObjectURL(url);
+    photoUrls.current.clear(); setPhotos([]); photoSubmission.current = null; setPhotoRetryLocked(false);
+    photoValidatingRef.current=false; setPhotoValidating(false);
+  };
+  const choosePhotos = async (files: File[]) => {
+    if (!onCreatePhotoPost || readOnly || submissionPending.current || photoRetryLocked || photoValidatingRef.current || !files.length) return;
+    const generation=photoGeneration.current;
+    photoValidatingRef.current=true; setPhotoValidating(true);
+    try {
+      await validateCommunityPhotoSelection([...photos.map(photo=>photo.file),...files]);
+      if (generation!==photoGeneration.current) return;
+      const additions=files.map(file=>{const url=URL.createObjectURL(file); photoUrls.current.add(url); return {file,url};});
+      setPhotos(current=>[...current,...additions]);
+    } catch(error) { if(generation===photoGeneration.current) onToast(error instanceof Error?error.message:"These photos could not be opened."); }
+    finally { if(generation===photoGeneration.current) {photoValidatingRef.current=false;setPhotoValidating(false);} }
+  };
+  const removePhoto = (url:string) => {
+    if (submissionPending.current || photoRetryLocked || photoValidatingRef.current) return;
+    URL.revokeObjectURL(url); photoUrls.current.delete(url); setPhotos(current=>current.filter(photo=>photo.url!==url));
+  };
   const interactionLocks = useRef(new Set<string>());
   const [pendingInteractions, setPendingInteractions] = useState<Set<string>>(() => new Set());
   const [pendingFollowId, setPendingFollowId] = useState<number | null>(null);
@@ -79,6 +113,7 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
   const [blockedMembersLoading, setBlockedMembersLoading] = useState(false);
   const [blockedMembersError, setBlockedMembersError] = useState(false);
   const [pendingBlockMemberId, setPendingBlockMemberId] = useState<string | null>(null);
+  const blockPending = useRef(false);
   const beginInteraction = (key: string) => {
     if (interactionLocks.current.has(key)) return false;
     interactionLocks.current.add(key);
@@ -113,9 +148,11 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
   };
 
   const toggleMemberBlock = async (memberId: string, name: string) => {
-    if (readOnly || pendingBlockMemberId) return;
+    // Blocking is a server toggle: two taps before React rerenders would undo it.
+    if (readOnly || blockPending.current) return;
     const isBlocked = blockedMemberIds.includes(memberId);
     if (!isBlocked && !window.confirm(`Block ${name}? Their posts and comments will be hidden from you.`)) return;
+    blockPending.current = true;
     setPendingBlockMemberId(memberId);
     try {
       const blocked = await onBlockMember(memberId);
@@ -133,6 +170,7 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
     } catch {
       onToast("Could not update this member's block status.");
     } finally {
+      blockPending.current = false;
       setPendingBlockMemberId(null);
     }
   };
@@ -165,7 +203,14 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
     setMembersOpen(false);
     setMemberQuery("");
     setBlockedMemberIds([]);
+    clearPhotoDraft();
   }, [accessScopeKey]);
+
+  useEffect(() => () => {
+    photoGeneration.current += 1;
+    for (const url of photoUrls.current) URL.revokeObjectURL(url);
+    photoUrls.current.clear();
+  }, []);
 
   useEffect(() => {
     if (!requestedPostCloudId) return;
@@ -271,6 +316,7 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
   const syncPostUrl = (cloudId?: string) => {
     const url = new URL(window.location.href);
     url.searchParams.set("view", "community");
+    url.searchParams.delete("comment");
     if (cloudId) url.searchParams.set("post", cloudId);
     else url.searchParams.delete("post");
     window.history.replaceState(window.history.state, "", url);
@@ -304,17 +350,36 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
 
   const publish = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (readOnly || submissionPending.current || !title.trim() || !body.trim()) return;
+    if (readOnly || submissionPending.current || photoValidatingRef.current || !title.trim() || !body.trim()) return;
     const post: CommunityPost = { id: Date.now(), name: title.trim(), author: "You", body: body.trim(), replies: 0, likes: 0, age: "Just now", category: newCategory, mentionedMemberIds: mentionedMemberIds(body, members) };
     submissionPending.current = true;
     setSaving(true);
     try {
-      const saved = await onCreatePost(post);
-      onPostsChange(current => [saved, ...current.filter(item => item.id !== saved.id)]);
+      if (photos.length && onCreatePhotoPost) {
+        photoSubmission.current ??= {requestId:crypto.randomUUID(),post,files:photos.map(photo=>photo.file)};
+        const attempt=photoSubmission.current;
+        const result=await onCreatePhotoPost(attempt.post,attempt.files,attempt.requestId);
+        if(result.post) onPostsChange(current=>[result.post!,...current.filter(item=>item.cloudId!==result.post!.cloudId && item.id!==result.post!.id)]);
+        clearPhotoDraft();
+        onRefreshCommunity();
+        onToast(result.post?"Post published with photos.":"Your post was saved. Refresh discussions to see it.");
+      } else {
+        const saved = await onCreatePost(post);
+        onPostsChange(current => [saved, ...current.filter(item => item.id !== saved.id)]);
+        onToast("Post published.");
+      }
       setTitle(""); setBody(""); setComposerOpen(false);
-      onToast("Post published.");
-    } catch {
-      onToast("Post could not be published.");
+    } catch(error) {
+      if (photos.length && onCreatePhotoPost) {
+        // Only an explicit moderation settlement can clear an earlier unknown
+        // publication. Generic validation/auth failures retain its identity.
+        const rejected=error instanceof CommunityPhotoPostError && error.publicationRejected;
+        const keep=!rejected && (Boolean(photoSubmission.current?.uncertain) || !(error instanceof CommunityPhotoPostError) || error.retrySameDraft);
+        setPhotoRetryLocked(keep);
+        if(keep && photoSubmission.current) photoSubmission.current.uncertain=true;
+        else if(!keep) photoSubmission.current=null;
+        onToast(error instanceof Error?error.message:"Photo posting could not be confirmed. Keep this draft and retry.");
+      } else onToast(communityWriteFailureMessage(error, "Post could not be published."));
     } finally {
       submissionPending.current = false;
       setSaving(false);
@@ -344,8 +409,8 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
       setCommentText(current => current === commentText ? "" : current);
       setReplyingTo(current => current?.id === replyingTo?.id ? null : current);
       onToast("Reply posted.");
-    } catch {
-      onToast("Reply could not be posted.");
+    } catch (error) {
+      onToast(communityWriteFailureMessage(error, "Reply could not be posted."));
     } finally {
       submissionPending.current = false;
       setSaving(false);
@@ -373,8 +438,8 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
       updatePost(post.id, current => ({ replies: current.replies + 1 }));
       setQuickReplyDrafts(current => current[post.id] === quickReplyText ? { ...current, [post.id]: "" } : current);
       onToast("Comment posted.");
-    } catch {
-      onToast("Comment could not be posted.");
+    } catch (error) {
+      onToast(communityWriteFailureMessage(error, "Comment could not be posted."));
     } finally {
       submissionPending.current = false;
       setSaving(false);
@@ -527,7 +592,7 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
       </article>
       <section className="thread-comments">
         <div className="thread-count">{thread.length} {thread.length === 1 ? "comment" : "comments"}</div>
-        {thread.map((comment) => <article id={comment.cloudId ? `comment-${comment.cloudId}` : undefined} className={`${comment.answer ? "comment answer" : "comment"}${comment.parentId ? " nested" : ""}`} key={comment.id}><Avatar name={comment.author} members={members} /><div><div className="comment-head"><strong>{comment.author}</strong><span>{comment.age}</span>{comment.answer && <em><Check size={11} /> Answer</em>}</div><p>{comment.body}</p><CommunityMediaGallery items={comment.mediaItems ?? []} context="Comment" /><div className="comment-actions"><button className={comment.liked ? "active" : ""} disabled={readOnly || pendingInteractions.has(`comment-like-${comment.id}`)} onClick={() => void toggleCommentLike(comment)}><Heart size={14} fill={comment.liked ? "currentColor" : "none"} /> {comment.likes}</button><button disabled={saving} onClick={() => { if (!submissionPending.current) { setReplyingTo(comment); setCommentText(`@${comment.author} `); } }}><MessageSquare size={14} /> Reply</button>{comment.cloudId && <button disabled={readOnly} onClick={() => void reportContent("comment", comment.cloudId!, "comment")}><Flag size={14} /> Report</button>}{comment.authorCloudId && <button disabled={readOnly} onClick={() => void toggleMemberBlock(comment.authorCloudId!, comment.author)}><UserX size={14} /> Block</button>}</div></div></article>)}
+        {thread.map((comment) => <article id={comment.cloudId ? `comment-${comment.cloudId}` : undefined} className={`${comment.answer ? "comment answer" : "comment"}${comment.parentId ? " nested" : ""}`} key={comment.id}><Avatar name={comment.author} members={members} /><div><div className="comment-head"><strong>{comment.author}</strong><span>{comment.age}</span>{comment.answer && <em><Check size={11} /> Answer</em>}</div><p>{comment.body}</p>{!isRemovedCommunityComment(comment.body) && <CommunityMediaGallery items={comment.mediaItems ?? []} context="Comment" />}<div className="comment-actions"><button className={comment.liked ? "active" : ""} disabled={readOnly || pendingInteractions.has(`comment-like-${comment.id}`)} onClick={() => void toggleCommentLike(comment)}><Heart size={14} fill={comment.liked ? "currentColor" : "none"} /> {comment.likes}</button><button disabled={saving} onClick={() => { if (!submissionPending.current) { setReplyingTo(comment); setCommentText(`@${comment.author} `); } }}><MessageSquare size={14} /> Reply</button>{comment.cloudId && <button disabled={readOnly} onClick={() => void reportContent("comment", comment.cloudId!, "comment")}><Flag size={14} /> Report</button>}{comment.authorCloudId && <button disabled={readOnly} onClick={() => void toggleMemberBlock(comment.authorCloudId!, comment.author)}><UserX size={14} /> Block</button>}</div></div></article>)}
         {thread.length === 0 && <div className="thread-empty"><MessageSquare size={19} /><span><strong>Start the conversation</strong><small>Share an answer or ask a follow-up question.</small></span></div>}
       </section>
       {replyingTo && <div className="replying-to"><span>Replying to <strong>{replyingTo.author}</strong></span><button onClick={() => setReplyingTo(null)} aria-label="Cancel reply"><X size={14} /></button></div>}
@@ -556,10 +621,11 @@ export function CommunityView({ posts, comments, members, events, requestedPostC
           {!composerOpen && <button className="composer-prompt" onClick={() => setComposerOpen(true)}><Avatar name="You" members={members} /><span>Ask about a job, product, or process...</span><Plus size={18} /></button>}
           {composerOpen && <form className="full-composer" onSubmit={publish}>
             <div className="composer-head"><strong>New discussion</strong><button type="button" aria-label="Close composer" disabled={saving} onClick={() => { if (!submissionPending.current) setComposerOpen(false); }}><X size={18} /></button></div>
-            <input value={title} disabled={saving} onChange={(event) => { if (!submissionPending.current) setTitle(event.target.value); }} placeholder="Clear, specific title" aria-label="Post title" maxLength={120} />
-            <textarea value={body} disabled={saving} onChange={(event) => { if (!submissionPending.current) setBody(event.target.value); }} placeholder="Add the details other operators need..." rows={4} aria-label="Post body" maxLength={5000} />
-            {mentionMatches(body, members).length > 0 && <MentionSuggestions members={mentionMatches(body, members)} onSelect={(member) => { if (!submissionPending.current) setBody(insertMention(body, member.name)); }} />}
-            <div className="composer-foot"><select value={newCategory} disabled={saving} onChange={(event) => { if (!submissionPending.current) setNewCategory(event.target.value); }} aria-label="Post category">{categories.slice(1).map((item) => <option key={item}>{item}</option>)}</select><button className="publish-button" disabled={readOnly || saving || !title.trim() || !body.trim()}>{saving ? "Publishing..." : "Publish"}</button></div>
+            <input value={title} disabled={postDraftLocked} onChange={(event) => { if (!submissionPending.current && !photoRetryLocked) setTitle(event.target.value); }} placeholder="Clear, specific title" aria-label="Post title" maxLength={120} />
+            <textarea value={body} disabled={postDraftLocked} onChange={(event) => { if (!submissionPending.current && !photoRetryLocked) setBody(event.target.value); }} placeholder="Add the details other operators need..." rows={4} aria-label="Post body" maxLength={5000} />
+            {mentionMatches(body, members).length > 0 && <MentionSuggestions members={mentionMatches(body, members)} onSelect={(member) => { if (!submissionPending.current && !photoRetryLocked) setBody(insertMention(body, member.name)); }} />}
+            {onCreatePhotoPost && <div className="community-photo-draft"><input ref={photoInput} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden disabled={readOnly || postDraftLocked || photoValidating} onChange={event=>{const files=[...event.target.files??[]];event.target.value="";void choosePhotos(files);}} aria-label="Choose discussion photos"/><div className="community-photo-draft-tools"><button type="button" className="community-add-photos" disabled={readOnly || postDraftLocked || photoValidating || photos.length>=4} onClick={()=>photoInput.current?.click()}><ImagePlus size={17}/>{photos.length?"Add more photos":"Add photos"}</button><small>{photoValidating?"Checking photos…":`${photos.length}/4 · JPG, PNG or WebP · 4 MB each`}</small></div>{photos.length>0 && <div className="community-photo-previews">{photos.map((photo,index)=><figure key={photo.url}><img src={photo.url} alt={`Selected photo ${index+1}`}/><button type="button" disabled={postDraftLocked || photoValidating} onClick={()=>removePhoto(photo.url)} aria-label={`Remove photo ${index+1}`}><X size={14}/></button></figure>)}</div>}{photoRetryLocked && <p className="community-photo-retry" role="status">Keep this exact draft while we confirm the previous attempt. Select Retry publish; a completed request will return the original post.</p>}</div>}
+            <div className="composer-foot"><select value={newCategory} disabled={postDraftLocked} onChange={(event) => { if (!submissionPending.current && !photoRetryLocked) setNewCategory(event.target.value); }} aria-label="Post category">{categories.slice(1).map((item) => <option key={item}>{item}</option>)}</select><button className="publish-button" disabled={readOnly || saving || photoValidating || !title.trim() || !body.trim()}>{saving ? "Publishing..." : photoRetryLocked?"Retry publish":"Publish"}</button></div>
           </form>}
           {featuredPost && <section className="featured-discussion"><span><Pin size={15} /> Featured</span><button onClick={() => openThread(featuredPost.id)}><span><strong>{featuredPost.name}</strong><small>{featuredPost.author} · {featuredPost.likes ?? 0} likes</small></span><ChevronRight size={17} /></button></section>}
           <div className="category-scroller" role="tablist" aria-label="Discussion categories">{categories.map((item) => <button role="tab" aria-selected={category === item} className={category === item ? "active" : ""} onClick={() => selectCategory(item)} key={item}>{item}</button>)}</div>
@@ -661,8 +727,21 @@ function insertMention(value: string, name: string) {
 }
 
 function mentionedMemberIds(value: string, members: Member[]) {
-  const normalized = value.toLocaleLowerCase();
-  return members.flatMap((member) => member.cloudId && normalized.includes(`@${member.name.toLocaleLowerCase()}`) ? [member.cloudId] : []);
+  const normalized = value.normalize("NFC").toLocaleLowerCase();
+  const candidates = members.filter(member => member.cloudId && member.name.trim())
+    .map(member => ({ id: member.cloudId!, name: member.name.trim().normalize("NFC").toLocaleLowerCase() }));
+  const ids = new Set<string>();
+  for (const marker of normalized.matchAll(/(?:^|[\s([{])@/gu)) {
+    const start = marker.index + marker[0].length;
+    const matches = candidates.filter(member => normalized.startsWith(member.name, start)
+      && (start + member.name.length === normalized.length || /[\s.,!?;:)}\]]/u.test(normalized[start + member.name.length])));
+    // Prefer a full name over another member's matching first name. A plain-text
+    // mention cannot distinguish two identical display names; never guess who to notify.
+    const longest = Math.max(0, ...matches.map(member => member.name.length));
+    const exact = new Set(matches.filter(member => member.name.length === longest).map(member => member.id));
+    if (exact.size === 1) ids.add([...exact][0]);
+  }
+  return [...ids];
 }
 
 function orderThread(comments: CommunityComment[]) {

@@ -5,11 +5,12 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { lessonContentMarkup } from "./lessonContent";
 import type { AcademyCertificate, AcademyEvent, AppNotification, CommunityComment, CommunityPost, Course, Job, LessonQuiz, Member, NotificationPreferences } from "../domain";
 import { NATIVE_AUTH_EMAIL_REDIRECT, parseNativeAuthRedirect } from "./authRedirect";
-import { communityMediaStoragePaths, normalizeCommunityMediaItems } from "./communityMedia";
+import { communityMediaPathsByBucket, normalizeCommunityMediaItems } from "./communityMedia";
 import { cleanCommunityPostBody } from "./communityPost";
+import { isRemovedCommunityComment } from "./communitySafety";
 import { clampProgress, combinedCourseProgress } from "./courseProgress";
 import { propertyGeocodeResults, type PropertyGeocodeResult } from "./mapGeocode";
-import { memberMagicLinkOptions, normalizeLoginEmail } from "./memberAuth";
+import { memberMagicLinkOptions, normalizeLoginEmail, webMagicLinkReturnUrl } from "./memberAuth";
 
 const JOBS_KEY = "dirty-turf-jobs-v3";
 const POSTS_KEY = "dirty-turf-posts-v1";
@@ -123,7 +124,7 @@ export async function requestMagicLink(email: string) {
   if (!supabase) throw new Error("Supabase is not configured.");
   return supabase.auth.signInWithOtp({
     email: normalizeLoginEmail(email),
-    options: memberMagicLinkOptions(Capacitor.isNativePlatform() ? NATIVE_AUTH_EMAIL_REDIRECT : window.location.origin),
+    options: memberMagicLinkOptions(Capacitor.isNativePlatform() ? NATIVE_AUTH_EMAIL_REDIRECT : webMagicLinkReturnUrl(window.location.href)),
   });
 }
 
@@ -214,23 +215,17 @@ export async function loadMemberAccessSummary() {
   return invokeMemberAccess("preview");
 }
 
-export async function provisionAcademyMemberAccounts() {
-  let finalResponse: MemberAccessResponse | null = null;
-  for (let batch = 0; batch < 10; batch += 1) {
-    const response = await invokeMemberAccess("provision", 50);
-    finalResponse = response;
-    if ((response.failed ?? 0) > 0 || (response.remainingForAction ?? 0) === 0 || (response.processed ?? 0) === 0) break;
-  }
-  if (!finalResponse) throw new Error("Member provisioning returned no result.");
-  return finalResponse;
+/** Retained as a fail-closed compatibility boundary for older consumers. */
+export async function provisionAcademyMemberAccounts(): Promise<MemberAccessResponse> {
+  throw new Error("Open Admin Studio → Members → Account setup to review exact members before preparing accounts.");
 }
 
-async function invokeMemberAccess(action: "preview" | "provision", limit?: number) {
+async function invokeMemberAccess(action: "preview") {
   if (!supabase) throw new Error("Supabase is not configured.");
   const context = await getAcademyContext();
   if (!context) throw new Error("An Academy administrator account is required.");
   const { data, error } = await supabase.functions.invoke<MemberAccessResponse>("academy-invite-members", {
-    body: { academyCommunityId: context.communityId, action, limit },
+    body: { academyCommunityId: context.communityId, action },
   });
   if (error) throw error;
   if (!data?.summary) throw new Error("Member access service returned no readiness summary.");
@@ -576,15 +571,15 @@ async function hydrateCommunityPosts(rows: CommunityPostRow[], context: AcademyC
   if ("error" in bookmarkResult && bookmarkResult.error) throw bookmarkResult.error;
   const liked = new Set((reactionResult.data ?? []).map((row) => row.post_id));
   const saved = new Set((bookmarkResult.data ?? []).map((row) => row.post_id));
-  const mediaPaths = [...new Set(rows.flatMap((row) => communityMediaStoragePaths(row.media)))];
   const signedByPath = new Map<string, string>();
-  if (mediaPaths.length) {
-    const { data: signedRows, error: signedError } = await supabase!.storage
-      .from("academy-assets")
-      .createSignedUrls(mediaPaths, 60 * 60);
-    if (signedError) throw signedError;
-    for (const asset of signedRows ?? []) {
-      if (asset.path && asset.signedUrl) signedByPath.set(asset.path, asset.signedUrl);
+  for (const [bucket,mediaPaths] of communityMediaPathsByBucket(rows.flatMap(row => Array.isArray(row.media) ? row.media : []))) {
+    for (let offset = 0; offset < mediaPaths.length; offset += 100) {
+      const { data: signedRows, error: signedError } = await supabase!.storage
+        .from(bucket).createSignedUrls(mediaPaths.slice(offset,offset+100), 60 * 60);
+      if (signedError) throw signedError;
+      for (const asset of signedRows ?? []) {
+        if (asset.path && asset.signedUrl) signedByPath.set(`${bucket}:${asset.path}`, asset.signedUrl);
+      }
     }
   }
 
@@ -643,18 +638,21 @@ export async function searchCommunityPosts(query: string): Promise<CommunityPost
 export async function savePost(post: CommunityPost): Promise<CommunityPost> {
   const context = await getAcademyContext();
   if (!context) {
-    if (await hasCloudSession()) throw new Error("Academy membership is required.");
+    // A configured cloud app must never persist a signed-out member's draft
+    // into the unrelated device-preview store during a sign-out race.
+    if (supabase) throw new Error("Academy membership is required.");
     const current = readLocal<CommunityPost[]>(POSTS_KEY, []);
     writeLocal(POSTS_KEY, [post, ...current.filter((item) => item.id !== post.id)]);
     return post;
   }
 
+  const accessToken = await communityMutationAccessToken(context.userId);
   const { data, error } = await supabase!.rpc("create_community_post", {
     p_title: post.name,
     p_body: post.body,
     p_category_name: post.category ?? "General",
     p_mentioned_member_ids: post.mentionedMemberIds ?? [],
-  });
+  }).setHeader("Authorization", `Bearer ${accessToken}`);
   if (error) throw error;
   return { ...post, id: stableNumericId(data), cloudId: String(data) };
 }
@@ -716,14 +714,15 @@ export async function loadComments(seed: CommunityComment[], postCloudId?: strin
   }
 
   const signedByPath = new Map<string, string>();
-  const mediaPaths = [...new Set(data.flatMap(row => communityMediaStoragePaths(row.media)))];
   // Chunk these too: a full history can contain more attachments than one signing request supports.
-  for (let offset = 0; offset < mediaPaths.length; offset += 100) {
-    const { data: signedRows, error: signedError } = await supabase!.storage
-      .from("academy-assets").createSignedUrls(mediaPaths.slice(offset, offset + 100), 60 * 60);
-    if (signedError) throw signedError;
-    for (const asset of signedRows ?? []) {
-      if (asset.path && asset.signedUrl) signedByPath.set(asset.path, asset.signedUrl);
+  for (const [bucket,mediaPaths] of communityMediaPathsByBucket(data.flatMap(row => !isRemovedCommunityComment(row.body) && Array.isArray(row.media) ? row.media : []))) {
+    for (let offset = 0; offset < mediaPaths.length; offset += 100) {
+      const { data: signedRows, error: signedError } = await supabase!.storage
+        .from(bucket).createSignedUrls(mediaPaths.slice(offset, offset + 100), 60 * 60);
+      if (signedError) throw signedError;
+      for (const asset of signedRows ?? []) {
+        if (asset.path && asset.signedUrl) signedByPath.set(`${bucket}:${asset.path}`, asset.signedUrl);
+      }
     }
   }
 
@@ -737,7 +736,7 @@ export async function loadComments(seed: CommunityComment[], postCloudId?: strin
     author: row.author_name,
     authorCloudId: row.academy_author_id ?? undefined,
     body: row.body,
-    mediaItems: normalizeCommunityMediaItems(row.media, signedByPath),
+    mediaItems: isRemovedCommunityComment(row.body) ? [] : normalizeCommunityMediaItems(row.media, signedByPath),
     age: relativeDate(row.created_at),
     likes: Number(row.like_count),
     liked: liked.has(row.id),
@@ -748,18 +747,19 @@ export async function loadComments(seed: CommunityComment[], postCloudId?: strin
 export async function saveComment(comment: CommunityComment, postCloudId?: string): Promise<CommunityComment> {
   const context = await getAcademyContext();
   if (!context || !postCloudId) {
-    if (await hasCloudSession()) throw new Error("Academy membership and a synced post are required.");
+    if (supabase) throw new Error("Academy membership and a synced post are required.");
     const current = readLocal<CommunityComment[]>(COMMENTS_KEY, []);
     writeLocal(COMMENTS_KEY, [...current.filter((item) => item.id !== comment.id), comment]);
     return comment;
   }
 
+  const accessToken = await communityMutationAccessToken(context.userId);
   const { data, error } = await supabase!.rpc("create_academy_comment", {
     p_post_id: postCloudId,
     p_body: comment.body,
     p_parent_id: comment.parentCloudId ?? null,
     p_mentioned_member_ids: comment.mentionedMemberIds ?? [],
-  });
+  }).setHeader("Authorization", `Bearer ${accessToken}`);
   if (error) throw error;
   return { ...comment, id: stableNumericId(data), cloudId: String(data) };
 }
@@ -926,21 +926,23 @@ async function loadSignedLessonAssets(lessonIds: string[], strict = false) {
 export async function saveLessonCompletion(lessonCloudId: string, completed: boolean) {
   const context = await getAcademyContext();
   if (!context) return;
+  const accessToken = await communityMutationAccessToken(context.userId);
   const { error } = await supabase!.rpc("set_academy_lesson_completion", {
     p_lesson_id: lessonCloudId,
     p_completed: completed,
-  });
+  }).setHeader("Authorization", `Bearer ${accessToken}`);
   if (error) throw error;
 }
 
 export async function recordAcademyQuizAttempt(lessonCloudId: string, scorePercent: number, answers: number[]) {
   const context = await getAcademyContext();
   if (!context) throw new Error("Academy membership is required.");
+  const accessToken = await communityMutationAccessToken(context.userId);
   const { data, error } = await supabase!.rpc("record_academy_quiz_attempt", {
     p_lesson_id: lessonCloudId,
     p_score_percent: scorePercent,
     p_answers: answers,
-  });
+  }).setHeader("Authorization", `Bearer ${accessToken}`);
   if (error) throw error;
   const result = data && typeof data === "object" ? data as Record<string, unknown> : {};
   return {
@@ -995,7 +997,8 @@ export async function verifyAcademyCertificate(verificationCode: string) {
 export async function requestAcademyCertificate(courseId: string) {
   const context = await getAcademyContext();
   if (!context) throw new Error("Academy membership is required.");
-  const { data, error } = await supabase!.rpc("issue_my_academy_certificate", { p_course_id: courseId });
+  const accessToken = await communityMutationAccessToken(context.userId);
+  const { data, error } = await supabase!.rpc("issue_my_academy_certificate", { p_course_id: courseId }).setHeader("Authorization", `Bearer ${accessToken}`);
   if (error) throw error;
   if (!data) throw new Error("Complete every published lesson before requesting the certificate.");
   return String(data);
@@ -1085,7 +1088,8 @@ export async function loadEvents(seed: AcademyEvent[]): Promise<AcademyEvent[]> 
 export async function toggleAcademyEventRsvp(eventCloudId: string) {
   const context = await getAcademyContext();
   if (!context) return null;
-  const { data, error } = await supabase!.rpc("toggle_academy_event_rsvp", { p_event_id: eventCloudId });
+  const accessToken = await communityMutationAccessToken(context.userId);
+  const { data, error } = await supabase!.rpc("toggle_academy_event_rsvp", { p_event_id: eventCloudId }).setHeader("Authorization", `Bearer ${accessToken}`);
   if (error) throw error;
   return Boolean(data);
 }
@@ -1093,7 +1097,8 @@ export async function toggleAcademyEventRsvp(eventCloudId: string) {
 export async function togglePostReaction(cloudPostId: string) {
   const context = await getAcademyContext();
   if (!context) return null;
-  const { data, error } = await supabase!.rpc("toggle_academy_post_reaction", { p_post_id: cloudPostId });
+  const accessToken = await communityMutationAccessToken(context.userId);
+  const { data, error } = await supabase!.rpc("toggle_academy_post_reaction", { p_post_id: cloudPostId }).setHeader("Authorization", `Bearer ${accessToken}`);
   if (error) throw error;
   return Boolean(data);
 }
@@ -1101,7 +1106,8 @@ export async function togglePostReaction(cloudPostId: string) {
 export async function toggleCommentReaction(cloudCommentId: string) {
   const context = await getAcademyContext();
   if (!context) return null;
-  const { data, error } = await supabase!.rpc("toggle_academy_comment_reaction", { p_comment_id: cloudCommentId });
+  const accessToken = await communityMutationAccessToken(context.userId);
+  const { data, error } = await supabase!.rpc("toggle_academy_comment_reaction", { p_comment_id: cloudCommentId }).setHeader("Authorization", `Bearer ${accessToken}`);
   if (error) throw error;
   return Boolean(data);
 }
@@ -1196,7 +1202,8 @@ export async function saveNotificationPreferences(preferences: NotificationPrefe
 export async function togglePostBookmark(cloudPostId: string) {
   const context = await getAcademyContext();
   if (!context) return null;
-  const { data, error } = await supabase!.rpc("toggle_academy_post_bookmark", { p_post_id: cloudPostId });
+  const accessToken = await communityMutationAccessToken(context.userId);
+  const { data, error } = await supabase!.rpc("toggle_academy_post_bookmark", { p_post_id: cloudPostId }).setHeader("Authorization", `Bearer ${accessToken}`);
   if (error) throw error;
   return Boolean(data);
 }
@@ -1204,11 +1211,12 @@ export async function togglePostBookmark(cloudPostId: string) {
 export async function reportAcademyContent(contentType: "post" | "comment" | "member", contentId: string, reason: string) {
   const context = await getAcademyContext();
   if (!context) throw new Error("Academy membership is required.");
+  const accessToken = await communityMutationAccessToken(context.userId);
   const { data, error } = await supabase!.rpc("report_academy_content", {
     p_content_type: contentType,
     p_content_id: contentId,
     p_reason: reason,
-  });
+  }).setHeader("Authorization", `Bearer ${accessToken}`);
   if (error) throw error;
   return String(data);
 }
@@ -1216,7 +1224,8 @@ export async function reportAcademyContent(contentType: "post" | "comment" | "me
 export async function toggleAcademyMemberBlock(memberId: string) {
   const context = await getAcademyContext();
   if (!context) throw new Error("Academy membership is required.");
-  const { data, error } = await supabase!.rpc("toggle_academy_member_block", { p_member_id: memberId });
+  const accessToken = await communityMutationAccessToken(context.userId);
+  const { data, error } = await supabase!.rpc("toggle_academy_member_block", { p_member_id: memberId }).setHeader("Authorization", `Bearer ${accessToken}`);
   if (error) throw error;
   return Boolean(data);
 }
@@ -1234,15 +1243,17 @@ export async function loadBlockedAcademyMemberIds(): Promise<string[]> {
 }
 
 export async function toggleEventRsvp(cloudEventId: string) {
-  if (!(await hasCloudSession())) return null;
-  const { data, error } = await supabase!.rpc("toggle_event_rsvp", { target_event_id: cloudEventId });
+  const accessToken = await cloudMutationAccessToken();
+  if (!accessToken) return null;
+  const { data, error } = await supabase!.rpc("toggle_event_rsvp", { target_event_id: cloudEventId }).setHeader("Authorization", `Bearer ${accessToken}`);
   if (error) throw error;
   return Boolean(data);
 }
 
 export async function setLessonCompletion(cloudLessonId: string, completed: boolean) {
-  if (!(await hasCloudSession())) return;
-  const { error } = await supabase!.rpc("set_lesson_completion", { target_lesson_id: cloudLessonId, is_complete: completed });
+  const accessToken = await cloudMutationAccessToken();
+  if (!accessToken) return;
+  const { error } = await supabase!.rpc("set_lesson_completion", { target_lesson_id: cloudLessonId, is_complete: completed }).setHeader("Authorization", `Bearer ${accessToken}`);
   if (error) throw error;
 }
 
@@ -1295,6 +1306,28 @@ async function getAcademyContext(): Promise<AcademyContext | null> {
     .maybeSingle();
   if (error) throw error;
   return data ? { memberId: data.id, communityId: data.academy_community_id, userId } : null;
+}
+
+/** Recheck after the member lookup, and bind the mutation to that account even
+ * if the SDK changes its current session while preparing the HTTP request. */
+async function communityMutationAccessToken(expectedUserId: string): Promise<string> {
+  const {data,error}=await supabase!.auth.getSession();
+  if(error) throw error;
+  if(data.session?.user.id!==expectedUserId || !data.session.access_token) {
+    throw new Error("The account changed. This action was not submitted.");
+  }
+  return data.session.access_token;
+}
+
+/** Legacy organization actions also use the session observed before RPC creation,
+ * rather than the SDK's mutable current account at fetch time. */
+async function cloudMutationAccessToken(): Promise<string | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  if (!data.session) return null;
+  if (!data.session.access_token) throw new Error("Sign in again before continuing.");
+  return data.session.access_token;
 }
 
 function readLocal<T>(key: string, fallback: T): T {

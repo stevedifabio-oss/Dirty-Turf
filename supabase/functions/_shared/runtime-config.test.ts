@@ -2,6 +2,15 @@ import { describe, expect, it, vi } from "vitest";
 import { loadRuntimeConfig } from "./runtime-config";
 
 describe("server runtime configuration", () => {
+  it("loads missing service-only settings from Vault and keeps explicit disabled overrides", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { STRIPE_SERVICE_CHECKOUT_ENABLED: "true", STRIPE_SERVICE_RECURRING_ENABLED: "true", STRIPE_SERVICE_WEBHOOK_SECRET: "service-fixture", SUPABASE_SERVICE_ROLE_KEY: "forbidden" }, error: null });
+    const config = await loadRuntimeConfig({ rpc }, ["STRIPE_SERVICE_CHECKOUT_ENABLED", "STRIPE_SERVICE_RECURRING_ENABLED", "STRIPE_SERVICE_WEBHOOK_SECRET"], name => name === "STRIPE_SERVICE_CHECKOUT_ENABLED" ? "false" : undefined);
+    expect(rpc).toHaveBeenCalledWith("get_server_runtime_config", { p_names: ["STRIPE_SERVICE_RECURRING_ENABLED", "STRIPE_SERVICE_WEBHOOK_SECRET"] });
+    expect(config.STRIPE_SERVICE_CHECKOUT_ENABLED).toBe("false");
+    expect(config.STRIPE_SERVICE_RECURRING_ENABLED).toBe("true");
+    expect(config.STRIPE_SERVICE_WEBHOOK_SECRET).toBe("service-fixture");
+    expect(config.SUPABASE_SERVICE_ROLE_KEY).toBeUndefined();
+  });
   it("keeps explicit environment overrides, including disabled flags", async () => {
     const rpc = vi.fn();
     const config = await loadRuntimeConfig({ rpc }, ["STRIPE_CHECKOUT_ENABLED"], () => "false");

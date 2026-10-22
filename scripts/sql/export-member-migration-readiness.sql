@@ -14,7 +14,7 @@ with context as (
     and c.external_provider='highlevel'
     and c.external_group_id='7-figure-turf-cleaning'
 ), member_rows as (
-  select m.id,m.academy_community_id,m.user_id,m.status,m.role
+  select m.id,m.academy_community_id,m.user_id,m.status,m.role,m.level
   from public.academy_members m join context c on c.id=m.academy_community_id
 ), invite_rows as (
   select i.id,i.academy_community_id,i.academy_member_id,i.email,i.status,i.invited_user_id
@@ -41,8 +41,11 @@ select jsonb_build_object(
     where l.academy_community_id=c.id and l.external_provider='highlevel'),'[]'::jsonb),
   'invites',coalesce((select jsonb_agg(to_jsonb(i) order by i.id) from invite_rows i),'[]'::jsonb),
   'authUsers',coalesce((select jsonb_agg(to_jsonb(u) order by u.id) from auth_rows u),'[]'::jsonb),
-  'courses',coalesce((select jsonb_agg(jsonb_build_object('id',r.id,'academy_community_id',r.academy_community_id,'status',r.status)
+  'courses',coalesce((select jsonb_agg(jsonb_build_object('id',r.id,'academy_community_id',r.academy_community_id,'status',r.status,'access_type',r.access_type,'required_level',r.required_level)
     order by r.id) from public.courses r where r.academy_community_id=c.id),'[]'::jsonb),
+  'courseAccessDenials',coalesce((select jsonb_agg(jsonb_build_object(
+    'academy_community_id',d.academy_community_id,'academy_member_id',d.academy_member_id,'course_id',d.course_id)
+    order by d.academy_member_id,d.course_id) from public.academy_course_access_denials d where d.academy_community_id=c.id),'[]'::jsonb),
   'accessGrants',coalesce((select jsonb_agg(jsonb_build_object('id',g.id,
     'academy_community_id',g.academy_community_id,'academy_member_id',g.academy_member_id,
     'course_id',g.course_id,'status',g.status,'source_type',g.source_type,

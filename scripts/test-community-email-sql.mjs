@@ -6,7 +6,7 @@ process.on('uncaughtException', e=>{console.error(e.message, e.where || '', e.qu
 const { PGlite } = await import(process.env.PGLITE_MODULE || '@electric-sql/pglite');
 const db = new PGlite();
 await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
-create schema auth; create table auth.users(id uuid primary key,email text,raw_user_meta_data jsonb default '{}');
+create schema auth; create table auth.users(id uuid primary key,email text,raw_user_meta_data jsonb default '{}',email_confirmed_at timestamptz default now(),banned_until timestamptz,deleted_at timestamptz);
 create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
 create function auth.role() returns text language sql stable as $$ select 'authenticated'::text $$;
 create schema storage; create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
@@ -125,6 +125,110 @@ eq(await count("template_key='new_event' and target_id=$1 and status in ('pendin
 const beforeRevoke=await event(3);await db.query("update academy_access_grants set status='revoked' where academy_member_id=$1",[other]);
 await db.query('select * from claim_academy_email_deliveries(100,$1)',[uuid()]);
 eq(await count("template_key='new_event' and target_id=$1 and recipient_member_id=$2 and status='cancelled'",[beforeRevoke,other]),1);
+
+// An explicit course denial must prevent content mail both when queued and after
+// a previously valid delivery is claimed. Own cancellation notices are separate.
+await db.query("update auth.users set email=$1 where id=$2",[user+'@example.com',user]);
+await db.query("insert into academy_course_access_denials(academy_community_id,academy_member_id,course_id) values($1,$2,$3)",[community,member,course]);
+eq((await db.query("select private.academy_notification_access($1,$2,'course',$3,'lesson_published') allowed",[member,community,course])).rows[0].allowed,false);
+const deniedBefore=await count("recipient_member_id=$1 and template_key='lesson_published'",[member]);
+const deniedLesson=uuid();await db.query("insert into course_lessons(id,module_id,title,status) values($1,$2,'Denied lesson','published')",[deniedLesson,module]);
+eq(await count("recipient_member_id=$1 and template_key='lesson_published'",[member]),deniedBefore);
+await db.query("delete from academy_course_access_denials where academy_member_id=$1 and course_id=$2",[member,course]);
+const beforeDenialLesson=uuid();await db.query("insert into course_lessons(id,module_id,title,status) values($1,$2,'Queued before denial','published')",[beforeDenialLesson,module]);
+const beforeDenialDelivery=(await db.query("select id from academy_email_deliveries where recipient_member_id=$1 and payload->>'lessonId'=$2",[member,beforeDenialLesson])).rows[0].id;
+const denialLock=uuid();await db.query("select * from claim_academy_email_deliveries(100,$1)",[denialLock]);
+await db.query("insert into academy_course_access_denials(academy_community_id,academy_member_id,course_id) values($1,$2,$3)",[community,member,course]);
+eq((await db.query("select * from prepare_academy_email_delivery($1,$2)",[beforeDenialDelivery,denialLock])).rows.length,0);
+eq(await count("id=$1 and status='cancelled'",[beforeDenialDelivery]),1);
+// A cancellation email can reference this member's actual former subscription,
+// even after the course is archived, grants revoked and membership suspended.
+const cancelPlan=uuid();await db.query("insert into academy_billing_plans(id,academy_community_id,slug,name,amount_cents,offer_kind,community_access) values($1,$2,'cancel-test','Former course',14995,'course',false)",[cancelPlan,community]);
+await db.query("insert into academy_billing_plan_courses(plan_id,course_id) values($1,$2)",[cancelPlan,course]);
+await db.query("insert into academy_billing_subscriptions(academy_community_id,academy_member_id,plan_id,source_type,source_key,provider_customer_id,provider_subscription_id,status) values($1,$2,$3,'stripe_subscription','synthetic-cancel','cus_synthetic','sub_synthetic','cancelled')",[community,member,cancelPlan]);
+await db.query("update academy_members set status='suspended' where id=$1",[member]);
+await db.query("update academy_access_grants set status='revoked' where academy_member_id=$1",[member]);
+await db.query("update courses set status='archived' where id=$1",[course]);
+eq((await db.query("select private.academy_notification_access($1,$2,'course',$3,'course_subscription_cancelled') allowed",[member,community,course])).rows[0].allowed,true);
+eq((await db.query("select private.academy_notification_access($1,$2,'course',$3,'lesson_published') allowed",[member,community,course])).rows[0].allowed,false);
+const unrelatedCourse=uuid();await db.query("insert into courses(id,organization_id,academy_community_id,title,status,access_type) values($1,$2,$3,'Unrelated course','draft','purchase')",[unrelatedCourse,org,community]);
+eq((await db.query("select private.academy_notification_access($1,$2,'course',$3,'course_subscription_cancelled') allowed",[member,community,unrelatedCourse])).rows[0].allowed,false);
+eq((await db.query("select private.academy_notification_access($1,$2,'community',$2,'group_subscription_cancelled') allowed",[member,community])).rows[0].allowed,true);
+eq((await db.query("select private.academy_notification_access($1,$2,'community',$3,'group_subscription_cancelled') allowed",[member,community,uuid()])).rows[0].allowed,false);
+await db.query("select queue_academy_lifecycle_email($1,$2,'course_subscription_cancelled','synthetic-cancel-receipt','Course cancellation confirmed','Manage your billing','course',$3)",[community,member,course]);
+eq(await count("recipient_member_id=$1 and template_key='course_subscription_cancelled'",[member]),1);
+
+// Digest inventory is recipient-specific, Monday-local, idempotent and based on
+// native visible posts. Recheck after a block/archive change before provider I/O.
+const digestCommunity=uuid(), digestUser=uuid(), authorAUser=uuid(), authorBUser=uuid(), digestMember=uuid(), authorA=uuid(), authorB=uuid();
+for(const id of [digestUser,authorAUser,authorBUser]) await db.query("insert into auth.users(id,email) values($1,$2)",[id,id+'@example.test']);
+await db.query("insert into academy_communities(id,owner_organization_id,name,slug,portal_url) values($1,$2,'Digest test','digest-test','https://example.test')",[digestCommunity,org]);
+for(const [id,uid] of [[digestMember,digestUser],[authorA,authorAUser],[authorB,authorBUser]]) {
+ await db.query("insert into academy_members(id,academy_community_id,user_id,display_name) values($1,$2,$3,'Synthetic')",[id,digestCommunity,uid]);
+ await db.query("insert into academy_access_grants(academy_community_id,academy_member_id,source_type,source_key) values($1,$2,'manual','synthetic-digest')",[digestCommunity,id]);
+}
+await db.query("insert into notification_preferences(user_id,timezone) values($1,'UTC')",[digestUser]);
+const monday=(await db.query("select (date_trunc('week',now() at time zone 'UTC')+interval '9 hours') at time zone 'UTC' monday")).rows[0].monday;
+const nativeA=uuid(),nativeB=uuid(),future=uuid(),importedPost=uuid(),importBatch=uuid(),digestCategory=uuid();
+await db.query("insert into community_categories(id,organization_id,academy_community_id,name,member_can_post) values($1,$2,$3,'Digest General',true)",[digestCategory,org,digestCommunity]);
+await db.query("insert into source_import_batches(id,academy_community_id,status) values($1,$2,'imported')",[importBatch,digestCommunity]);
+for(const [id,author,uid,batch,futurePost] of [[nativeA,authorA,authorAUser,null,false],[nativeB,authorB,authorBUser,null,false],[future,authorB,authorBUser,null,true],[importedPost,authorB,authorBUser,importBatch,false]]) {
+ await db.query("select set_config('request.jwt.claim.sub',$1,false)",[uid]);
+ await db.query("insert into community_posts(id,organization_id,author_id,academy_community_id,academy_author_id,title,body,status,source_import_batch_id,created_at,category_id) values($1,$2,$3,$4,$5,'Synthetic digest post','Example','published',$6,case when $8 then now()+interval '1 day' else $7::timestamptz-interval '1 day' end,$9)",[id,org,uid,digestCommunity,author,batch,monday,futurePost,digestCategory]);
+}
+await db.exec("select set_config('request.jwt.claim.sub','',false)");
+eq((await db.query("select private.academy_visible_digest_post_count($1,$2,$3) count",[digestMember,digestCommunity,monday])).rows[0].count,2);
+await db.query("insert into academy_member_blocks(academy_community_id,blocker_member_id,blocked_member_id) values($1,$2,$3)",[digestCommunity,digestMember,authorA]);
+eq((await db.query("select private.academy_visible_digest_post_count($1,$2,$3) count",[digestMember,digestCommunity,monday])).rows[0].count,1);
+await db.query("select queue_academy_scheduled_notifications($1)",[monday]);await db.query("select queue_academy_scheduled_notifications($1)",[monday]);
+eq(await count("recipient_member_id=$1 and template_key='weekly_digest'",[digestMember]),1);
+let digestRow=(await db.query("select * from academy_email_deliveries where recipient_member_id=$1 and template_key='weekly_digest'",[digestMember])).rows[0];
+eq(digestRow.detail,'1 new discussion this week.');eq(digestRow.payload.postCount,1);
+await db.query("delete from academy_member_blocks where academy_community_id=$1 and blocker_member_id=$2",[digestCommunity,digestMember]);
+const digestLock=uuid();await db.query("select * from claim_academy_email_deliveries(100,$1)",[digestLock]);
+let preparedDigest=(await db.query("select * from prepare_academy_email_delivery($1,$2)",[digestRow.id,digestLock])).rows[0];
+eq(preparedDigest.payload.postCount,2);eq(preparedDigest.detail,'2 new discussions this week.');
+await db.query("select set_config('request.jwt.claim.sub',$1,false)",[owner]);
+await db.query("update community_posts set status='archived' where id in ($1,$2)",[nativeA,nativeB]);
+eq((await db.query("select * from prepare_academy_email_delivery($1,$2)",[digestRow.id,digestLock])).rows.length,0);
+eq(await count("id=$1 and status='cancelled'",[digestRow.id]),1);
+// A fresh pending notification cannot bypass a changed Auth restriction.
+await db.query("update community_posts set status='published' where id=$1",[nativeB]);
+await db.query("select queue_academy_lifecycle_email($1,$2,'role_changed','auth-restriction-1','Role update','Open your account')",[digestCommunity,digestMember]);
+const authDelivery=(await db.query("select * from academy_email_deliveries where recipient_member_id=$1 and idempotency_key like '%auth-restriction-1%'",[digestMember])).rows[0];
+eq((await db.query("select private.academy_email_eligible(d) allowed from academy_email_deliveries d where id=$1",[authDelivery.id])).rows[0].allowed,true);
+for(const [column,value] of [['banned_until','2099-01-01T00:00:00Z'],['deleted_at','2026-10-01T00:00:00Z'],['email_confirmed_at',null]]) {
+ await db.query(`update auth.users set ${column}=$1 where id=$2`,[value,digestUser]);
+ eq((await db.query("select private.academy_email_eligible(d) allowed from academy_email_deliveries d where id=$1",[authDelivery.id])).rows[0].allowed,false);
+ await db.query(`update auth.users set ${column}=$1 where id=$2`,[column==='email_confirmed_at'?new Date().toISOString():null,digestUser]);
+}
+// Queued snippets must not preserve text which has since been edited or removed.
+// A reply also inherits visibility of its parent post's author.
+await db.query("select set_config('request.jwt.claim.sub',$1,false)",[authorAUser]);
+const editableComment=uuid();
+await db.query("insert into community_comments(id,organization_id,post_id,author_id,academy_community_id,academy_author_id,body) values($1,$2,$3,$4,$5,$6,'Old synthetic comment')",[editableComment,org,nativeB,authorAUser,digestCommunity,authorA]);
+await db.query("insert into academy_content_mentions(academy_community_id,actor_member_id,mentioned_member_id,comment_id) values($1,$2,$3,$4)",[digestCommunity,authorA,digestMember,editableComment]);
+const editableDelivery=(await db.query("select id from academy_email_deliveries where recipient_member_id=$1 and payload->>'commentId'=$2",[digestMember,editableComment])).rows[0].id;
+const editLock=uuid();await db.query("select * from claim_academy_email_deliveries(100,$1)",[editLock]);
+await db.query("update community_comments set body='Current synthetic comment' where id=$1",[editableComment]);
+await db.query("select set_config('request.jwt.claim.sub',$1,false)",[authorBUser]);
+await db.query("update community_posts set title='Current synthetic title',body='Current synthetic body' where id=$1",[nativeB]);
+const editPrepared=(await db.query("select * from prepare_academy_email_delivery($1,$2)",[editableDelivery,editLock])).rows[0];
+eq(editPrepared.payload.excerpt,'Current synthetic comment');eq(editPrepared.detail,'Current synthetic title');
+await db.query("select set_config('request.jwt.claim.sub',$1,false)",[owner]);
+await db.query("select admin_remove_community_comment($1)",[editableComment]);
+eq((await db.query("select * from prepare_academy_email_delivery($1,$2)",[editableDelivery,editLock])).rows.length,0);
+eq(await count("id=$1 and status='cancelled'",[editableDelivery]),1);
+await db.query("select set_config('request.jwt.claim.sub',$1,false)",[authorAUser]);
+const blockedParentComment=uuid();
+await db.query("insert into community_comments(id,organization_id,post_id,author_id,academy_community_id,academy_author_id,body) values($1,$2,$3,$4,$5,$6,'Another synthetic comment')",[blockedParentComment,org,nativeB,authorAUser,digestCommunity,authorA]);
+await db.query("insert into academy_content_mentions(academy_community_id,actor_member_id,mentioned_member_id,comment_id) values($1,$2,$3,$4)",[digestCommunity,authorA,digestMember,blockedParentComment]);
+const blockedParentDelivery=(await db.query("select id from academy_email_deliveries where recipient_member_id=$1 and payload->>'commentId'=$2",[digestMember,blockedParentComment])).rows[0].id;
+const parentLock=uuid();await db.query("select * from claim_academy_email_deliveries(100,$1)",[parentLock]);
+await db.query("insert into academy_member_blocks(academy_community_id,blocker_member_id,blocked_member_id) values($1,$2,$3)",[digestCommunity,digestMember,authorB]);
+eq((await db.query("select * from prepare_academy_email_delivery($1,$2)",[blockedParentDelivery,parentLock])).rows.length,0);
+eq(await count("id=$1 and status='cancelled'",[blockedParentDelivery]),1);
+await db.query("delete from academy_member_blocks where academy_community_id=$1 and blocker_member_id=$2",[digestCommunity,digestMember]);
 for(const signature of ['queue_academy_lifecycle_email(uuid,uuid,text,text,text,text,text,uuid,jsonb)','prepare_academy_email_delivery(uuid,uuid)','claim_academy_email_deliveries(integer,uuid)']) {
  eq((await db.query("select has_function_privilege('anon',$1,'execute') allowed",[signature])).rows[0].allowed,false);
  eq((await db.query("select has_function_privilege('authenticated',$1,'execute') allowed",[signature])).rows[0].allowed,false);

@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { createElement, useEffect, useRef, useState } from "react";
 import { COMMUNITY_TERMS_VERSION } from "../lib/termsConsent";
 import { useModalDialog } from "../lib/useModalDialog";
 import { loadLegalDocument, type LegalDocumentName } from "../lib/legalDocument";
+import { legalReaderNodes, type LegalReaderNode } from "../lib/legalReader";
 
 export function TermsChoice({ checked, onChange, disabled = false }: { checked: boolean; onChange: (checked: boolean) => void; disabled?: boolean }) {
   const [document, setDocument] = useState<"terms" | "privacy" | null>(null);
@@ -14,22 +15,26 @@ export function TermsChoice({ checked, onChange, disabled = false }: { checked: 
 
 function LegalDocument({ document, onDocumentChange, onClose }: { document: LegalDocumentName; onDocumentChange: (document: LegalDocumentName) => void; onClose: () => void }) {
   const dialogRef = useRef<HTMLElement>(null);
-  const [html, setHtml] = useState<string>();
+  const [content, setContent] = useState<LegalReaderNode[]>();
   const [error, setError] = useState(false);
   const [retry, setRetry] = useState(0);
   useModalDialog(dialogRef, onClose);
   useEffect(() => {
     const controller = new AbortController(); let active = true;
-    setHtml(undefined); setError(false);
-    void loadLegalDocument(document, controller.signal).then(value => { if (active) setHtml(value); }).catch(() => { if (active) setError(true); });
+    setContent(undefined); setError(false);
+    void loadLegalDocument(document, controller.signal).then(value => { if (active) setContent(legalReaderNodes(value)); }).catch(() => { if (active) setError(true); });
     return () => { active = false; controller.abort(); };
   }, [document, retry]);
   const title = document === "terms" ? "Terms of Use and Community Rules" : "Privacy Policy";
   return <div className="legal-document-backdrop"><section ref={dialogRef} className="legal-document-dialog" role="dialog" aria-modal="true" aria-labelledby="legal-document-title">
     <header><h2 id="legal-document-title">{title}</h2><button type="button" className="secondary-button" onClick={onClose} data-dialog-autofocus>Close</button></header>
     <nav className="legal-document-tabs" aria-label="Legal documents"><button type="button" className="secondary-button" aria-pressed={document === "terms"} onClick={() => onDocumentChange("terms")}>Terms and Community Rules</button><button type="button" className="secondary-button" aria-pressed={document === "privacy"} onClick={() => onDocumentChange("privacy")}>Privacy Policy</button></nav>
-    {html ? <iframe srcDoc={html} title={title} sandbox="" tabIndex={0} /> : <div className="legal-document-status" role={error ? "alert" : "status"}>{error ? <><p>This document could not load. Reconnect and try again.</p><button type="button" className="secondary-button" onClick={() => setRetry(value => value + 1)}>Retry</button></> : <p>Loading {title.toLowerCase()}…</p>}</div>}
+    {content ? <div className="legal-document-content" role="document" aria-label={title} tabIndex={0}>{renderLegalContent(content)}</div> : <div className="legal-document-status" role={error ? "alert" : "status"}>{error ? <><p>This document could not load. Reconnect and try again.</p><button type="button" className="secondary-button" onClick={() => setRetry(value => value + 1)}>Retry</button></> : <p>Loading {title.toLowerCase()}…</p>}</div>}
   </section></div>;
+}
+
+function renderLegalContent(nodes: LegalReaderNode[]): React.ReactNode[] {
+  return nodes.map((node, index) => typeof node === "string" ? node : createElement(node.tag, { key: index, className: node.className }, ...renderLegalContent(node.children)));
 }
 
 export function CommunityTermsGate({ onAccept, onSignOut, pendingLink = false }: { onAccept: () => void; onSignOut: () => Promise<void>; pendingLink?: boolean }) {

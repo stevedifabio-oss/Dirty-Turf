@@ -1,4 +1,6 @@
 import { supabase } from "./backend";
+import { ADMIN_LESSON_BLOCK_IMAGE_LIMIT_BYTES, ADMIN_LESSON_BLOCK_VIDEO_LIMIT_BYTES, ADMIN_LESSON_DOWNLOAD_LIMIT_BYTES } from "./lessonUploadLimits";
+export { ADMIN_LESSON_BLOCK_IMAGE_LIMIT_BYTES, ADMIN_LESSON_BLOCK_VIDEO_LIMIT_BYTES, ADMIN_LESSON_DOWNLOAD_LIMIT_BYTES } from "./lessonUploadLimits";
 
 export type AdminStatus = "draft" | "published" | "archived";
 
@@ -23,6 +25,7 @@ export type AdminModule = {
   groupTitle: string;
   sortOrder: number;
   dripAfterDays: number | null;
+  memberVisibility?: "visible" | "source-hidden" | "source-archived";
   lessons: AdminLesson[];
 };
 
@@ -148,7 +151,7 @@ export async function loadAdminSnapshot(): Promise<AdminSnapshot> {
   const context = await requireAdminContext();
   const [courseResult, moduleResult, lessonResult, memberResult, inviteResult, enrollmentResult, progressResult, eventResult, rsvpResult, categoryResult, postResult, commentResult, reportResult, templateResult, certificateResult, quizResult] = await Promise.all([
     supabase!.from("courses").select("id,title,description,category,instructor_name,access_type,required_level,price_cents,sort_order,status").eq("academy_community_id", context.communityId).order("sort_order"),
-    supabase!.from("course_modules").select("id,course_id,title,group_title,sort_order,drip_after_days").order("sort_order"),
+    supabase!.from("course_modules").select("id,course_id,title,group_title,sort_order,drip_after_days,source_archived_at,source_visibility,sync_owner").order("sort_order"),
     supabase!.from("course_lessons").select("id,module_id,title,lesson_type,body,video_url,transcript,resources,duration_seconds,sort_order,status").order("sort_order"),
     supabase!.from("academy_members").select("id,user_id,display_name,company_name,location,role,status,level,points").eq("academy_community_id", context.communityId).order("display_name"),
     supabase!.from("academy_member_invites").select("academy_member_id,email,status").eq("academy_community_id", context.communityId),
@@ -196,6 +199,7 @@ export async function loadAdminSnapshot(): Promise<AdminSnapshot> {
       groupTitle: row.group_title ?? "",
       sortOrder: Number(row.sort_order),
       dripAfterDays: row.drip_after_days,
+      memberVisibility: row.source_archived_at ? "source-archived" : row.sync_owner === "highlevel" && row.source_visibility === "draft" ? "source-hidden" : "visible",
       lessons: lessonsByModule.get(row.id) ?? [],
     };
     modulesByCourse.set(row.course_id, [...(modulesByCourse.get(row.course_id) ?? []), module]);
@@ -416,6 +420,54 @@ export async function updateAdminMember(memberId: string, changes: Partial<Pick<
 }
 
 export type AdminMemberInviteResult = { processed?: number; failed?: number; [key: string]: unknown };
+export type AdminMemberInviteAction = "provision" | "notify";
+export type AdminMemberInviteCandidate = { academyMemberId: string; inviteId: string; email: string; displayName: string; inviteStatus: string };
+export type AdminMemberInvitePreview = {
+  dryRun: true;
+  previewAction: AdminMemberInviteAction;
+  candidates: AdminMemberInviteCandidate[];
+  selected: AdminMemberInviteCandidate[];
+  blocked: { academyMemberId: string; reason: string }[];
+  previewToken: string | null;
+  previewExpiresAt: string | null;
+};
+
+function checkedMemberSelection(action: AdminMemberInviteAction, memberIds: string[]) {
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!Array.isArray(memberIds) || memberIds.length > (action === "notify" ? 25 : 50) || memberIds.some(id => typeof id !== "string" || !uuid.test(id)) || new Set(memberIds).size !== memberIds.length) {
+    throw new Error(`Select exact members, up to ${action === "notify" ? 25 : 50} at a time, then review the preview.`);
+  }
+  return [...memberIds].sort();
+}
+
+async function memberActionResponse(body: Record<string, unknown>) {
+  const context = await requireAdminContext();
+  const { data, error } = await supabase!.functions.invoke("academy-invite-members", { body: { academyCommunityId: context.communityId, ...body } });
+  if (error) {
+    // Function errors may include a useful safe boundary-validation message.
+    let detail: unknown;
+    try { detail = await error.context?.clone().json(); } catch { /* Preserve the transport error. */ }
+    if (isRecord(detail) && typeof detail.error === "string" && detail.error.length <= 500) throw new Error(detail.error);
+    throw error;
+  }
+  if (!isRecord(data)) throw new Error("The member action returned no result. Refresh member status before retrying.");
+  return data;
+}
+
+export async function previewMemberInviteAction(action: AdminMemberInviteAction, memberIds: string[] = []): Promise<AdminMemberInvitePreview> {
+  const academyMemberIds = checkedMemberSelection(action, memberIds);
+  const data = await memberActionResponse({ action: "preview", previewAction: action, ...(academyMemberIds.length ? { academyMemberIds } : {}) });
+  const validCandidates = (value: unknown): value is AdminMemberInviteCandidate[] => Array.isArray(value) && value.every(row => isRecord(row) &&
+    [row.academyMemberId, row.inviteId, row.email, row.displayName, row.inviteStatus].every(field => typeof field === "string"));
+  if (data.dryRun !== true || data.previewAction !== action || !validCandidates(data.candidates) || !validCandidates(data.selected) || !Array.isArray(data.blocked) ||
+    !data.blocked.every(row => isRecord(row) && typeof row.academyMemberId === "string" && typeof row.reason === "string") ||
+    (data.previewToken !== null && typeof data.previewToken !== "string") || (data.previewExpiresAt !== null && (typeof data.previewExpiresAt !== "string" || !Number.isFinite(Date.parse(data.previewExpiresAt))))) {
+    throw new Error("Exact member preview is unavailable. Deploy the reviewed account-setup update before preparing accounts or sending emails.");
+  }
+  if (data.selected.some(row => !academyMemberIds.includes(row.academyMemberId)) || new Set(data.selected.map(row => row.academyMemberId)).size !== data.selected.length ||
+    (data.previewToken && (data.blocked.length || data.selected.length !== academyMemberIds.length || !academyMemberIds.length))) throw new Error("The preview does not match your selected members. Refresh and review again.");
+  return data as unknown as AdminMemberInvitePreview;
+}
 
 export class MemberInvitePartialFailure extends Error {
   constructor(readonly action: "provision" | "notify", readonly result: AdminMemberInviteResult) {
@@ -426,13 +478,24 @@ export class MemberInvitePartialFailure extends Error {
   }
 }
 
-export async function runMemberInviteAction(action: "provision" | "notify") {
-  const context = await requireAdminContext();
-  const { data, error } = await supabase!.functions.invoke("academy-invite-members", { body: { academyCommunityId: context.communityId, action, limit: action === "notify" ? 25 : 50 } });
-  if (error) throw error;
-  if (!isRecord(data)) throw new Error("The member action returned no result. Refresh member status before retrying.");
+export async function runMemberInviteAction(action: AdminMemberInviteAction, selection: { memberIds: string[]; inviteIds: string[]; previewToken: string; previewExpiresAt: string }) {
+  const academyMemberIds = checkedMemberSelection(action, selection?.memberIds);
+  if (!academyMemberIds.length || !Array.isArray(selection?.inviteIds) || selection.inviteIds.length !== academyMemberIds.length ||
+    selection.inviteIds.some(id => typeof id !== "string" || !id) || new Set(selection.inviteIds).size !== selection.inviteIds.length ||
+    typeof selection?.previewToken !== "string" || !selection.previewToken || selection.previewToken.length > 10000 ||
+    !Number.isFinite(Date.parse(selection.previewExpiresAt)) || Date.parse(selection.previewExpiresAt) <= Date.now()) throw new Error("Review a fresh preview of the selected members before continuing.");
+  const data = await memberActionResponse({ action, academyMemberIds, previewToken: selection.previewToken, limit: academyMemberIds.length });
+  const allowedStatuses = action === "notify" ? ["sent", "failed"] : ["provisioned", "accepted", "failed"];
+  if (data.action !== action || !Number.isInteger(data.processed) || (data.processed as number) < 0 || (data.processed as number) > academyMemberIds.length ||
+    !Number.isInteger(data.failed) || (data.failed as number) < 0 || (data.failed as number) > (data.processed as number) ||
+    !Array.isArray(data.results) || data.results.length !== data.processed || data.results.some(row => !isRecord(row) || typeof row.inviteId !== "string" || !selection.inviteIds.includes(row.inviteId) || !allowedStatuses.includes(String(row.status))) ||
+    new Set(data.results.map(row => (row as Record<string, unknown>).inviteId)).size !== data.results.length ||
+    data.results.filter(row => (row as Record<string, unknown>).status === "failed").length !== data.failed) {
+    throw new Error("The selected member action could not be confirmed. Refresh member statuses and review a new preview before retrying.");
+  }
   const result = data as AdminMemberInviteResult;
   if (typeof result.failed === "number" && result.failed > 0) throw new MemberInvitePartialFailure(action, result);
+  if (data.processed !== academyMemberIds.length) throw new Error("The selected member batch was incomplete. Refresh member statuses and review the remaining exact members.");
   return result;
 }
 
@@ -468,32 +531,59 @@ export async function revokeAdminCertificate(certificateId: string, reason: stri
 }
 
 export async function uploadAdminLessonAsset(file: File, courseId: string, lessonId: string) {
-  const context = await requireAdminContext();
-  const safeName = file.name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "asset";
+  const mimeType = validateAdminLessonDownload(file);
+  // Prove the exact lesson owner before starting Storage work, as we do for
+  // inline media. A bad/stale selection must not create an orphan upload.
+  const context = await requireAdminLessonContext(courseId, lessonId);
+  const safeName = file.name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(-160) || "asset";
   const path = `${context.communityId}/${courseId}/${lessonId}/${crypto.randomUUID()}-${safeName}`;
-  const { error: uploadError } = await supabase!.storage.from("academy-assets").upload(path, file, { contentType: file.type || undefined, upsert: false });
-  if (uploadError) throw uploadError;
-  const assetType = file.type.startsWith("video/") ? "video" : file.type.startsWith("audio/") ? "audio" : file.type.startsWith("image/") ? "image" : file.type === "application/pdf" ? "pdf" : "document";
+  const { error: uploadError } = await supabase!.storage.from("academy-assets").upload(path, file, { contentType: mimeType, upsert: false });
+  if (uploadError) throw lessonUploadError(uploadError);
+  const assetType = mimeType.startsWith("audio/") ? "audio" : mimeType === "application/pdf" ? "pdf" : "document";
   const { error: assetError } = await supabase!.rpc("admin_attach_academy_lesson_asset", {
     p_academy_community_id: context.communityId,
     p_course_id: courseId,
     p_lesson_id: lessonId,
-    p_title: file.name,
+    p_title: file.name.trim().slice(0, 180),
     p_asset_type: assetType,
     p_storage_bucket: "academy-assets",
     p_storage_path: path,
-    p_mime_type: file.type || "",
+    p_mime_type: mimeType,
     p_byte_size: file.size,
   });
   if (assetError) {
-    await supabase!.storage.from("academy-assets").remove([path]);
+    try { await supabase!.storage.from("academy-assets").remove([path]); } catch { /* Preserve the attachment error. */ }
     throw assetError;
   }
   return path;
 }
 
-export const ADMIN_LESSON_BLOCK_IMAGE_LIMIT_BYTES = 20 * 1024 * 1024;
-export const ADMIN_LESSON_BLOCK_VIDEO_LIMIT_BYTES = 500 * 1024 * 1024;
+const lessonDocumentTypes = new Set(["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]);
+const lessonDownloadExtensions: Record<string, string> = { pdf: "application/pdf", doc: "application/msword", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", mp3: "audio/mpeg", m4a: "audio/mp4", wav: "audio/wav", ogg: "audio/ogg", flac: "audio/flac", aac: "audio/aac" };
+
+function validateAdminLessonDownload(file: File): string {
+  if (!file || !Number.isSafeInteger(file.size) || file.size <= 0) throw new Error("Choose a file that is not empty.");
+  if (file.size > ADMIN_LESSON_DOWNLOAD_LIMIT_BYTES) throw new Error("Lesson downloads must be 20 MB or smaller. Use a resource link for a larger file.");
+  if (typeof file.name !== "string" || !file.name.trim()) throw new Error("This file has no name. Choose it again.");
+  const suppliedType = typeof file.type === "string" ? file.type.trim().toLowerCase() : "";
+  // Some browsers leave MIME blank for Office/audio files. Only infer it for
+  // these explicit supported extensions, never for an arbitrary file type.
+  const extension = file.name.trim().split(".").pop()?.toLowerCase() ?? "";
+  const mimeType = suppliedType || lessonDownloadExtensions[extension] || "";
+  if (!lessonDocumentTypes.has(mimeType) && !/^audio\/[a-z0-9.+-]{1,80}$/.test(mimeType)) throw new Error("Choose a PDF, Word document or audio file up to 20 MB.");
+  return mimeType;
+}
+
+function lessonUploadError(error: unknown): unknown {
+  if (!isRecord(error)) return error;
+  const status = String(error.statusCode ?? error.status ?? "");
+  const message = typeof error.message === "string" ? error.message : "";
+  if (status === "413" || error.code === "EntityTooLarge" || /(?:exceed(?:s|ed)?\s+(?:the\s+)?maximum\s+allowed\s+size|payload too large|maximum (?:file|upload) size)/i.test(message)) {
+    return new Error("The storage service rejected this file's size. Choose a smaller file or paste a media/resource link instead. Your saved lesson is kept. Check the project's global Storage upload limit before retrying a large file.");
+  }
+  return error;
+}
+
 export const ADMIN_LESSON_BLOCK_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"] as const;
 export const ADMIN_LESSON_BLOCK_VIDEO_TYPES = ["video/mp4", "video/webm", "video/quicktime"] as const;
 
@@ -505,7 +595,7 @@ export async function uploadAdminLessonBlockAsset(file: File, courseId: string, 
   if (!image && !video) throw new Error("Choose a JPG, PNG, WebP, GIF, AVIF, MP4, WebM or MOV file.");
   const sizeLimit = image ? ADMIN_LESSON_BLOCK_IMAGE_LIMIT_BYTES : ADMIN_LESSON_BLOCK_VIDEO_LIMIT_BYTES;
   if (!Number.isSafeInteger(file.size) || file.size <= 0) throw new Error("Choose a file that is not empty.");
-  if (file.size > sizeLimit) throw new Error(`${image ? "Images" : "Videos"} must be ${image ? "20" : "500"} MB or smaller.`);
+  if (file.size > sizeLimit) throw new Error(image ? "Images must be 20 MB or smaller." : "Videos must be 50 MB or smaller. Use a video link for a larger video.");
   if (typeof file.name !== "string" || !file.name.trim()) throw new Error("This file has no name. Choose it again.");
   const context = await requireAdminLessonContext(courseId, lessonId);
   const assetId = crypto.randomUUID();
@@ -513,7 +603,7 @@ export async function uploadAdminLessonBlockAsset(file: File, courseId: string, 
   const path = `${context.communityId}/${courseId}/${lessonId}/${assetId}-${safeName}`;
   const bucket = supabase!.storage.from("academy-assets");
   const { error: uploadError } = await bucket.upload(path, file, { contentType: mimeType, upsert: false });
-  if (uploadError) throw uploadError;
+  if (uploadError) throw lessonUploadError(uploadError);
 
   const { error: assetError } = await supabase!.from("academy_assets").insert({
     id: assetId,
