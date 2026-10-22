@@ -1,6 +1,5 @@
 import type { CommunityPost } from "../domain";
 import type { CommunityPostCursor } from "./backend";
-import { createCourseRefresh } from "./courseRefresh";
 
 type PostPage = { posts: CommunityPost[]; hasMore: boolean; nextCursor?: CommunityPostCursor };
 export type CommunityPostWindow = PostPage & { complete: boolean };
@@ -42,7 +41,7 @@ export function mergeCommunityPostWindow(current: CommunityPost[], fresh: Commun
   return [...fresh.posts, ...current.filter(post => !ids.has(post.cloudId ?? post.id))];
 }
 
-/** Coalesce focus/online/native-resume bursts; old reads cannot undo member writes. */
+/** Retain database changes through bursts and guarded reads; never undo member writes. */
 export function createCommunityRefresh<T>(options: {
   load: () => Promise<T>;
   apply: (value: T) => void;
@@ -52,15 +51,63 @@ export function createCommunityRefresh<T>(options: {
   onError?: () => void;
   onSuccess?: () => void;
 }) {
+  let disposed = false;
+  let pending = false;
+  let dirty = false;
+  let generation = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   let lastStarted = -Infinity;
   const now = options.now ?? Date.now;
-  const refresh = createCourseRefresh({
-    ...options,
-    load: () => { lastStarted = now(); return options.load(); },
-  });
+
+  const clearTimer = () => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+  };
+  const schedule = () => {
+    if (disposed || pending || !dirty || timer !== undefined) return;
+    const remaining = Math.max(0, 15_000 - (now() - lastStarted));
+    // While drafting, playing media or loading pages, only recheck the guard.
+    const delay = options.eligible() ? remaining : Math.max(remaining, 1_000);
+    timer = setTimeout(() => { timer = undefined; void refresh(); }, delay);
+  };
+  const refresh = async () => {
+    if (disposed || pending) return;
+    if (!options.eligible() || now() - lastStarted < 15_000) { schedule(); return; }
+    clearTimer();
+    pending = true;
+    lastStarted = now();
+    const activeGeneration = generation;
+    const version = options.version();
+    const requestedByChange = dirty;
+    dirty = false;
+    try {
+      const value = await options.load();
+      if (disposed || generation !== activeGeneration) return;
+      if (options.eligible() && options.version() === version) {
+        options.apply(value);
+        options.onSuccess?.();
+      } else if (requestedByChange) dirty = true;
+    } catch {
+      if (!disposed && generation === activeGeneration) {
+        if (requestedByChange) dirty = true;
+        if (options.eligible() && options.version() === version) options.onError?.();
+      }
+    } finally {
+      if (generation === activeGeneration) { pending = false; schedule(); }
+    }
+  };
+  const reset = () => {
+    generation += 1;
+    pending = false;
+    dirty = false;
+    lastStarted = -Infinity;
+    clearTimer();
+  };
   return {
-    refresh: () => now() - lastStarted < 15_000 ? Promise.resolve() : refresh.refresh(),
-    dispose: refresh.dispose,
+    refresh,
+    invalidate: () => { if (!disposed) { dirty = true; void refresh(); } },
+    reset,
+    dispose: () => { disposed = true; reset(); },
   };
 }
 

@@ -296,6 +296,15 @@ export async function loadAdminSnapshot(): Promise<AdminSnapshot> {
 
 export async function saveAdminCourse(input: Partial<AdminCourse> & Pick<AdminCourse, "title">) {
   const context = await requireAdminContext();
+  const status = input.status ?? "draft";
+  let firstPublication = status === "published";
+  if (input.id) {
+    const { data: current, error } = await supabase!.from("courses").select("published_at")
+      .eq("id", input.id).eq("academy_community_id", context.communityId).single();
+    if (error) throw error;
+    if (!current) throw new Error("The course is no longer available. Refresh and try again.");
+    firstPublication = status === "published" && !current.published_at;
+  }
   const values = {
     academy_community_id: context.communityId,
     organization_id: context.organizationId,
@@ -307,10 +316,15 @@ export async function saveAdminCourse(input: Partial<AdminCourse> & Pick<AdminCo
     required_level: input.accessType === "level" ? input.requiredLevel ?? 1 : null,
     price_cents: input.accessType === "purchase" ? input.priceCents ?? 0 : null,
     sort_order: input.sortOrder ?? 0,
-    status: input.status ?? "draft",
-    published_at: input.status === "published" ? new Date().toISOString() : null,
+    status,
+    // Keep the original publication date through edits, archiving and republishing.
+    ...(firstPublication ? { published_at: new Date().toISOString() } : input.id ? {} : { published_at: null }),
   };
-  const query = input.id ? supabase!.from("courses").update(values).eq("id", input.id) : supabase!.from("courses").insert(values);
+  let query = input.id
+    ? supabase!.from("courses").update(values).eq("id", input.id).eq("academy_community_id", context.communityId)
+    : supabase!.from("courses").insert(values);
+  // A concurrent first publication must not be overwritten by this editor's read.
+  if (input.id && firstPublication) query = query.is("published_at", null);
   const { data, error } = await query.select("id").single();
   if (error) throw error;
   return data.id;
@@ -318,18 +332,23 @@ export async function saveAdminCourse(input: Partial<AdminCourse> & Pick<AdminCo
 
 export async function saveAdminModule(input: Partial<AdminModule> & Pick<AdminModule, "courseId" | "title">) {
   const values = { course_id: input.courseId, title: input.title.trim(), group_title: input.groupTitle?.trim() || null, sort_order: input.sortOrder ?? 0, drip_after_days: input.dripAfterDays ?? null };
-  const query = input.id ? supabase!.from("course_modules").update(values).eq("id", input.id) : supabase!.from("course_modules").insert(values);
-  const { data, error } = await query.select("id").single();
-  if (error) throw error;
-  return data.id;
+  const id = input.id ?? crypto.randomUUID();
+  const query = input.id ? supabase!.from("course_modules").update(values).eq("id", id) : supabase!.from("course_modules").insert({ id, ...values });
+  // Visibility helpers re-read rows in a STABLE snapshot, so INSERT RETURNING
+  // rejects authorized new rows. A successful minimal insert confirms this ID;
+  // a second read could fail after commit and make a retry create a duplicate.
+  const result = input.id ? await query.select("id").single() : await query;
+  if (result.error) throw result.error;
+  return input.id ? result.data!.id : id;
 }
 
 export async function saveAdminLesson(input: Partial<AdminLesson> & Pick<AdminLesson, "moduleId" | "title">) {
   const values = { module_id: input.moduleId, title: input.title.trim(), lesson_type: input.lessonType ?? "guide", body: input.body ?? {}, video_url: input.videoUrl?.trim() || null, transcript: input.transcript?.trim() || null, resources: input.resources ?? [], duration_seconds: input.durationSeconds ?? 0, sort_order: input.sortOrder ?? 0, status: input.status ?? "draft" };
-  const query = input.id ? supabase!.from("course_lessons").update(values).eq("id", input.id) : supabase!.from("course_lessons").insert(values);
-  const { data, error } = await query.select("id").single();
-  if (error) throw error;
-  return data.id;
+  const id = input.id ?? crypto.randomUUID();
+  const query = input.id ? supabase!.from("course_lessons").update(values).eq("id", id) : supabase!.from("course_lessons").insert({ id, ...values });
+  const result = input.id ? await query.select("id").single() : await query;
+  if (result.error) throw result.error;
+  return input.id ? result.data!.id : id;
 }
 
 export async function saveAdminEvent(input: Partial<AdminEvent> & Pick<AdminEvent, "title" | "startsAt" | "endsAt">) {
@@ -396,11 +415,25 @@ export async function updateAdminMember(memberId: string, changes: Partial<Pick<
   if (error) throw error;
 }
 
+export type AdminMemberInviteResult = { processed?: number; failed?: number; [key: string]: unknown };
+
+export class MemberInvitePartialFailure extends Error {
+  constructor(readonly action: "provision" | "notify", readonly result: AdminMemberInviteResult) {
+    const label = action === "notify" ? "Sign-in email batch" : "Account preparation";
+    const processed = typeof result.processed === "number" ? ` (${result.processed} processed)` : "";
+    super(`${label} finished with ${result.failed} failure${result.failed === 1 ? "" : "s"}${processed}. Review member status before retrying.`);
+    this.name = "MemberInvitePartialFailure";
+  }
+}
+
 export async function runMemberInviteAction(action: "provision" | "notify") {
   const context = await requireAdminContext();
   const { data, error } = await supabase!.functions.invoke("academy-invite-members", { body: { academyCommunityId: context.communityId, action, limit: action === "notify" ? 25 : 50 } });
   if (error) throw error;
-  return data as { processed?: number; failed?: number };
+  if (!isRecord(data)) throw new Error("The member action returned no result. Refresh member status before retrying.");
+  const result = data as AdminMemberInviteResult;
+  if (typeof result.failed === "number" && result.failed > 0) throw new MemberInvitePartialFailure(action, result);
+  return result;
 }
 
 export async function setAdminMemberCourseAccess(memberId: string, courseId: string, enabled: boolean) {
@@ -457,6 +490,104 @@ export async function uploadAdminLessonAsset(file: File, courseId: string, lesso
     throw assetError;
   }
   return path;
+}
+
+export const ADMIN_LESSON_BLOCK_IMAGE_LIMIT_BYTES = 20 * 1024 * 1024;
+export const ADMIN_LESSON_BLOCK_VIDEO_LIMIT_BYTES = 500 * 1024 * 1024;
+export const ADMIN_LESSON_BLOCK_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"] as const;
+export const ADMIN_LESSON_BLOCK_VIDEO_TYPES = ["video/mp4", "video/webm", "video/quicktime"] as const;
+
+/** Register uploaded block media without changing the lesson's saved content. */
+export async function uploadAdminLessonBlockAsset(file: File, courseId: string, lessonId: string): Promise<{ path: string; previewUrl: string }> {
+  const mimeType = typeof file?.type === "string" ? file.type.trim().toLowerCase() : "";
+  const image = (ADMIN_LESSON_BLOCK_IMAGE_TYPES as readonly string[]).includes(mimeType);
+  const video = (ADMIN_LESSON_BLOCK_VIDEO_TYPES as readonly string[]).includes(mimeType);
+  if (!image && !video) throw new Error("Choose a JPG, PNG, WebP, GIF, AVIF, MP4, WebM or MOV file.");
+  const sizeLimit = image ? ADMIN_LESSON_BLOCK_IMAGE_LIMIT_BYTES : ADMIN_LESSON_BLOCK_VIDEO_LIMIT_BYTES;
+  if (!Number.isSafeInteger(file.size) || file.size <= 0) throw new Error("Choose a file that is not empty.");
+  if (file.size > sizeLimit) throw new Error(`${image ? "Images" : "Videos"} must be ${image ? "20" : "500"} MB or smaller.`);
+  if (typeof file.name !== "string" || !file.name.trim()) throw new Error("This file has no name. Choose it again.");
+  const context = await requireAdminLessonContext(courseId, lessonId);
+  const assetId = crypto.randomUUID();
+  const safeName = file.name.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(-160) || "asset";
+  const path = `${context.communityId}/${courseId}/${lessonId}/${assetId}-${safeName}`;
+  const bucket = supabase!.storage.from("academy-assets");
+  const { error: uploadError } = await bucket.upload(path, file, { contentType: mimeType, upsert: false });
+  if (uploadError) throw uploadError;
+
+  const { error: assetError } = await supabase!.from("academy_assets").insert({
+    id: assetId,
+    academy_community_id: context.communityId,
+    course_id: courseId,
+    lesson_id: lessonId,
+    title: file.name.trim().slice(0, 180),
+    asset_type: image ? "image" : "video",
+    storage_bucket: "academy-assets",
+    storage_path: path,
+    original_url: `academy-asset:${path}`,
+    mime_type: mimeType,
+    byte_size: file.size,
+    source_provider: "native",
+  });
+  if (assetError) {
+    // A cleanup failure must not hide why registration failed. No lesson
+    // content was changed, and successful registrations are never removed.
+    try { await bucket.remove([path]); } catch { /* Preserve the registration error. */ }
+    throw assetError;
+  }
+
+  try {
+    const { data, error } = await bucket.createSignedUrl(path, 60 * 60);
+    return { path, previewUrl: !error && typeof data?.signedUrl === "string" ? data.signedUrl : "" };
+  } catch {
+    // The asset is already saved. Losing its optional preview must not invite
+    // another upload or remove a file that the final lesson can reference.
+    return { path, previewUrl: "" };
+  }
+}
+
+/** Resolve saved block references for this administrator's lesson editor. */
+export async function loadAdminLessonBlockMedia(courseId: string, lessonId: string): Promise<Record<string, string>> {
+  const context = await requireAdminLessonContext(courseId, lessonId);
+  const { data: assets, error: assetError } = await supabase!.from("academy_assets").select("original_url,storage_path")
+    .eq("academy_community_id", context.communityId).eq("course_id", courseId).eq("lesson_id", lessonId).eq("storage_bucket", "academy-assets");
+  if (assetError) throw assetError;
+  const prefix = `${context.communityId}/${courseId}/${lessonId}/`;
+  const paths = [...new Set((assets ?? []).flatMap((asset) => {
+    const path = typeof asset.storage_path === "string" ? asset.storage_path : "";
+    return path.startsWith(prefix) && !/[\u0000-\u001f\\?#]/.test(path) && !path.split("/").some((part) => part === "." || part === "..")
+      && asset.original_url === `academy-asset:${path}` ? [path] : [];
+  }))];
+  const previews: Record<string, string> = {};
+  for (let offset = 0; offset < paths.length; offset += 100) {
+    const batch = paths.slice(offset, offset + 100);
+    const { data, error } = await supabase!.storage.from("academy-assets").createSignedUrls(batch, 60 * 60);
+    if (error) throw error;
+    for (const signed of data ?? []) {
+      if (signed.path && batch.includes(signed.path) && !signed.error && typeof signed.signedUrl === "string" && signed.signedUrl) {
+        previews[`academy-asset:${signed.path}`] = signed.signedUrl;
+      }
+    }
+  }
+  return previews;
+}
+
+async function requireAdminLessonContext(courseId: string, lessonId: string): Promise<AdminContext> {
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuid.test(courseId) || !uuid.test(lessonId)) throw new Error("Save the lesson draft before adding files.");
+  const context = await requireAdminContext();
+  const [courseResult, lessonResult] = await Promise.all([
+    supabase!.from("courses").select("id").eq("id", courseId).eq("academy_community_id", context.communityId).single(),
+    supabase!.from("course_lessons").select("id,module_id").eq("id", lessonId).single(),
+  ]);
+  if (courseResult.error) throw courseResult.error;
+  if (lessonResult.error) throw lessonResult.error;
+  if (!courseResult.data || !lessonResult.data?.module_id) throw new Error("The lesson is no longer available in this Academy.");
+  const { data: module, error: moduleError } = await supabase!.from("course_modules").select("id")
+    .eq("id", lessonResult.data.module_id).eq("course_id", courseId).single();
+  if (moduleError) throw moduleError;
+  if (!module) throw new Error("The lesson does not belong to this Academy course.");
+  return context;
 }
 
 async function requireAdminContext(): Promise<AdminContext> {

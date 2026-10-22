@@ -14,6 +14,9 @@
   --line: rgba(0, 49, 19, 0.13);
 }
 
+.lesson-rich-text figcaption { margin-top: 8px; color: var(--ink-soft); font-size: .72rem; line-height: 1.5; }
+.lesson-media-unavailable { display: block; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--chalk); color: var(--ink-soft); font-size: .76rem; line-height: 1.5; }
+
 * { box-sizing: border-box; }
 html { width: 100%; overflow-x: clip; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body, #root { width: 100%; max-width: 100%; overflow-x: clip; }
@@ -22,6 +25,9 @@ button, input, textarea, select { font: inherit; }
 button { border: 0; cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .42; }
 button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid rgba(255,144,2,.52); outline-offset: 2px; }
+.number-field > div:focus-within, .area-stepper label:focus-within, .map-source-row label:focus-within, .imagery-date-row:focus-within { outline: 3px solid rgba(255,144,2,.52); outline-offset: 2px; }
+.search-input:focus-within { outline: 3px solid rgba(255,144,2,.52); outline-offset: 2px; }
+.search-note { color: var(--ink-soft); font-size: .78rem; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .app-crash { display: grid; min-height: 100vh; place-items: center; align-content: center; gap: 12px; padding: 32px; background: var(--chalk); color: var(--asphalt); text-align: center; }.app-crash img { width: 120px; height: auto; }.app-crash > svg { color: var(--clay); }.app-crash h1 { max-width: 320px; margin: 4px 0 0; font-family: "Outfit",sans-serif; font-size: 1.5rem; }.app-crash p { max-width: 340px; margin: 0; color: var(--ink-soft); font-size: .82rem; line-height: 1.5; }.app-crash button { display: inline-flex; min-height: 44px; align-items: center; gap: 7px; margin-top: 4px; padding: 0 16px; border-radius: 8px; background: var(--turf); color: white; font-weight: 800; }
 
@@ -175,6 +181,23 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .launch-card .secondary-button { margin-top: 10px; }
 .launch-auth-switch { justify-self: center; min-height: 40px; margin-top: 7px; padding: 0 8px; background: transparent; color: var(--turf); font-size: .66rem; font-weight: 800; text-decoration: underline; text-underline-offset: 3px; }
 .launch-auth-switch:disabled { opacity: .55; }
+.terms-agreement { margin: 12px 0 16px; }
+.access-form .terms-consent, .terms-consent { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; color: var(--ink); font-size: .72rem; font-weight: 500; line-height: 1.6; }
+.access-form .terms-consent input, .terms-consent input { flex: 0 0 22px; width: 22px; min-height: 22px; height: 22px; margin: 2px 0 0; padding: 0; accent-color: var(--turf); cursor: pointer; }
+.terms-link { display: inline; padding: 0; background: transparent; color: var(--turf); font: inherit; font-weight: 750; text-decoration: underline; text-underline-offset: 3px; }
+.terms-link:focus-visible, .terms-consent input:focus-visible { outline: 3px solid var(--orange); outline-offset: 3px; }
+.terms-summary { margin: 9px 0 0; padding-left: 32px; color: var(--ink-soft); font-size: .67rem; line-height: 1.6; }
+.terms-version { margin: 16px 0 0; color: var(--ink-soft); font-size: .62rem; text-align: center; }
+.legal-document-backdrop { position: fixed; inset: 0; z-index: 1600; display: grid; place-items: center; padding: max(14px,env(safe-area-inset-top)) 14px max(14px,env(safe-area-inset-bottom)); background: rgba(0,25,12,.75); }
+.legal-document-dialog { display: flex; flex-direction: column; width: min(100%,860px); height: min(90dvh,900px); overflow: hidden; border-radius: 12px; background: var(--chalk); box-shadow: 0 24px 70px rgba(0,0,0,.3); }
+.legal-document-dialog header { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; }
+.legal-document-dialog h2 { margin: 0; font-family: "Outfit",sans-serif; font-size: 1.1rem; }
+.legal-document-dialog .secondary-button { min-height: 44px; margin: 0; }
+.legal-document-tabs { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: 8px; padding: 0 18px 12px; }
+.legal-document-tabs .secondary-button { flex: 1; font-size: .72rem; }
+.legal-document-tabs [aria-pressed="true"] { border-color: var(--turf); background: var(--mist); color: var(--turf-dark); }
+.legal-document-dialog iframe { flex: 1; min-height: 0; width: 100%; border: 0; background: white; }
+.legal-document-status { display: grid; flex: 1; align-content: center; justify-items: center; padding: 24px; text-align: center; color: var(--ink-soft); }
 .launch-message { margin: 14px 0 0; padding: 10px; border-left: 3px solid var(--lime); background: white; color: var(--turf-dark); font-size: .68rem; line-height: 1.45; }
 .launch-support { margin: 20px 0 0; color: var(--ink-soft); font-size: .65rem; text-align: center; }
 .launch-support a { color: var(--turf); font-weight: 800; }
@@ -387,6 +410,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 
 @media (max-width: 960px) {
   body { background: var(--chalk); }
+  /* Readable form text also prevents iOS focus zoom, including larger phones. */
+  :is(.app-shell, .launch-gate) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), textarea, select) { font-size: 1rem; }
   .app-shell { display: block; max-width: 100vw; min-height: 100dvh; overflow-x: clip; padding: 0; }
   .desktop-sidebar { display: none; }
   .phone-frame { display: flex; width: 100%; height: auto; min-height: 100dvh; overflow: visible; flex-direction: column; padding-bottom: calc(82px + env(safe-area-inset-bottom)); border: 0; border-radius: 0; box-shadow: none; }
@@ -405,8 +430,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .community-section-tabs button { justify-content: center; min-width: 0; gap: 3px; padding: 0 2px; font-size: .61rem; }
   .community-section-tabs button svg { width: 13px; height: 13px; flex: 0 0 auto; }
   .toast { bottom: calc(76px + env(safe-area-inset-bottom)); }
-  /* Keep iOS from zooming the web view when a compact form control receives focus. */
-  input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), textarea, select { font-size: 1rem; }
   .topbar { gap: 8px; padding-right: 14px; padding-left: 14px; }.brand-lockup { gap: 7px; }.brand-lockup > img { width: 70px; flex-basis: 70px; }.topbar h1 { max-width: 116px; font-size: .94rem; }
   .network-actions strong { overflow: visible; line-height: 1.15; text-overflow: clip; white-space: normal; }.topbar-actions { gap: 4px; }.topbar-actions .icon-button, .profile-button { width: 34px; height: 34px; flex-basis: 34px; }
   .field-hero { grid-template-columns: 1fr; }.field-scanner { min-height: 138px; }.quick-actions { grid-template-columns: repeat(3,minmax(0,1fr)); }.action-button { min-height: 72px; padding: 9px 5px; }.action-button span { max-width: 74px; text-align: center; }

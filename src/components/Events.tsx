@@ -10,9 +10,10 @@ type Props = {
   onEventsChange: (events: AcademyEvent[]) => void;
   onToggleRsvp: (event: AcademyEvent) => Promise<boolean | null>;
   onToast: (message: string) => void;
+  readOnly?: boolean;
 };
 
-export function EventsView({ events, requestedEventCloudId, onRequestedEventOpened, onEventsChange, onToggleRsvp, onToast }: Props) {
+export function EventsView({ events, requestedEventCloudId, onRequestedEventOpened, onEventsChange, onToggleRsvp, onToast, readOnly = false }: Props) {
   const [now, setNow] = useState(Date.now);
   const requestedEventRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
@@ -33,7 +34,7 @@ export function EventsView({ events, requestedEventCloudId, onRequestedEventOpen
     };
   }, []);
   const toggleRsvp = async (event: AcademyEvent) => {
-    if (academyEventStatus(event) !== "upcoming") return;
+    if (readOnly || academyEventStatus(event) !== "upcoming") return;
     const nextAttending = !event.attending;
     const nextCount = Math.max(0, event.attendeeCount + (nextAttending ? 1 : -1));
     onEventsChange(events.map((item) => item.id === event.id ? { ...item, attending: nextAttending, attendeeCount: nextCount } : item));
@@ -56,6 +57,7 @@ export function EventsView({ events, requestedEventCloudId, onRequestedEventOpen
         <span><CalendarDays size={24} /></span>
         <div><p className="kicker">Academy calendar</p><h2>Live training and operator sessions</h2></div>
       </section>
+      {readOnly && <p className="event-status-note" role="status">Your loaded events are available to read. Connect again to update your RSVP.</p>}
       <section className="event-list">
         {events.map((event) => {
           const status = academyEventStatus(event, now);
@@ -68,7 +70,7 @@ export function EventsView({ events, requestedEventCloudId, onRequestedEventOpen
             <p>{event.description}</p>
             <div className="event-meta"><span><Clock3 size={14} /> {event.time} · {event.duration}</span><span><Users size={14} /> {event.attendeeCount} attending</span></div>
             <div className="event-actions">
-              {status === "upcoming" && <button className={event.attending ? "secondary-button attending" : "primary-button"} onClick={() => void toggleRsvp(event)}>{event.attending && <Check size={16} />}{event.attending ? "Attending" : "RSVP"}</button>}
+              {status === "upcoming" && <button className={event.attending ? "secondary-button attending" : "primary-button"} disabled={readOnly} onClick={() => void toggleRsvp(event)}>{event.attending && <Check size={16} />}{event.attending ? "Attending" : "RSVP"}</button>}
               {status === "live" && <span className="event-status-note">{event.attending ? "You're attending" : "Registration closed"}</span>}
               {status === "live" && event.attending && event.meetingUrl && <a className="secondary-button" href={event.meetingUrl} target="_blank" rel="noopener noreferrer">Join <ExternalLink size={15} /></a>}
               {status === "past" && <span className="event-status-note">Session ended</span>}

@@ -27,6 +27,7 @@ type HubProps = {
   onSignOut: () => Promise<void>;
   dataMode: "device" | "cloud";
   canManage: boolean;
+  readOnly?: boolean;
   notifications: AppNotification[];
   onOpenNotification: (notification: AppNotification) => void;
   onMarkAllNotificationsRead: () => Promise<void>;
@@ -49,10 +50,10 @@ export function HubSheet(props: HubProps) {
         </header>
         <div className="hub-body">
           {section === "settings"
-            ? <SettingsPanel onToast={props.onToast} dataMode={props.dataMode} canManage={props.canManage} onSignOut={props.onSignOut} />
+            ? <SettingsPanel onToast={props.onToast} dataMode={props.dataMode} canManage={props.canManage} readOnly={props.readOnly} onSignOut={props.onSignOut} />
             : section === "notifications"
-              ? <NotificationsPanel notifications={props.notifications} onOpen={props.onOpenNotification} onMarkAll={props.onMarkAllNotificationsRead} />
-              : <AccessPanel onRequestMagicLink={props.onRequestMagicLink} />}
+              ? <NotificationsPanel notifications={props.notifications} onOpen={props.onOpenNotification} onMarkAll={props.onMarkAllNotificationsRead} readOnly={props.readOnly} />
+              : <AccessPanel onRequestMagicLink={props.onRequestMagicLink} readOnly={props.readOnly} />}
         </div>
         {props.primaryNavigation}
       </section>
@@ -60,16 +61,16 @@ export function HubSheet(props: HubProps) {
   );
 }
 
-function SettingsPanel({ onToast, dataMode, canManage, onSignOut }: { onToast: (message: string) => void; dataMode: "device" | "cloud"; canManage: boolean; onSignOut: () => Promise<void> }) {
+function SettingsPanel({ onToast, dataMode, canManage, onSignOut, readOnly = false }: { onToast: (message: string) => void; dataMode: "device" | "cloud"; canManage: boolean; onSignOut: () => Promise<void>; readOnly?: boolean }) {
   const [memberAccess, setMemberAccess] = useState<MemberAccessSummary | null>(null);
-  const [checkingAccess, setCheckingAccess] = useState(dataMode === "cloud" && canManage);
+  const [checkingAccess, setCheckingAccess] = useState(dataMode === "cloud" && canManage && !readOnly);
   const [memberAccessError, setMemberAccessError] = useState(false);
   const [provisioning, setProvisioning] = useState(false);
   const [billing, setBilling] = useState<AcademyBillingOverview | null>(null);
   const [billingError, setBillingError] = useState(false);
   const [billingBusy, setBillingBusy] = useState(false);
   const [deletionRequest, setDeletionRequest] = useState<AccountDeletionRequest | null>(null);
-  const [deletionLoading, setDeletionLoading] = useState(dataMode === "cloud");
+  const [deletionLoading, setDeletionLoading] = useState(dataMode === "cloud" && !readOnly);
   const [deletionError, setDeletionError] = useState(false);
   const [deletionBusy, setDeletionBusy] = useState(false);
   const [confirmDeletion, setConfirmDeletion] = useState(false);
@@ -81,6 +82,7 @@ function SettingsPanel({ onToast, dataMode, canManage, onSignOut }: { onToast: (
 
   useEffect(() => {
     let mounted = true;
+    if (readOnly) { setCheckingAccess(false); return () => { mounted = false; }; }
     setMemberAccess(null);
     setMemberAccessError(false);
     setCheckingAccess(dataMode === "cloud" && canManage);
@@ -90,20 +92,22 @@ function SettingsPanel({ onToast, dataMode, canManage, onSignOut }: { onToast: (
       .catch(() => { if (mounted) setMemberAccessError(true); })
       .finally(() => { if (mounted) setCheckingAccess(false); });
     return () => { mounted = false; };
-  }, [dataMode, canManage, settingsRetry]);
+  }, [dataMode, canManage, settingsRetry, readOnly]);
 
   useEffect(() => {
     let mounted = true;
+    if (readOnly) return () => { mounted = false; };
     setNotificationPreferences(null);
     setNotificationError(false);
     void loadNotificationPreferences()
       .then((preferences) => { if (mounted) setNotificationPreferences(preferences); })
       .catch(() => { if (mounted) setNotificationError(true); });
     return () => { mounted = false; };
-  }, [dataMode, settingsRetry]);
+  }, [dataMode, settingsRetry, readOnly]);
 
   useEffect(() => {
     let mounted = true;
+    if (readOnly) { setDeletionLoading(false); return () => { mounted = false; }; }
     setDeletionError(false);
     setDeletionRequest(null);
     setDeletionLoading(dataMode === "cloud");
@@ -115,10 +119,11 @@ function SettingsPanel({ onToast, dataMode, canManage, onSignOut }: { onToast: (
       .catch(() => { if (mounted) setDeletionError(true); })
       .finally(() => { if (mounted) setDeletionLoading(false); });
     return () => { mounted = false; };
-  }, [dataMode, settingsRetry]);
+  }, [dataMode, settingsRetry, readOnly]);
 
   useEffect(() => {
     let mounted = true;
+    if (readOnly) return () => { mounted = false; };
     setBillingError(false);
     setBilling(null);
     if (dataMode !== "cloud" || !webBillingAvailable()) {
@@ -128,9 +133,10 @@ function SettingsPanel({ onToast, dataMode, canManage, onSignOut }: { onToast: (
       .then((overview) => { if (mounted) setBilling(overview); })
       .catch(() => { if (mounted) setBillingError(true); });
     return () => { mounted = false; };
-  }, [dataMode, settingsRetry]);
+  }, [dataMode, settingsRetry, readOnly]);
 
   const provisionMembers = async () => {
+    if (readOnly || provisioning) return;
     setProvisioning(true);
     try {
       const response = await provisionAcademyMemberAccounts();
@@ -146,6 +152,7 @@ function SettingsPanel({ onToast, dataMode, canManage, onSignOut }: { onToast: (
   };
 
   const manageBilling = async () => {
+    if (readOnly || billingBusy) return;
     setBillingBusy(true);
     try {
       await openAcademyBillingPortal();
@@ -155,6 +162,7 @@ function SettingsPanel({ onToast, dataMode, canManage, onSignOut }: { onToast: (
     }
   };
   const submitDeletionRequest = async () => {
+    if (readOnly || deletionBusy || deletionLoading || deletionError || dataMode !== "cloud") return;
     if (!confirmDeletion) {
       setConfirmDeletion(true);
       return;
@@ -174,7 +182,7 @@ function SettingsPanel({ onToast, dataMode, canManage, onSignOut }: { onToast: (
   const subscriptions = billing?.subscriptions ?? (billing?.subscription ? [billing.subscription] : []);
 
   const updateNotificationPreference = async (key: keyof NotificationPreferences, value: boolean) => {
-    if (!notificationPreferences || notificationSavePending.current) return;
+    if (readOnly || !notificationPreferences || notificationSavePending.current) return;
     notificationSavePending.current = true;
     setNotificationSaving(true);
     const previous = notificationPreferences;
@@ -195,9 +203,10 @@ function SettingsPanel({ onToast, dataMode, canManage, onSignOut }: { onToast: (
   return <>
     <section className="profile-summary">
       <span className="avatar">DT</span>
-      <div><strong>Operator workspace</strong><small>{dataMode === "cloud" ? "Connected to Supabase" : "Local demo data on this device"}</small></div>
-      <button onClick={() => onToast(dataMode === "cloud" ? "Workspace connection is active." : "Connect the client Supabase schema to activate sync.")}>Status</button>
+      <div><strong>Operator workspace</strong><small>{readOnly ? "Loaded workspace · connection unavailable" : dataMode === "cloud" ? "Connected to Supabase" : "Local demo data on this device"}</small></div>
+      <button onClick={() => onToast(readOnly ? "Connect again to update settings and billing." : dataMode === "cloud" ? "Workspace connection is active." : "Connect the client Supabase schema to activate sync.")}>Status</button>
     </section>
+    {readOnly && <p className="setting-help" role="status">Your loaded settings are available to read. Connect again to change settings, manage billing or send a sign-in link.</p>}
     <div className="setting-group">
       <h3>Data boundary</h3>
       <SettingRow icon={<Database size={18} />} title="Company records" detail="Properties, quotes, visits, and photos use Supabase" />
@@ -208,45 +217,48 @@ function SettingsPanel({ onToast, dataMode, canManage, onSignOut }: { onToast: (
       <h3>Member access</h3>
       {checkingAccess
         ? <div className="setting-row"><span><UserRoundCheck size={18} /></span><span><strong>Checking account readiness</strong><small>Reconciling enrolled members with Supabase Auth</small></span></div>
-        : memberAccessError ? <div className="settings-loading" role="alert">Account readiness could not load. <button type="button" className="secondary-button" onClick={() => setSettingsRetry((value) => value + 1)}>Try again</button></div>
+        : memberAccessError ? <div className="settings-loading" role="alert">Account readiness could not load. <button type="button" className="secondary-button" disabled={readOnly} onClick={() => { if (!readOnly) setSettingsRetry((value) => value + 1); }}>Try again</button></div>
         : memberAccess && <>
           <div className="setting-row"><span>{memberAccess.allEligibleReady ? <CheckCircle2 size={18} /> : <UserRoundCheck size={18} />}</span><span><strong>{memberAccess.provisionedMembers} of {memberAccess.eligibleMembers} current members ready</strong><small>{memberAccess.enrolledReady} of {memberAccess.enrolledMembers} course enrollments are linked. Accounts are created without sending email.</small></span></div>
-          <button className="secondary-button" disabled={memberAccess.allEligibleReady || provisioning} onClick={() => void provisionMembers()}>{provisioning ? "Provisioning accounts..." : memberAccess.allEligibleReady ? "Every current member is ready" : `Provision ${memberAccess.membersNotReady} missing account${memberAccess.membersNotReady === 1 ? "" : "s"}`}</button>
+          <button className="secondary-button" disabled={readOnly || memberAccess.allEligibleReady || provisioning} onClick={() => void provisionMembers()}>{provisioning ? "Provisioning accounts..." : memberAccess.allEligibleReady ? "Every current member is ready" : `Provision ${memberAccess.membersNotReady} missing account${memberAccess.membersNotReady === 1 ? "" : "s"}`}</button>
         </>}
     </div>}
     <div className="setting-group notification-settings">
       <h3>Email notifications</h3>
       {notificationPreferences ? <>
-        <NotificationToggle label="Email notifications" detail="Master email switch" checked={notificationPreferences.emailEnabled} disabled={notificationSaving} onChange={(checked) => void updateNotificationPreference("emailEnabled", checked)} />
+        <NotificationToggle label="Email notifications" detail="Master email switch" checked={notificationPreferences.emailEnabled} disabled={readOnly || notificationSaving} onChange={(checked) => void updateNotificationPreference("emailEnabled", checked)} />
         <div className={notificationPreferences.emailEnabled ? "notification-options" : "notification-options disabled"}>
-          <NotificationToggle label="Comments and replies" checked={notificationPreferences.replies} disabled={notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("replies", checked)} />
-          <NotificationToggle label="Mentions" checked={notificationPreferences.mentions} disabled={notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("mentions", checked)} />
-          <NotificationToggle label="Likes" checked={notificationPreferences.reactions} disabled={notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("reactions", checked)} />
-          <NotificationToggle label="New community posts" checked={notificationPreferences.newPosts} disabled={notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("newPosts", checked)} />
-          <NotificationToggle label="Academy announcements" checked={notificationPreferences.adminAnnouncements} disabled={notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("adminAnnouncements", checked)} />
-          <NotificationToggle label="Events and reminders" checked={notificationPreferences.eventReminders} disabled={notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("eventReminders", checked)} />
-          <NotificationToggle label="Course updates" checked={notificationPreferences.courseUpdates} disabled={notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("courseUpdates", checked)} />
-          <NotificationToggle label="Weekly digest" checked={notificationPreferences.weeklyDigest} disabled={notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("weeklyDigest", checked)} />
+          <NotificationToggle label="Comments and replies" checked={notificationPreferences.replies} disabled={readOnly || notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("replies", checked)} />
+          <NotificationToggle label="Mentions" checked={notificationPreferences.mentions} disabled={readOnly || notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("mentions", checked)} />
+          <NotificationToggle label="Likes" checked={notificationPreferences.reactions} disabled={readOnly || notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("reactions", checked)} />
+          <NotificationToggle label="New community posts" checked={notificationPreferences.newPosts} disabled={readOnly || notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("newPosts", checked)} />
+          <NotificationToggle label="Academy announcements" checked={notificationPreferences.adminAnnouncements} disabled={readOnly || notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("adminAnnouncements", checked)} />
+          <NotificationToggle label="Events and reminders" checked={notificationPreferences.eventReminders} disabled={readOnly || notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("eventReminders", checked)} />
+          <NotificationToggle label="Course updates" checked={notificationPreferences.courseUpdates} disabled={readOnly || notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("courseUpdates", checked)} />
+          <NotificationToggle label="Weekly digest" checked={notificationPreferences.weeklyDigest} disabled={readOnly || notificationSaving || !notificationPreferences.emailEnabled} onChange={(checked) => void updateNotificationPreference("weeklyDigest", checked)} />
         </div>
         <p className="setting-help" role="status">{notificationSaving ? "Saving notification preferences... " : ""}In-app alerts stay available in the bell even when email is off.</p>
-      </> : notificationError ? <div className="settings-loading" role="alert">Notification settings could not load. Changes are unavailable until they do. <button type="button" className="secondary-button" onClick={() => setSettingsRetry((value) => value + 1)}>Try again</button></div> : <div className="settings-loading">Loading notification preferences...</div>}
+      </> : readOnly ? <div className="settings-loading" role="status">Connect again to load notification preferences.</div> : notificationError ? <div className="settings-loading" role="alert">Notification settings could not load. Changes are unavailable until they do. <button type="button" className="secondary-button" onClick={() => { if (!readOnly) setSettingsRetry((value) => value + 1); }}>Try again</button></div> : <div className="settings-loading">Loading notification preferences...</div>}
     </div>
-    {billingError && <div className="setting-group billing-group" role="alert"><h3>Billing</h3><p>Billing details could not load.</p><button type="button" className="secondary-button" onClick={() => setSettingsRetry((value) => value + 1)}>Try again</button></div>}
+    {billingError && <div className="setting-group billing-group" role="alert"><h3>Billing</h3><p>Billing details could not load.</p><button type="button" className="secondary-button" disabled={readOnly} onClick={() => { if (!readOnly) setSettingsRetry((value) => value + 1); }}>Try again</button></div>}
     {billing && <div className="setting-group billing-group">
       <h3>Billing and access</h3>
       {subscriptions.map((subscription, index) => <div className="billing-current" key={index}>
         <span><CreditCard size={18} /></span>
         <span><strong>{subscription.planName}</strong><small>{billingStatusLabel(subscription.status, subscription.cancelAtPeriodEnd, subscription.currentPeriodEnd)}</small></span>
       </div>)}
-      {subscriptions.length > 0 && <button className="secondary-button" disabled={billingBusy} onClick={() => void manageBilling()}><ExternalLink size={17} /> Manage billing</button>}
-      <a className="setting-row setting-link" href="/membership"><span><BookOpen size={18} /></span><span><strong>Membership and upgrades</strong><small>Review your access and available options</small></span><ChevronRight size={16} /></a>
+      {subscriptions.length > 0 && <button className="secondary-button" disabled={readOnly || billingBusy} onClick={() => void manageBilling()}><ExternalLink size={17} /> Manage billing</button>}
+      <a className="setting-row setting-link" href="/membership" aria-disabled={readOnly || undefined} tabIndex={readOnly ? -1 : undefined} onClick={event => { if (readOnly) event.preventDefault(); }}><span><BookOpen size={18} /></span><span><strong>Membership and upgrades</strong><small>Review your access and available options</small></span><ChevronRight size={16} /></a>
     </div>}
     <div className="setting-group account-controls">
       <h3>Privacy and account</h3>
       {deletionLoading && <div className="settings-loading" role="status">Checking account deletion status...</div>}
-      {deletionError && <div className="settings-loading" role="alert">Account deletion status could not load. <button type="button" className="secondary-button" onClick={() => setSettingsRetry((value) => value + 1)}>Try again</button></div>}
+      {deletionError && <div className="settings-loading" role="alert">Account deletion status could not load. <button type="button" className="secondary-button" disabled={readOnly} onClick={() => { if (!readOnly) setSettingsRetry((value) => value + 1); }}>Try again</button></div>}
       <a className="setting-row setting-link" href="/privacy.html">
         <span><FileLock2 size={18} /></span><span><strong>Privacy policy</strong><small>How account, field, course, and payment data are handled</small></span><ChevronRight size={16} />
+      </a>
+      <a className="setting-row setting-link" href="/terms.html">
+        <span><ShieldCheck size={18} /></span><span><strong>Terms and community rules</strong><small>Respectful participation, reporting, blocking, and moderation</small></span><ChevronRight size={16} />
       </a>
       <a className="setting-row setting-link" href="/support.html">
         <span><LifeBuoy size={18} /></span><span><strong>Support</strong><small>Get help with sign-in, courses, billing, or measurement</small></span><ChevronRight size={16} />
@@ -255,7 +267,7 @@ function SettingsPanel({ onToast, dataMode, canManage, onSignOut }: { onToast: (
         ? <div className="deletion-status"><CheckCircle2 size={18} /><span><strong>Deletion requested</strong><small>{deletionStatusLabel(deletionRequest)}</small></span></div>
         : <>
           {confirmDeletion && <p className="deletion-warning">This starts a review to remove your login and personal account data. Business records that another company member must retain will be reassigned or separated before deletion.</p>}
-          <button className={`secondary-button danger-button${confirmDeletion ? " confirm" : ""}`} disabled={dataMode !== "cloud" || deletionLoading || deletionError || deletionBusy} onClick={() => void submitDeletionRequest()}>
+          <button className={`secondary-button danger-button${confirmDeletion ? " confirm" : ""}`} disabled={readOnly || dataMode !== "cloud" || deletionLoading || deletionError || deletionBusy} onClick={() => void submitDeletionRequest()}>
             <Trash2 size={17} />{deletionBusy ? "Submitting request..." : confirmDeletion ? "Confirm deletion request" : "Request account deletion"}
           </button>
           {confirmDeletion && <button className="text-button" onClick={() => setConfirmDeletion(false)}>Keep my account</button>}
@@ -283,12 +295,12 @@ function billingStatusLabel(status: string, cancelAtPeriodEnd: boolean, periodEn
   return status.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
 }
 
-function AccessPanel({ onRequestMagicLink }: { onRequestMagicLink: (email: string) => Promise<void> }) {
+function AccessPanel({ onRequestMagicLink, readOnly = false }: { onRequestMagicLink: (email: string) => Promise<void>; readOnly?: boolean }) {
   const [email, setEmail] = useState("");
   const [sending, setSending] = useState(false);
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!email.trim()) return;
+    if (readOnly || sending || !email.trim()) return;
     setSending(true);
     try {
       await onRequestMagicLink(email.trim());
@@ -299,15 +311,16 @@ function AccessPanel({ onRequestMagicLink }: { onRequestMagicLink: (email: strin
 
   return <>
     <section className="access-intro"><span><ShieldCheck size={25} /></span><h3>Enter your company workspace</h3><p>Use the email connected to your Academy membership. We will send a secure sign-in link.</p></section>
-    <form className="access-form" onSubmit={submit}><label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="operator@company.com" autoComplete="email" required /></label><button className="primary-button wide" disabled={sending || !email.trim()}>{sending ? "Sending link..." : "Email me a sign-in link"}</button></form>
+    <form className="access-form" onSubmit={submit}><label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="operator@company.com" autoComplete="email" required /></label><button className="primary-button wide" disabled={readOnly || sending || !email.trim()}>{sending ? "Sending link..." : "Email me a sign-in link"}</button></form>
+    {readOnly && <p className="setting-help" role="status">Connect again to request a sign-in link. Your entered email stays here.</p>}
     <div className="access-note"><LockKeyhole size={16} /><p>No password is stored in the app. Access and company membership are controlled by the client-owned Supabase workspace.</p></div>
   </>;
 }
 
-function NotificationsPanel({ notifications, onOpen, onMarkAll }: { notifications: AppNotification[]; onOpen: (notification: AppNotification) => void; onMarkAll: () => Promise<void> }) {
+function NotificationsPanel({ notifications, onOpen, onMarkAll, readOnly = false }: { notifications: AppNotification[]; onOpen: (notification: AppNotification) => void; onMarkAll: () => Promise<void>; readOnly?: boolean }) {
   const unread = notifications.filter((notification) => !notification.read).length;
   return <>
-    <div className="panel-toolbar"><span>{unread ? `${unread} unread` : "You're all caught up"}</span>{unread > 0 && <button onClick={() => void onMarkAll()}><CheckCheck size={15} /> Mark all read</button>}</div>
+    <div className="panel-toolbar"><span>{unread ? `${unread} unread` : "You're all caught up"}</span>{unread > 0 && <button disabled={readOnly} onClick={() => { if (!readOnly) void onMarkAll(); }}><CheckCheck size={15} /> Mark all read</button>}</div>
     <section className="notification-list" aria-label="Recent notifications">
       {notifications.map((notification) => <button className={notification.read ? "notification-row" : "notification-row unread"} key={notification.cloudId ?? notification.id} onClick={() => onOpen(notification)}>
         <span className="notification-icon">{notificationIcon(notification.kind)}</span>

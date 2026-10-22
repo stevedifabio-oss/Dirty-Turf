@@ -1,0 +1,312 @@
+/* Admin workspace: scoped to keep the member experience unchanged. */
+.admin-view {
+  --admin-muted: var(--ink-soft);
+  width: 100%;
+  max-width: 1440px;
+  margin-inline: auto;
+  padding: 22px 28px 110px;
+  font-size: .9rem;
+  line-height: 1.5;
+}
+.admin-view :is(button, summary, input, select) { min-height: 44px; }
+.admin-view button { font-size: .82rem; font-weight: 700; }
+.admin-view button svg, .admin-view summary svg { flex-shrink: 0; }
+.admin-view :is(h2,h3,h4,p) { overflow-wrap: anywhere; }
+.admin-view :is(.primary-button,.secondary-button) { width: auto; display: inline-flex; justify-content: center; align-items: center; gap: 8px; margin: 0; padding: 10px 16px; border-radius: 8px; font-size: .82rem; font-weight: 800; line-height: 1.4; }
+.admin-view .primary-button { background: var(--lime); color: var(--turf-dark); border: 1px solid transparent; }
+.admin-view .primary-button:hover:not(:disabled) { border-color: var(--turf-dark); }
+.admin-view .secondary-button { border: 1px solid var(--line); background: var(--mist); color: var(--turf-dark); }
+.admin-view .secondary-button:hover:not(:disabled) { border-color: var(--turf); }
+.admin-view .admin-hero { margin: 0 0 20px; padding: 0 0 24px; border-radius: 0; border-bottom: 1px solid var(--line); background: none; box-shadow: none; color: var(--asphalt); align-items: center; }
+.admin-view .admin-hero p { margin-bottom: 8px; color: var(--turf); font-size: .7rem; letter-spacing: .07em; }
+.admin-view .admin-hero h2 { font: 700 clamp(1.65rem, 2.5vw, 2.25rem)/1.12 "Outfit",sans-serif; letter-spacing: -.025em; }
+.admin-view .admin-hero > div > span { color: var(--admin-muted); font-size: .85rem; margin-top: 8px; }
+.admin-view .admin-refresh { flex-shrink: 0; }
+.admin-view .admin-refresh span { color: inherit; font-size: inherit; margin: 0; }
+.admin-view .admin-tabs { display: flex; gap: 4px; margin: 0 0 28px; padding: 5px; border: 1px solid var(--line); border-radius: 11px; background: var(--paper); overflow-x: auto; scrollbar-width: thin; }
+.admin-view .admin-tabs button { flex: 1 0 auto; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 14px; border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--admin-muted); font-size: .8rem; font-weight: 800; white-space: nowrap; }
+.admin-view .admin-tabs button.active { background: var(--asphalt); color: var(--paper); }
+.admin-view .admin-tabs button.active svg { color: var(--lime); }
+.admin-view .admin-tabs button:hover:not(.active):not(:disabled) { background: var(--mist); }
+.admin-nav-count { display: inline-grid; min-width: 21px; min-height: 21px; place-items: center; padding-inline: 4px; border-radius: 6px; background: #fff0d9; color: #824500; font-size: .67rem; }
+.admin-view .admin-panel { display: grid; gap: 20px; margin: 0; min-width: 0; }
+.admin-view .admin-section-heading { padding: 0; align-items: center; gap: 12px; min-width: 0; }
+.admin-view .admin-section-heading > span { flex: 0 0 42px; width: 42px; height: 42px; background: var(--mist); border-radius: 10px; }
+.admin-view .admin-section-heading h3 { margin: 0 0 4px; font: 700 1.3rem/1.25 "Outfit",sans-serif; letter-spacing: -.01em; }
+.admin-view .admin-section-heading p { margin: 0; color: var(--admin-muted); font-size: .8rem; line-height: 1.5; }
+.admin-view .admin-metrics { grid-template-columns: repeat(4,minmax(0,1fr)); gap: 14px; }
+.admin-view .admin-metrics article { display: grid; grid-template-columns: 1fr auto; padding: 20px; border-radius: 12px; box-shadow: none; }
+.admin-view .admin-metrics article > span { grid-column: 2; grid-row: 1 / 3; background: var(--mist); width: 36px; height: 36px; border-radius: 10px; }
+.admin-view .admin-metrics strong { grid-column: 1; grid-row: 1; margin: 0; font: 700 2rem/1.1 "Outfit",sans-serif; }
+.admin-view .admin-metrics p { grid-column: 1; margin: 5px 0; font-size: .82rem; font-weight: 600; }
+.admin-view .admin-metrics small { grid-column: 1/-1; margin-top: 9px; color: var(--admin-muted); font-size: .73rem; }
+.admin-overview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.admin-start, .admin-view .admin-launch-checks { padding: 22px; border: 1px solid var(--line); border-radius: 12px; background: white; box-shadow: none; }
+.admin-card-heading { margin-bottom: 16px; }
+.admin-card-heading h3 { margin: 0 0 5px; font: 700 1.1rem/1.3 "Outfit",sans-serif; }
+.admin-card-heading p { margin: 0; font-size: .77rem; color: var(--admin-muted); }
+.admin-start > button { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; gap: 12px; width: 100%; padding: 16px 0; background: transparent; border-top: 1px solid var(--line); color: var(--turf-dark); text-align: left; }
+.admin-start > button:hover { color: var(--turf); }
+.admin-start > button > span:nth-child(2) { display: grid; gap: 4px; }
+.admin-start strong { font-weight: 600; font-size: .88rem; }
+.admin-start small { color: var(--admin-muted); font-size: .75rem; font-weight: 400; line-height: 1.5; }
+.admin-action-icon { display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--line); border-radius: 9px; }
+.admin-view .admin-launch-checks > .admin-card-heading { display: block; padding: 0; border: 0; }
+.admin-view .admin-launch-checks > div:not(.admin-card-heading) { padding: 16px 0; grid-template-columns: 26px minmax(0,1fr) auto; }
+.admin-view .admin-launch-checks p { font-size: .78rem; font-weight: 500; line-height: 1.5; }
+.admin-view .admin-launch-checks em { font-size: .68rem; }
+.admin-migration-note { display: flex; align-items: flex-start; gap: 14px; padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--mist); color: var(--turf-dark); }
+.admin-migration-note > svg { flex-shrink: 0; margin-top: 2px; }
+.admin-migration-note > div { flex: 1; }
+.admin-migration-note strong { font-size: .88rem; }
+.admin-migration-note p { margin: 5px 0 0; max-width: 730px; font-size: .78rem; line-height: 1.6; color: var(--admin-muted); }
+.admin-migration-note button { flex-shrink: 0; }
+.admin-section-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.admin-section-toolbar > button { flex-shrink: 0; }
+.admin-course-workspace { display: grid; grid-template-columns: minmax(240px,.33fr) minmax(0,1fr); gap: 22px; align-items: start; min-width: 0; }
+.admin-course-library { position: sticky; top: 92px; max-height: calc(100dvh - 128px); overflow-y: auto; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--chalk); min-width: 0; }
+.admin-library-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+.admin-library-heading h4 { margin: 0; font-size: .82rem; font-weight: 600; }
+.admin-library-heading > span { padding: 2px 8px; background: white; border: 1px solid var(--line); border-radius: 6px; font-size: .73rem; }
+.admin-view .admin-search { display: flex; align-items: center; gap: 8px; min-width: 0; min-height: 46px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--admin-muted); }
+.admin-view .admin-search:focus-within { outline: 3px solid rgba(255,144,2,.52); outline-offset: 2px; }
+.admin-view .admin-search input { flex: 1; min-width: 0; width: 100%; padding: 10px 0; border: 0; background: transparent; font-size: .81rem; color: var(--asphalt); outline: none; box-shadow: none; }
+.admin-view .admin-search input:focus-visible { outline: none; }
+.admin-view .admin-search input::-webkit-search-cancel-button { display: none; }
+.admin-view .admin-search button { display: grid; place-items: center; min-width: 32px; width: 32px; padding: 0; background: transparent; color: var(--admin-muted); }
+.admin-filter-label { display: flex; align-items: center; gap: 10px; margin-block: 10px 16px; color: var(--admin-muted); font-size: .74rem; }
+.admin-view .admin-filter-label select { min-width: 0; flex: 1; width: auto; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: white; color: var(--asphalt); font-size: .8rem; }
+.admin-course-options { display: grid; gap: 8px; }
+.admin-view .admin-course-options > button { display: grid; gap: 10px; width: 100%; min-width: 0; padding: 16px; background: transparent; border: 1px solid transparent; border-radius: 9px; text-align: left; color: var(--asphalt); }
+.admin-view .admin-course-options > button.selected { border-color: var(--turf); background: var(--paper); box-shadow: 0 2px 5px rgba(0,49,19,.05); }
+.admin-view .admin-course-options > button:hover:not(:disabled) { background: white; }
+.admin-course-options strong { font: 700 1rem/1.35 "Outfit",sans-serif; overflow-wrap: anywhere; }
+.admin-course-option-meta, .admin-course-option-bottom { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.admin-course-option-meta > small { color: var(--admin-muted); font-size: .65rem; text-align: right; overflow-wrap: anywhere; }
+.admin-course-option-bottom { color: var(--admin-muted); }
+.admin-course-option-bottom small { font-size: .7rem; font-weight: 400; }
+.admin-status { display: inline-flex; align-items: center; flex-shrink: 0; padding: 3px 8px; border-radius: 5px; font-size: .65rem; line-height: 1.5; font-weight: 600; }
+.admin-status-published { color: var(--turf-dark); background: var(--mist); }
+.admin-status-draft { color: #82500a; background: #fff3db; }
+.admin-status-archived { color: #5b6261; background: #edf0ef; }
+.admin-course-detail { display: grid; gap: 16px; min-width: 0; }
+.admin-course-heading, .admin-editor-card { border: 1px solid var(--line); border-radius: 12px; background: white; padding: 24px; min-width: 0; }
+.admin-course-eyebrow { display: flex; align-items: center; gap: 10px; color: var(--admin-muted); font-size: .75rem; }
+.admin-course-heading h3 { margin: 14px 0 8px; font: 700 clamp(1.4rem,2vw,1.9rem)/1.2 "Outfit",sans-serif; letter-spacing: -.015em; }
+.admin-course-heading > p:not(.admin-form-note) { margin: 8px 0 16px; color: var(--admin-muted); font-size: .82rem; max-width: 700px; line-height: 1.65; }
+.admin-course-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; color: var(--admin-muted); font-size: .74rem; margin-block: 16px 20px; }
+.admin-course-summary > span { display: inline-flex; align-items: center; gap: 6px; }
+.admin-view .admin-inline-actions { align-items: center; gap: 8px; }
+.admin-view .admin-text-action { display: inline-flex; align-items: center; gap: 7px; padding: 8px 10px; background: transparent; color: var(--admin-muted); border-radius: 8px; font-size: .75rem; }
+.admin-view .admin-text-action:hover:not(:disabled) { color: var(--turf); background: var(--mist); }
+.admin-curriculum-heading { padding-top: 12px; }
+.admin-curriculum-heading h4 { margin: 0 0 4px; font: 700 1.1rem/1.3 "Outfit",sans-serif; }
+.admin-curriculum-heading p { margin: 0; font-size: .77rem; color: var(--admin-muted); }
+.admin-module-list { display: grid; gap: 10px; }
+.admin-view .admin-module { display: block; padding: 0; border-radius: 10px; background: white; }
+.admin-view .admin-module-heading { display: flex; align-items: center; gap: 12px; padding: 16px; list-style: none; cursor: pointer; }
+.admin-view summary:focus-visible { outline: 3px solid rgba(255,144,2,.52); outline-offset: 2px; }
+.admin-view summary::-webkit-details-marker { display: none; }
+.admin-view .admin-module-heading .admin-module-index { display: grid; flex: 0 0 32px; width: 32px; height: 32px; place-items: center; border: 1px solid var(--line); border-radius: 8px; color: var(--admin-muted); font-size: .75rem; }
+.admin-module-heading > span:nth-child(2) { display: grid; flex: 1; gap: 3px; min-width: 0; }
+.admin-view .admin-module-heading small { font-size: .66rem; color: var(--admin-muted); }
+.admin-view .admin-module-heading strong { font-size: .87rem; line-height: 1.4; overflow-wrap: anywhere; }
+.admin-view .admin-module-count { display: inline; font-size: .7rem; color: var(--admin-muted); white-space: nowrap; }
+.admin-module-heading > svg { color: var(--admin-muted); transition: transform 150ms ease; }
+.admin-module[open] > .admin-module-heading > svg { transform: rotate(180deg); }
+.admin-module-content { display: grid; gap: 12px; padding: 0 16px 16px; }
+.admin-view .admin-lesson { border: 0; border-top: 1px solid var(--line); border-radius: 0; padding: 14px 0; grid-template-columns: minmax(0,1fr) auto; gap: 12px; }
+.admin-lesson strong { font-size: .82rem; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.admin-view .admin-lesson small { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 7px; font-size: .7rem; }
+.admin-view .admin-lesson > div { flex-wrap: wrap; gap: 6px; }
+.admin-view .admin-lesson :is(button,.admin-upload-button) { min-height: 44px; height: auto; padding: 8px 10px; font-size: .72rem; border-radius: 8px; }
+.admin-view .admin-upload-button { position: relative; display: inline-flex; width: auto; align-items: center; gap: 6px; color: var(--turf-dark); }
+.admin-view .admin-upload-button:focus-within { outline: 3px solid rgba(255,144,2,.52); outline-offset: 2px; }
+.admin-view .admin-upload-button:has(input:disabled) { opacity: .45; cursor: not-allowed; }
+.admin-editor-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.admin-editor-heading small { color: var(--turf); font-size: .72rem; font-weight: 600; }
+.admin-editor-heading h3 { margin: 6px 0; font: 700 1.55rem/1.2 "Outfit",sans-serif; }
+.admin-editor-heading p { margin: 0; color: var(--admin-muted); font-size: .8rem; }
+.admin-editor-card form { display: grid; gap: 18px; }
+.admin-view :is(.admin-composer,.admin-subcomposer) { border-radius: 10px; box-shadow: none; }
+.admin-view :is(.admin-composer,.admin-subcomposer) > summary { min-height: 50px; padding: 14px 16px; font-size: .8rem; gap: 9px; }
+.admin-view :is(.admin-composer,.admin-subcomposer) > form { padding: 8px 18px 18px; gap: 16px; }
+.admin-view :is(.admin-composer,.admin-subcomposer,.admin-issue-card,.admin-record-body,.admin-editor-card) label { display: grid; gap: 7px; color: var(--asphalt); font-size: .77rem; font-weight: 600; line-height: 1.5; }
+.admin-view :is(.admin-composer,.admin-subcomposer,.admin-issue-card,.admin-record-body,.admin-editor-card) :is(input:not([type=checkbox]):not([type=file]),textarea,select) { width: 100%; min-width: 0; min-height: 46px; padding: 11px 12px; border: 1px solid var(--ink-soft); border-radius: 8px; background: var(--paper); color: var(--asphalt); font: 400 .85rem/1.5 "Poppins",sans-serif; }
+.admin-view textarea { resize: vertical; }
+.admin-view .admin-form-grid { gap: 16px; }
+.admin-view .admin-form-actions { display: flex; flex-wrap: wrap; gap: 10px; padding-top: 6px; }
+.admin-view .admin-form-note { margin: 8px 0 0; padding: 12px 14px; border-radius: 8px; background: var(--chalk); color: var(--admin-muted); font-size: .75rem; line-height: 1.6; }
+.admin-muted { margin: 5px 0; color: var(--admin-muted); font-size: .77rem; }
+.admin-view .admin-form-error { font-size: .77rem; }
+.admin-view .admin-quiz-question { gap: 14px; padding: 16px; }
+.admin-view .admin-quiz-question-heading strong { font-size: .83rem; }
+.admin-view .admin-quiz-question-heading button { font-size: .73rem; }
+.admin-course-empty { display: grid; justify-items: start; align-content: center; min-height: 320px; padding: 32px; border: 1px dashed var(--ink-soft); border-radius: 12px; background: var(--paper); color: var(--turf); }
+.admin-course-empty h3 { margin: 16px 0 8px; font: 700 1.4rem "Outfit",sans-serif; color: var(--asphalt); }
+.admin-course-empty p { max-width: 380px; margin: 0 0 22px; color: var(--admin-muted); font-size: .83rem; }
+.admin-view .admin-empty { padding: 24px 16px; font-size: .8rem; border-radius: 10px; background: var(--chalk); }
+.admin-view :is(.admin-record,.admin-post,.admin-report,.admin-event,.admin-certificate-row,.admin-issue-card) { border-radius: 10px; box-shadow: none; }
+.admin-view .admin-record-head { padding: 18px 20px; }
+.admin-view :is(.admin-record-head,.admin-post,.admin-report,.admin-event,.admin-certificate-row) strong { font-size: .9rem; font-weight: 600; overflow-wrap: anywhere; }
+.admin-view :is(.admin-record-head,.admin-post,.admin-report,.admin-event,.admin-certificate-row) small { font-size: .66rem; line-height: 1.6; }
+.admin-view :is(.admin-record-head,.admin-post,.admin-report,.admin-event,.admin-certificate-row) em { font-size: .76rem; line-height: 1.6; }
+.admin-view .admin-record-body { padding: 0 20px 20px; gap: 16px; }
+.admin-view .admin-record-head > svg { flex-shrink: 0; }
+.admin-view :is(.admin-record-head,.admin-post,.admin-report,.admin-event,.admin-certificate-row) > span { gap: 6px; }
+.admin-view :is(.admin-channel-list,.admin-post,.admin-report,.admin-event,.admin-certificate-row) button { padding: 10px 14px; background: var(--mist); color: var(--turf-dark); font-size: .77rem; border: 1px solid var(--line); border-radius: 8px; }
+.admin-view .admin-channel-list > div { gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.admin-view .admin-channel-list small { font-size: .75rem; }
+.admin-view .admin-report em { max-width: 600px; white-space: normal; }
+.admin-view .admin-report b { font-size: .76rem; }
+.admin-view .admin-list-title { margin: 8px 0 -8px; font-size: 1.1rem; }
+.admin-view .admin-course-access { padding: 14px 16px; border-radius: 9px; gap: 8px; }
+.admin-view .admin-course-access legend { font-size: .77rem; }
+.admin-view .admin-course-access label { display: grid; grid-template-columns: 24px minmax(0,1fr); align-items: center; min-height: 44px; gap: 10px; }
+.admin-view .admin-course-access input { min-height: 22px; width: 20px; height: 20px; }
+.admin-account-setup > div { padding: 0 18px 18px; }
+.admin-account-setup p { max-width: 850px; margin: 2px 0 16px; color: var(--admin-muted); font-size: .8rem; line-height: 1.6; }
+.admin-member-toolbar { display: grid; grid-template-columns: minmax(0,1fr) minmax(220px,.45fr); gap: 16px; align-items: center; }
+.admin-member-toolbar .admin-filter-label { margin: 0; }
+.admin-results-count { margin: -8px 0 -8px; color: var(--admin-muted); font-size: .76rem; }
+.admin-feedback { display: flex; align-items: flex-start; gap: 10px; padding: 16px; margin-bottom: 22px; border: 1px solid #e5c69e; background: #fff7eb; color: #71450c; border-radius: 10px; font-size: .8rem; }
+.admin-feedback > svg { flex-shrink: 0; }
+.admin-feedback > span { flex: 1; }
+.admin-feedback button { flex-shrink: 0; padding: 7px 10px; border-radius: 7px; background: white; color: #71450c; }
+@container workspace (max-width: 1000px) {
+  .admin-view { padding: 20px 20px 110px; }
+  .admin-view .admin-overview-grid { grid-template-columns: 1fr; }
+  .admin-view .admin-course-workspace { grid-template-columns: 235px minmax(0,1fr); gap: 16px; }
+  .admin-view .admin-course-heading, .admin-view .admin-editor-card { padding: 20px; }
+  .admin-view .admin-lesson { grid-template-columns: 1fr; }
+  .admin-view .admin-migration-note { flex-wrap: wrap; }
+  .admin-view .admin-migration-note > div { flex-basis: calc(100% - 45px); }
+}
+@container workspace (max-width: 720px) {
+  .admin-view { padding: 16px 16px 110px; }
+  .admin-view .admin-tabs { margin-bottom: 22px; }
+  .admin-view .admin-course-workspace { grid-template-columns: minmax(0,1fr); }
+  .admin-view .admin-course-library { position: static; max-height: none; overflow: visible; padding: 16px; }
+  .admin-view .admin-course-options { display: flex; overflow-x: auto; padding: 2px 2px 8px; scroll-snap-type: x proximity; }
+  .admin-view .admin-course-options > button { flex: 0 0 min(82%,270px); scroll-snap-align: start; border-color: var(--line); background: var(--chalk); }
+  .admin-view .admin-course-options > button.selected { background: var(--paper); border-color: var(--turf); }
+  .admin-view .admin-filter-label { margin-bottom: 12px; }
+  .admin-view .admin-metrics { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .admin-view .admin-member-toolbar { grid-template-columns: 1fr; gap: 10px; }
+  .admin-view .admin-section-toolbar { align-items: flex-start; }
+  .admin-view .admin-section-toolbar .admin-section-heading > span { display: none; }
+  .admin-view .admin-module-heading { gap: 9px; padding: 14px; }
+  .admin-view .admin-module-count { font-size: .65rem; }
+  .admin-view .admin-module-content { padding: 0 14px 14px; }
+}
+@container workspace (max-width: 480px) {
+  .admin-view .admin-hero { align-items: flex-start; gap: 12px; }
+  .admin-view .admin-hero h2 { font-size: 1.7rem; }
+  .admin-view .admin-refresh { padding: 10px; min-width: 44px; }
+  .admin-view .admin-refresh span { display: none; }
+  .admin-view .admin-form-grid { grid-template-columns: 1fr; }
+  .admin-view :is(.admin-composer,.admin-subcomposer,.admin-issue-card,.admin-record-body,.admin-editor-card) :is(input:not([type=checkbox]):not([type=file]),textarea,select), .admin-view .admin-search input, .admin-view .admin-filter-label select { font-size: 1rem; }
+  .admin-view .admin-form-actions > button { flex: 1 1 auto; }
+  .admin-view .admin-section-toolbar { flex-wrap: wrap; gap: 14px; }
+  .admin-view .admin-metrics article { padding: 16px; }
+  .admin-view .admin-metrics strong { font-size: 1.75rem; }
+  .admin-view .admin-metrics article > span { width: 28px; height: 28px; }
+  .admin-view .admin-start, .admin-view .admin-launch-checks { padding: 18px; }
+  .admin-view .admin-launch-checks > div:not(.admin-card-heading) { grid-template-columns: 26px minmax(0,1fr); }
+  .admin-view .admin-launch-checks em { grid-column: 2; }
+  .admin-view .admin-module-heading .admin-module-index { width: 27px; flex-basis: 27px; }
+  .admin-view .admin-module-count { display: none; }
+  .admin-view .admin-course-heading, .admin-view .admin-editor-card { padding: 18px; }
+  .admin-view .admin-editor-heading h3 { font-size: 1.35rem; }
+  .admin-view :is(.admin-post,.admin-report,.admin-event,.admin-certificate-row) { align-items: flex-start; flex-direction: column; }
+  .admin-view .admin-record-head { padding: 16px; }
+  .admin-view .admin-record-body { padding: 0 16px 16px; }
+  .admin-view .admin-feedback { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) { .admin-view * { animation: none !important; transition: none !important; } }
+.admin-header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+@container workspace (max-width: 720px) {
+  .admin-view .admin-tabs { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); overflow: visible; }
+  .admin-view .admin-tabs button { justify-content: flex-start; min-width: 0; gap: 6px; padding: 10px 8px; font-size: .72rem; }
+  .admin-view .admin-tabs button svg { width: 15px; height: 15px; }
+  .admin-view .admin-tabs .admin-nav-count { min-width: 18px; font-size: .6rem; }
+}
+@container workspace (max-width: 480px) {
+  .admin-view .admin-hero { flex-wrap: wrap; }
+  .admin-view .admin-header-actions { width: 100%; }
+  .admin-view .admin-header-actions > button:first-child:not(.admin-refresh) { flex: 1; }
+  .admin-view .admin-tabs { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .admin-view .admin-tabs button { justify-content: center; font-size: .78rem; }
+}
+.admin-workspace-fields { min-width: 0; padding: 0; margin: 0; border: 0; }
+.admin-workspace-fields:disabled { opacity: .8; }
+.admin-view .admin-lesson > .admin-form-note { grid-column: 1 / -1; }
+.admin-view .admin-search button { width: 44px; min-width: 44px; }
+.admin-course-detail { scroll-margin-top: 92px; }
+.lesson-builder { display: grid; gap: 16px; min-width: 0; }
+.lesson-builder-heading { display: flex; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; gap: 14px; }
+.lesson-builder-heading h4 { margin: 0 0 5px; font: 700 1.1rem/1.3 "Outfit",sans-serif; }
+.lesson-builder-heading p { max-width: 410px; margin: 0; color: var(--ink-soft); font-size: .77rem; }
+.lesson-builder-mode { display: flex; flex-shrink: 0; padding: 3px; gap: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); }
+.admin-view .lesson-builder-mode button { display: inline-flex; gap: 5px; align-items: center; justify-content: center; padding: 8px 10px; border: 0; background: transparent; border-radius: 6px; color: var(--ink-soft); font-size: .74rem; }
+.admin-view .lesson-builder-mode button[aria-pressed="true"] { background: var(--asphalt); color: var(--paper); }
+.lesson-builder-blocks { display: grid; gap: 16px; min-width: 0; }
+.lesson-builder-block { min-width: 0; border: 1px solid var(--line); border-radius: 10px; overflow: clip; background: var(--paper); scroll-margin-top: 100px; }
+.lesson-builder-block:focus-visible { outline: 3px solid rgba(255,144,2,.52); outline-offset: 2px; }
+.lesson-builder-block > header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--chalk); }
+.lesson-builder-block > header > span, .lesson-builder-block > header > div { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.lesson-builder-block > header > span { color: var(--turf); }
+.lesson-builder-block > header strong { color: var(--turf-dark); font-size: .8rem; }
+.lesson-builder-block > header small { display: grid; width: 22px; height: 22px; place-items: center; border-radius: 5px; border: 1px solid var(--line); color: var(--ink-soft); font-size: .68rem; }
+.admin-view .lesson-builder-block > header button { display: grid; place-items: center; width: 44px; min-width: 44px; padding: 8px; background: transparent; border: 0; border-radius: 7px; color: var(--ink-soft); }
+.admin-view .lesson-builder-block > header button:hover:not(:disabled) { background: var(--mist); color: var(--turf-dark); }
+.lesson-builder-fields { display: grid; gap: 16px; padding: 18px; min-width: 0; }
+.admin-view .lesson-builder-fields textarea { min-height: 130px; }
+.lesson-media-source { display: grid; gap: 12px; min-width: 0; }
+.admin-view .lesson-media-upload { position: relative; display: flex; align-items: center; gap: 12px; min-height: 82px; padding: 16px; border: 1px dashed var(--turf); border-radius: 8px; background: var(--chalk); cursor: pointer; }
+.lesson-media-upload > svg { color: var(--turf); flex-shrink: 0; }
+.lesson-media-upload > span { display: grid; gap: 5px; min-width: 0; }
+.lesson-media-upload strong { font-size: .81rem; overflow-wrap: anywhere; }
+.lesson-media-upload small { font-size: .69rem; font-weight: 400; color: var(--ink-soft); overflow-wrap: anywhere; }
+.admin-view .lesson-media-upload input { position: absolute; inset: 0; width: 100%; height: 100%; min-height: 44px; opacity: 0; cursor: pointer; }
+.lesson-media-upload:focus-within { outline: 3px solid rgba(255,144,2,.52); outline-offset: 2px; }
+.lesson-media-upload:has(input:disabled) { opacity: .5; cursor: not-allowed; }
+.lesson-source-or { color: var(--ink-soft); font-size: .72rem; text-align: center; }
+.lesson-file-ready { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--turf-dark); font-size: .73rem; overflow-wrap: anywhere; }
+.lesson-file-ready svg { flex-shrink: 0; }
+.lesson-selected-photo { width: 100%; max-height: 240px; object-fit: contain; background: var(--chalk); border: 1px solid var(--line); border-radius: 8px; }
+.lesson-add-content { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 9px; min-width: 0; }
+.admin-view .lesson-add-content button { display: grid; justify-items: start; align-content: start; gap: 7px; min-height: 124px; padding: 15px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--mist); color: var(--turf-dark); text-align: left; }
+.admin-view .lesson-add-content button:hover:not(:disabled) { border-color: var(--turf); }
+.lesson-add-content button > span { display: flex; width: 100%; align-items: center; justify-content: space-between; }
+.lesson-add-content strong { font-size: .8rem; }
+.lesson-add-content small { color: var(--ink-soft); font-size: .65rem; font-weight: 400; line-height: 1.5; }
+.lesson-builder-hint { margin: 0; }
+.lesson-builder-preview { min-width: 0; min-height: 160px; padding: 20px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
+.lesson-preview-label { margin: 0 0 18px; padding-bottom: 12px; border-bottom: 1px solid var(--line); color: var(--ink-soft); font-size: .7rem; }
+.lesson-imported-preview { max-height: 320px; padding: 14px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+.lesson-builder-undo, .lesson-saved-media { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; color: var(--ink-soft); font-size: .75rem; }
+.admin-view :is(.lesson-builder-undo,.lesson-saved-media) button { display: inline-flex; align-items: center; gap: 5px; padding: 8px 10px; border: 0; border-radius: 8px; background: var(--mist); color: var(--turf-dark); font-size: .73rem; }
+.lesson-upload-status { display: flex; align-items: center; gap: 8px; font-size: .78rem; color: var(--turf); overflow-wrap: anywhere; }
+@container workspace (max-width: 1000px) {
+  .lesson-add-content { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@container workspace (max-width: 480px) {
+  .lesson-builder-fields { padding: 14px; }
+  .lesson-builder-block > header { padding: 7px; gap: 2px; }
+  .lesson-builder-block > header > div { gap: 0; }
+  .lesson-builder-block > header > span { gap: 4px; }
+  .lesson-builder-block > header small { display: none; }
+  .lesson-builder-mode { width: 100%; }
+  .admin-view .lesson-builder-mode button { flex: 1; }
+  .admin-view .lesson-add-content button { min-height: 114px; padding: 14px 12px; }
+}
+@container workspace (max-width: 480px) {
+  .admin-view .admin-hero { padding-bottom: 16px; margin-bottom: 16px; gap: 12px; }
+  .admin-view .admin-hero p { display: none; }
+  .admin-view .admin-hero h2 { font-size: 1.5rem; }
+  .admin-view .admin-tabs { grid-template-columns: repeat(3,minmax(0,1fr)); margin-bottom: 20px; }
+  .admin-view .admin-tabs button { gap: 4px; padding: 10px 5px; font-size: .68rem; }
+  .admin-view .admin-tabs button svg { width: 13px; height: 13px; }
+  .admin-view .admin-tabs .admin-nav-count { display: none; }
+}

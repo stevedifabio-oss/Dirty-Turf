@@ -4,6 +4,9 @@ const APP_SHELL = [
   "/",
   MANIFEST_URL,
   "/manifest.webmanifest",
+  "/terms.html",
+  "/privacy.html",
+  "/legal.css",
   "/dirty-turf-logo.png",
   "/icons/icon-192.png",
   "/icons/icon-512.png",
@@ -35,7 +38,7 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
 
   if (request.mode === "navigate") {
-    event.respondWith(fetch(request).catch(() => caches.match("/")));
+    event.respondWith(fetch(request).catch(async () => (await caches.match(request, { ignoreSearch: true })) ?? caches.match("/")));
     return;
   }
 

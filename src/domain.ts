@@ -56,6 +56,7 @@ export type CommunityComment = {
   id: number;
   cloudId?: string;
   postId: number;
+  postCloudId?: string;
   parentId?: number;
   parentCloudId?: string;
   author: string;

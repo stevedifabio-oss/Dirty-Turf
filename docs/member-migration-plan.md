@@ -1,31 +1,72 @@
 # Dirty Turf member migration plan
 
-Prepared October 3, 2026; readiness tooling updated October 5. This is a rollout
-plan and communication draft. A guarded temporary Community bridge is built;
-the remaining source holds, current member reconciliation and installed-device
-pilot must pass before the full member move. The bridge depends on this Mac,
-Codex and Steve's signed-in Chrome session being available.
+Prepared October 3, 2026; revised October 20 after the owner supplied GHL's
+development-team response. This is a rollout plan and communication draft.
+GHL confirmed that complete native Community synchronization and historical
+backfill are not supported by its current public APIs, including Social Planner.
+There is no confirmed alternative/beta or availability timeline. See
+[the recorded support decision](community-sync.md).
+
+Keep GHL as the main discussion space until Steve can approve a changeover.
+Use Dirty Turf for Academy/tools and a controlled Community pilot in the meantime.
+Do not promise that activity in the two communities is automatically shared.
+The existing guarded browser collector can assist a bounded migration capture;
+it depends on this Mac, Codex and signed-in Chrome and is not a permanent sync.
 
 **Destination:** Dirty Turf's own Academy and Community on web, iPhone and Android.
-GHL stays in use during the overlap. Its activity flows one way into the app until
-the agreed Community changeover. Existing members keep their free Community and
-whole current Academy access. The migration does not require them to buy again.
+GHL stays in use during the overlap. Agree which history will be imported or
+retained as an archive, with missing media and other exceptions recorded. At the
+approved changeover, all new community posts/replies move to Dirty Turf. Existing
+eligible members keep their approved free Community and whole current Academy
+access. The migration does not require them to buy again.
+
+## Preparation completed October 20
+
+- Saved a fresh private inventory of **63 unique visible directory cards**:
+  61 contributors and two admins. The directory did not expose membership emails
+  or restricted/historical membership coverage in this session. This is an
+  inventory for reconciliation, not proof that 63 accounts are ready or eligible.
+- Prepared private JSON/CSV owner-review worksheets for those 63 records. Saved
+  evidence supplies 59 historical email/identity prefills, one additional old app
+  link and three records without an old app link. Historical facts remain marked
+  stale/unverified; all fresh confirmation and approval fields are blank.
+- Prepared the [pilot and communication launch pack](member-migration-launch-pack.md)
+  and a [local tracker/preparation generator](member-migration-readiness.md#prepare-the-rollout-package).
+  Neither sends invitations nor changes accounts, access or billing.
+- Checked the connected Supabase account: Dirty Turf's project is absent from
+  its project list and its database read was denied. A fresh SELECT-only app
+  export still needs an authorized project owner/admin session.
+- Reviewed the saved history: the last accepted catalog is October 6, with five
+  unresolved video/media holds. It is not a current or complete media archive.
+  Steve must choose required copies versus a protected archive and accept or
+  resolve exceptions before changeover.
+- Preserved 45 saved JSON payloads, including the 29 original ordered import
+  batches and accepted 142-record historical baseline, in a private dated local
+  archive. Extraction and hashes were verified. It does not include the five
+  missing videos or prove an off-device backup/full app restore. The original
+  archive's older acceptance-hash mismatch remains documented for review.
+
+Next evidence: exact membership emails/statuses and source identity proof, the
+fresh app export, and Steve's approved existing-free cohort. Keep private member
+worksheets outside Git. Complete the device pilot and agree the history treatment
+before choosing the final date or sending announcements.
 
 ## Recommended sequence
 
 | Stage | What happens | Exit requirement | Owner |
 | --- | --- | --- | --- |
-| Prepare | Refresh the exact group roster, reconcile accounts/access, finish the Community bridge | Every eligible account ready; content catch-up proven | Build team; Steve resolves membership exceptions |
+| Prepare | Refresh the exact group roster, reconcile accounts/access, agree historical import/archive scope | Every eligible account ready; required history verified or exceptions explicitly accepted | Build team; Steve resolves membership/history exceptions |
 | Pilot | Steve, the owner, a moderator and 3–5 members try web, iPhone and Android | Login, retained sessions, access and discussions pass | Build team and pilot members |
 | Invite | Branded announcement and waves of up to 25 members | Delivery/access problems assigned and resolved | Build team prepares; owner authorizes sending |
-| Changeover | Briefly stop GHL Community writes and import the final changes | Content reconciled; Steve approves new posting destination | Steve and build team |
+| Changeover | Complete the agreed final history capture/archive and direct new discussions to Dirty Turf | Required history reconciled; Steve approves one posting destination | Steve and build team |
 | Support | Help remaining members sign in; retain source archive and GHL read access where available | Recovery period completed; hosting/email dependencies checked | Steve and build team |
 
 Allow approximately **14 days between the first full invitation wave and the
 changeover**, once readiness checks pass. This is a recommended member transition
 window, not a promise that unfinished integration work will take 14 days. Keep a
 recommended **30-day recovery period** afterward. Choose actual dates after the
-pilot and source bridge pass.
+pilot, member readiness and agreed historical treatment pass. A full automatic
+GHL Community mirror is not an exit requirement because GHL does not support it.
 
 ## 1. Prepare all eligible members
 
@@ -35,9 +76,13 @@ pilot and source bridge pass.
 - Use the current roster as the total. Earlier project notes recorded 60 initial
   source emails, then 62 active linked accounts and one cancelled historical
   author. Those are dated observations, not today's confirmed member count.
-- Prepare one correctly linked account per eligible person. Preview first, then
-  silently provision missing accounts in batches of up to 50, and preview again.
-  Review duplicate emails, missing emails and conflicting identity links.
+- Prepare one correctly linked account per eligible person. Review duplicate
+  emails, missing emails and conflicting identity links. Before authorized silent
+  provisioning, reconcile the exact execution queue: the existing endpoint has
+  no member-ID filter, and its count-only preview uses a different selection rule
+  from provisioning. A batch limit cannot select the pilot or prove who will be
+  processed. Independently verify the full queue or add reviewed exact targeting
+  before execution; then re-export and audit the resulting accounts.
 - Freeze the approved existing-member cohort that keeps free Academy/Community
   access. Check moderator/owner roles and extra purchased access separately.
   Members joining during the overlap follow their actual existing/new paid access
@@ -53,10 +98,12 @@ pilot and source bridge pass.
   accounts, changes grants, charges members or sends messages.
 - Preserve native lesson completions and imported course percentage progress.
   Do not turn a percentage into invented lesson completions or certificates.
-- Verify a full Community catch-up: all pages, source authors, posts, comments,
-  reply parents, edits and media. Repeat it to confirm no duplicates or historical
-  notification replay. A missing record must be reviewed rather than deleted.
-  Record unresolved deletion, reaction, RSVP or membership coverage explicitly.
+- Inventory the agreed Community history: source authors, posts, comments,
+  reply parents and media. For content being copied, use complete guarded reads
+  and replay checks to prevent duplicates or historical notification replay.
+  A missing record must be reviewed rather than deleted. Explicitly record
+  unsupported videos and deletion, reaction, RSVP or membership coverage; obtain
+  Steve's decision on retention/deferred copies before promising completeness.
 
 Maintain a private rollout tracker with: member identity, eligibility, account
 ready, access checked, announcement delivery, first successful app sign-in,
@@ -73,8 +120,9 @@ Use the actual builds intended for members. On web, an iPhone and an Android:
 - Close and reopen the app, then reopen the following day to check retained login.
 - Open Academy lessons and downloads, verify progress and free member access,
   then make an authorized pilot post/reply and confirm its correct author/thread.
-- Check GHL catch-up preserves those app-created records. During the pilot, GHL
-  remains the main community; explain that app posts do not copy back to GHL.
+- Any assisted historical import must preserve those app-created records. During
+  the pilot, GHL remains the main community. Explain that neither community is a
+  real-time copy of the other and that app pilot posts do not copy back to GHL.
 - Verify restricted accounts cannot regain access and ordinary members cannot
   use moderator controls.
 - Confirm `hello@dirtyturf.com` receives replies and assign a support owner
@@ -125,7 +173,8 @@ same email address you use now.
 
 Continue posting in the current GHL Community until **[confirmed changeover
 date]**. From that date, use Community in Dirty Turf for all new posts and replies.
-We'll copy the final changes across before the move.
+We'll preserve the agreed existing history and explain any archive or media
+exceptions before the move.
 
 Need help? Email **hello@dirtyturf.com** with your membership email, device and
 what happened. You do not need to send your password or sign-in link.
@@ -135,18 +184,22 @@ what happened. You do not need to send your password or sign-in link.
 ## 4. Final changeover and recovery
 
 Approve the move only when every eligible account is prepared, pilot checks pass,
-the source catch-up succeeds repeatedly, invitation failures are resolved and no
-critical login/access/content issue remains open. A provisioned account is ready
+the agreed historical import/archive is verified, invitation failures are resolved
+and no critical login/access issue remains open. A provisioned account is ready
 for a dormant member to return later; every member need not log in on the same day.
 Resolve recorded historical reaction, RSVP, deletion and progress limitations or
 obtain Steve's explicit acceptance of their documented treatment before cutover.
-Missing posts/replies or incorrect access must be fixed before moving members.
+Missing required posts/replies must be recovered or explicitly accepted as a
+documented history exception. Incorrect member access must be fixed before moving.
 
-At the agreed time, pause new GHL Community posts/comments using a verified
-supported control. Capture the final changes, apply guarded deltas, reconcile
-IDs/counts/media and spot-check representative threads. Then publish the approved
-move notice in GHL and direct all new discussions to the app. If the final capture
-or checks fail, keep GHL as the posting destination and postpone the move.
+At the agreed time, pause new GHL Community posts/comments only if a verified
+supported control permits it; otherwise Steve must direct members to stop posting
+there and use the approved move notice. Complete the agreed bounded final
+capture/archive, reconcile copied IDs/counts/media and spot-check threads.
+Publish the move notice only after sending/publication is authorized, and direct
+all new discussions to the app. If required history or access checks fail, keep
+GHL as the posting destination and postpone the move. Do not keep promising a
+live mirror during the overlap.
 
 Keep a protected archive and GHL read access where supported during the recovery
 period. Do not delete source content. If rollback is needed, preserve/export new
@@ -159,16 +212,15 @@ billing dependencies. Confirm retirement separately with Steve.
 
 ## Text to send Steve
 
-> Steve, the plan is to move everyone into Dirty Turf's own app community. We'll
-> keep GHL running during the transition while we copy its activity into the app.
-> First we'll refresh everyone's accounts and free existing-member access,
-> finish the Community catch-up process, and test a small group on iPhone,
-> Android and web. Then we'll invite everyone using their current email and
-> allow about two weeks for the move. We'll pick one changeover date, copy the
-> final GHL changes, and direct all new posts and replies to Dirty Turf. We'll
-> retain a recovery copy and help anyone who hasn't signed in yet. Existing
-> members won't need to pay again for access they already have. Course updates are
-> running; full automatic Community catch-up is the main remaining launch gate.
+> Steve, GHL confirmed it can't automatically sync native community posts and
+> replies into our app. We'll keep discussions there until the move is ready.
+> First we'll verify member accounts and free access, test with 3–5 members,
+> preserve the agreed history, then announce one date to move new discussions
+> into Dirty Turf. Existing approved members keep free Community and the whole
+> current Academy. Please review the prepared member list, confirm emails and
+> anyone who should be restricted, pick 3–5 testers, and tell us which old
+> posts/videos must be copied. We'll agree the switch date after testing. Please
+> leave GHL running until then.
 
 ## Evidence and implementation references
 
