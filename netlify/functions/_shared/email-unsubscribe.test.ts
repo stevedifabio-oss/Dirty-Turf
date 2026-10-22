@@ -13,6 +13,8 @@ describe("email unsubscribe page", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(response.headers.get("referrer-policy")).toBe("no-referrer");
     expect(response.headers.get("content-security-policy")).toContain("form-action 'self'");
+    expect(response.headers.get("content-security-policy")).toContain("img-src 'self'");
+    expect(response.headers.get("content-security-policy")).toContain("font-src 'self'");
     expect(fetcher.mock.calls[0][1].method).toBe("GET");
     expect(fetcher.mock.calls[0][0].origin).toBe("https://ipbtldajgsoxixqmajec.supabase.co");
   });
@@ -37,7 +39,8 @@ describe("email unsubscribe page", () => {
     const large = await unsubscribe(new Request(`${origin}/email/unsubscribe`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "token=" + "x".repeat(4096) }));
     expect(large.status).toBe(413); expect(fetcher).not.toHaveBeenCalled();
     const response = await unsubscribe(new Request(`${origin}/email/unsubscribe?token=payload.signature`));
-    expect(response.status).toBe(503); expect(await response.text()).not.toContain("private upstream");
+    expect(response.status).toBe(503); const html=await response.text(); expect(html).not.toContain("private upstream");
+    expect(html).toContain("/dirty-turf-logo.png"); expect(html).toContain("Poppins"); expect(html).toContain("Outfit");
   });
   it("keeps signature validation failures as errors", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("<!doctype html><h1>Invalid link</h1>", { status: 400 })));

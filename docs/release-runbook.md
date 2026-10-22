@@ -1,6 +1,6 @@
 # Dirty Turf Academy release runbook
 
-> Current status: see `release-status-2026-09-29.md`. Build 4 / Internal build 1 entries below are historical September 20 evidence, not current store status.
+> Current audit and migration gates: [22 October readiness report](migration-readiness-20261022.md). The September release order and evidence below are historical; they do not establish current store availability, complete membership, backup, email or billing readiness. Use the current report and [recovery gate](member-migration-recovery.md) before a new migration release.
 
 The web app, iOS app, and Android app share one React application and one
 Supabase backend. A release is complete only when all three clients pass the

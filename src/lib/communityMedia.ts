@@ -2,6 +2,21 @@ import type { CommunityMedia } from "../domain";
 
 type ImportedMedia = Record<string, unknown>;
 
+export function communityMediaPathsByBucket(value: unknown): Map<string,string[]> {
+  const groups = new Map<string,Set<string>>();
+  if (!Array.isArray(value)) return new Map();
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const media = item as ImportedMedia;
+    const bucket = typeof media.storage_bucket === "string" ? media.storage_bucket : "academy-assets";
+    const path = media.storage_path;
+    if (!["academy-assets","community-photos"].includes(bucket) || typeof path !== "string" || !path.trim()) continue;
+    if (!groups.has(bucket)) groups.set(bucket,new Set());
+    groups.get(bucket)!.add(path);
+  }
+  return new Map([...groups].map(([bucket,paths]) => [bucket,[...paths]]));
+}
+
 /** Source attachments and signed private objects must have a public HTTPS destination. */
 export function safeCommunityMediaUrl(value: unknown): string | undefined {
   if (typeof value !== "string" || value.length > 4096 || /[\u0000-\u0020\\]/.test(value)) return undefined;
@@ -33,8 +48,9 @@ export function normalizeCommunityMediaItems(
     if (!item || typeof item !== "object") return [];
     const media = item as ImportedMedia;
     const storagePath = typeof media.storage_path === "string" ? media.storage_path : undefined;
+    const storageBucket = typeof media.storage_bucket === "string" ? media.storage_bucket : "academy-assets";
     const originalUrl = safeCommunityMediaUrl(media.url);
-    const signedUrl = storagePath ? safeCommunityMediaUrl(signedByPath.get(storagePath)) : undefined;
+    const signedUrl = storagePath ? safeCommunityMediaUrl(signedByPath.get(`${storageBucket}:${storagePath}`) ?? (storageBucket === "academy-assets" ? signedByPath.get(storagePath) : undefined)) : undefined;
     const url = signedUrl ?? originalUrl;
     if (!url) return [];
 

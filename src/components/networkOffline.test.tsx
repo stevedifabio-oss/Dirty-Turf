@@ -123,7 +123,9 @@ describe("offline workspace sheets and events", () => {
     expect(text(tree)).toContain("2 of 3 current members ready");
     const toggle = find(tree, element => typeof element.type === "function" && element.props.label === "Email notifications");
     expect(toggle.props.checked).toBe(true); expect(toggle.props.disabled).toBe(true);
-    await toggle.props.onChange(false); await button(tree, "Provision 1 missing account").props.onClick();
+    await toggle.props.onChange(false);
+    expect(text(tree)).toContain("Review exact members before continuing");
+    expect(elements(tree).some(element => element.type === "button" && text(element.props.children).includes("Provision"))).toBe(false);
     await button(tree, "Manage billing").props.onClick();
     expect(backend.saveNotificationPreferences).not.toHaveBeenCalled();
     expect(backend.provisionAcademyMemberAccounts).not.toHaveBeenCalled();

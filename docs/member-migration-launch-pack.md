@@ -41,6 +41,7 @@ separate decision before retirement.
 
 ### Preparation gate
 
+- [ ] Complete the [database and private Storage backup / isolated restore gate](member-migration-recovery.md). The current Free plan has no hosted project backups. Aggregate receipts and source archives alone cannot restore the app.
 - [ ] Obtain complete fresh snapshots of the exact **7 Figure Turf Cleaning**
   Community roster and the app, following the readiness audit's scope, pagination,
   freshness and private-storage rules. Include restricted/historical source members

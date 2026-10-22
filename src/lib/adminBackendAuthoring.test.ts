@@ -156,30 +156,31 @@ describe("native module and lesson creation", () => {
   });
 });
 
+const reviewedMembers = { memberIds: ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"], inviteIds: ["invite-first", "invite-second"], previewToken: "reviewed-token", previewExpiresAt: "2026-10-21T20:10:00.000Z" };
 describe("member action outcomes", () => {
   it.each(["provision", "notify"] as const)("surfaces partial %s failure and retains the full server result", async (action) => {
-    const response = { processed: 5, failed: 2, remainingForAction: 3, results: [{ status: "failed", reason: "Email unavailable" }] };
+    const response = { action, processed: 2, failed: 1, remainingForAction: 0, results: [{ inviteId: "invite-first", status: action === "notify" ? "sent" : "provisioned" }, { inviteId: "invite-second", status: "failed" }] };
     mocks.state.inviteResult = response;
-    const failure = await runMemberInviteAction(action).catch(error => error);
+    const failure = await runMemberInviteAction(action, reviewedMembers).catch(error => error);
     expect(failure).toBeInstanceOf(MemberInvitePartialFailure);
     expect(failure.result).toBe(response);
     expect(failure.action).toBe(action);
-    expect(failure.message).toContain("2 failures (5 processed)");
+    expect(failure.message).toContain("1 failure (2 processed)");
     expect(failure.message).toContain("Review member status before retrying");
   });
 
-  it("preserves a successful response and the existing bounded batch request", async () => {
-    const response = { processed: 2, failed: 0, remainingForAction: 1 };
+  it("preserves a successful response and sends only the exact reviewed members", async () => {
+    const response = { action: "notify", processed: 2, failed: 0, remainingForAction: 0, results: [{ inviteId: "invite-first", status: "sent" }, { inviteId: "invite-second", status: "sent" }] };
     mocks.state.inviteResult = response;
-    expect(await runMemberInviteAction("notify")).toBe(response);
-    expect(mocks.client.functions.invoke).toHaveBeenCalledWith("academy-invite-members", { body: { academyCommunityId: "community-a", action: "notify", limit: 25 } });
+    expect(await runMemberInviteAction("notify", reviewedMembers)).toBe(response);
+    expect(mocks.client.functions.invoke).toHaveBeenCalledWith("academy-invite-members", { body: { academyCommunityId: "community-a", action: "notify", academyMemberIds: reviewedMembers.memberIds, previewToken: reviewedMembers.previewToken, limit: 2 } });
   });
 
   it("preserves transport failures and rejects missing action results", async () => {
     mocks.state.inviteError = new Error("Function unavailable");
-    await expect(runMemberInviteAction("provision")).rejects.toBe(mocks.state.inviteError);
+    await expect(runMemberInviteAction("provision", reviewedMembers)).rejects.toBe(mocks.state.inviteError);
     mocks.state.inviteError = null;
     mocks.state.inviteResult = null;
-    await expect(runMemberInviteAction("notify")).rejects.toThrow("returned no result");
+    await expect(runMemberInviteAction("notify", reviewedMembers)).rejects.toThrow("returned no result");
   });
 });

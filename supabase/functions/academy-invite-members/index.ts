@@ -12,6 +12,16 @@ import {
   resolveMemberAccessAction,
   summarizeMemberAccess,
 } from "../_shared/member-access.ts";
+import {
+  createMemberInvitePreviewToken,
+  MEMBER_INVITE_DELIVERY_REVIEW_PREFIX,
+  type MemberInviteOperation,
+  type MemberInviteRecord,
+  memberInviteStateHash,
+  parseMemberInviteSelection,
+  planMemberInvites,
+  verifyMemberInvitePreviewToken,
+} from "../_shared/member-invite-plan.ts";
 
 type InviteRequest = {
   academyCommunityId: string;
@@ -20,9 +30,15 @@ type InviteRequest = {
   limit?: number;
   redirectTo?: string;
   resend?: boolean;
+  previewAction?: MemberInviteOperation;
+  academyMemberIds?: string[];
+  previewToken?: string;
 };
 
 type AcademyMemberRelation = {
+  id: string;
+  academy_community_id: string;
+  updated_at: string;
   display_name: string;
   company_name: string;
   status: string;
@@ -37,6 +53,9 @@ type InviteRow = {
   invited_user_id: string | null;
   attempt_count: number;
   delivery_count: number;
+  updated_at: string;
+  last_action?: string | null;
+  error_message?: string | null;
   academy_members: AcademyMemberRelation | AcademyMemberRelation[] | null;
 };
 
@@ -80,7 +99,11 @@ Deno.serve(async (request) => {
 
   let body: InviteRequest;
   try {
-    body = await request.json();
+    const parsed = await request.json();
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("Invalid request body");
+    }
+    body = parsed;
   } catch {
     return jsonResponse(request, { error: "Invalid JSON body" }, {
       status: 400,
@@ -108,52 +131,135 @@ Deno.serve(async (request) => {
     });
   }
 
-  const limit = boundedLimit(body.limit, action === "notify" ? 25 : 50);
-  const [inviteRows, enrolledMemberIds, existingUsers] = await Promise.all([
-    loadInviteRows(admin, body.academyCommunityId),
-    loadEnrolledMemberIds(admin, body.academyCommunityId),
-    loadUsersByEmail(admin),
-  ]);
+  const previewAction = action === "preview"
+    ? body.previewAction ?? "provision"
+    : action;
+  if (
+    !["provision", "notify"].includes(previewAction) ||
+    (body.resend !== undefined && typeof body.resend !== "boolean")
+  ) {
+    return jsonResponse(request, {
+      error:
+        "previewAction must be provision or notify and resend must be a boolean.",
+    }, { status: 422 });
+  }
+  let academyMemberIds: string[] | null;
+  let redirectTo: string | undefined;
+  try {
+    academyMemberIds = parseMemberInviteSelection(
+      body.academyMemberIds,
+      previewAction,
+      action !== "preview",
+    );
+    if (
+      body.limit !== undefined &&
+      (!academyMemberIds || body.limit !== academyMemberIds.length)
+    ) {
+      throw new Error(
+        "Batch limit must match the exact reviewed member selection. Select the intended members instead of limiting the community-wide queue.",
+      );
+    }
+    if (previewAction === "notify") {
+      redirectTo = resolveInviteRedirect(body.redirectTo);
+      if (!redirectTo) {
+        throw new Error(
+          "APP_URL or an allowed redirectTo is required before notification delivery.",
+        );
+      }
+    }
+  } catch (error) {
+    return jsonResponse(request, { error: errorMessage(error) }, {
+      status: 422,
+    });
+  }
+  const [inviteRows, enrolledMemberIds, existingUsers, memberIdentities] =
+    await Promise.all([
+      loadInviteRows(admin, body.academyCommunityId),
+      loadEnrolledMemberIds(admin, body.academyCommunityId),
+      loadUsersByEmail(admin),
+      loadMemberIdentities(admin, body.academyCommunityId),
+    ]);
   const initialSummary = summarizeMemberAccess(
     inviteRows.map(toAccessRow),
     enrolledMemberIds,
     authIdentities(existingUsers),
+    memberIdentities,
   );
-  const candidates = selectCandidates(
-    inviteRows,
-    existingUsers,
-    action,
-    Boolean(body.resend),
-  );
-
+  const plan = planMemberInvites({
+    communityId: body.academyCommunityId,
+    action: previewAction,
+    rows: inviteRows.map(toPlanRow),
+    users: [...existingUsers.values()],
+    memberIdentities,
+    academyMemberIds,
+    resend: body.resend === true,
+  });
+  const stateHash = await memberInviteStateHash({
+    actorId: userData.user.id,
+    communityId: body.academyCommunityId,
+    action: previewAction,
+    academyMemberIds,
+    resend: body.resend === true,
+    redirectTo: redirectTo ?? null,
+    rows: plan.fingerprints,
+  });
   if (action === "preview") {
+    const proof = academyMemberIds && plan.blocked.length === 0
+      ? await createMemberInvitePreviewToken(serviceRoleKey, stateHash)
+      : null;
     return jsonResponse(request, {
       dryRun: true,
       action,
-      readyToProcess: candidates.length,
+      previewAction,
+      readyToProcess: academyMemberIds
+        ? plan.selected.length
+        : plan.candidates.length,
       summary: initialSummary,
+      candidates: plan.candidates,
+      selected: plan.selected,
+      blocked: plan.blocked,
+      previewToken: proof?.token ?? null,
+      previewExpiresAt: proof?.expiresAt ?? null,
     });
   }
-
-  let redirectTo: string | undefined;
-  if (action === "notify") {
-    try {
-      redirectTo = resolveInviteRedirect(body.redirectTo);
-      if (!redirectTo) {
-        throw new Error(
-          "APP_URL or an allowed redirectTo is required before notification delivery",
-        );
-      }
-    } catch (error) {
-      return jsonResponse(request, { error: errorMessage(error) }, {
-        status: 422,
-      });
-    }
+  if (plan.blocked.length) {
+    return jsonResponse(request, {
+      error:
+        "Some selected members are no longer eligible for this action. Review a fresh preview.",
+      blocked: plan.blocked,
+    }, { status: 409 });
   }
-
-  const batch = candidates.slice(0, limit);
+  try {
+    await verifyMemberInvitePreviewToken(
+      serviceRoleKey,
+      body.previewToken,
+      stateHash,
+    );
+  } catch (error) {
+    return jsonResponse(request, { error: errorMessage(error) }, {
+      status: 409,
+    });
+  }
+  const batch = plan.selected.map((selected) =>
+    inviteRows.find((row) => row.id === selected.inviteId)!
+  );
   const results: ProcessResult[] = [];
   for (const invite of batch) {
+    // Claim before Auth or mail side effects. The updated_at compare-and-set also
+    // consumes this preview during concurrent requests, including lost responses.
+    if (
+      !(await memberStillMatches(admin, invite)) ||
+      !(await claimInviteAttempt(admin, invite, action))
+    ) {
+      return jsonResponse(request, {
+        error:
+          "Member status changed while preparing this batch. Refresh and review the remaining exact members.",
+        action,
+        processed: results.length,
+        results,
+      }, { status: 409 });
+    }
+    let deliveryAttempted = false;
     try {
       const member = relatedMember(invite);
       if (!member) throw new Error("Academy member record is missing");
@@ -165,7 +271,11 @@ Deno.serve(async (request) => {
           member,
           existingUsers,
         );
+      await requireUnrestrictedAuthUser(admin, user.id, invite.email);
       if (action === "notify") {
+        // The persisted claim already carries an uncertainty hold. Keep it if
+        // the provider call or the success receipt fails or this process exits.
+        deliveryAttempted = true;
         const { error } = await admin.auth.signInWithOtp({
           email: normalizeMemberEmail(invite.email),
           options: { shouldCreateUser: false, emailRedirectTo: redirectTo },
@@ -179,7 +289,7 @@ Deno.serve(async (request) => {
         results.push({ inviteId: invite.id, status });
       }
     } catch (error) {
-      await markInviteFailed(admin, invite, action, error);
+      await markInviteFailed(admin, invite, action, error, deliveryAttempted);
       results.push({ inviteId: invite.id, status: "failed" });
     }
   }
@@ -189,6 +299,7 @@ Deno.serve(async (request) => {
     refreshedRows.map(toAccessRow),
     enrolledMemberIds,
     authIdentities(existingUsers),
+    await loadMemberIdentities(admin, body.academyCommunityId),
   );
   return jsonResponse(request, {
     action,
@@ -197,32 +308,69 @@ Deno.serve(async (request) => {
     accepted: results.filter((item) => item.status === "accepted").length,
     sent: results.filter((item) => item.status === "sent").length,
     failed: results.filter((item) => item.status === "failed").length,
-    remainingForAction: Math.max(0, candidates.length - results.length),
+    remainingForAction: Math.max(0, plan.selected.length - results.length),
     summary,
     results,
   });
 });
 
-function selectCandidates(
-  rows: InviteRow[],
-  users: Map<string, User>,
-  action: MemberAccessAction,
-  resend: boolean,
+function toPlanRow(invite: InviteRow): MemberInviteRecord {
+  const { academy_members: _relation, ...row } = invite;
+  return { ...row, member: relatedMember(invite) };
+}
+
+async function claimInviteAttempt(
+  admin: SupabaseClient,
+  invite: InviteRow,
+  action: MemberInviteOperation,
 ) {
-  return rows.filter((invite) => {
-    const member = relatedMember(invite);
-    if (
-      !member || member.status !== "active" || invite.status === "cancelled"
-    ) return false;
-    if (action === "preview") return !isAccessReady(invite, member, users);
-    if (action === "provision") {
-      return !isAccessReady(invite, member, users) ||
-        !["provisioned", "sent", "accepted"].includes(invite.status);
-    }
-    if (!isAccessReady(invite, member, users)) return false;
-    if (invite.status === "accepted") return false;
-    return resend || invite.status !== "sent";
-  });
+  const { data, error } = await admin.from("academy_member_invites").update({
+    last_attempt_at: new Date().toISOString(),
+    attempt_count: invite.attempt_count + 1,
+    last_action: action,
+    error_message: action === "notify"
+      ? `${MEMBER_INVITE_DELIVERY_REVIEW_PREFIX} An email attempt is reserved; confirm delivery before any resend.`
+      : null,
+  }).eq("id", invite.id).eq("updated_at", invite.updated_at).eq(
+    "status",
+    invite.status,
+  ).select("id,updated_at");
+  if (error) throw error;
+  if (data?.length !== 1) return false;
+  invite.updated_at = data[0].updated_at;
+  return true;
+}
+
+async function memberStillMatches(admin: SupabaseClient, invite: InviteRow) {
+  const member = relatedMember(invite);
+  if (!member) return false;
+  const { data, error } = await admin.from("academy_members").select("id")
+    .eq("id", member.id).eq("academy_community_id", member.academy_community_id)
+    .eq("status", "active").eq("updated_at", member.updated_at).maybeSingle();
+  if (error) throw error;
+  return Boolean(data);
+}
+
+async function requireUnrestrictedAuthUser(
+  admin: SupabaseClient,
+  id: string,
+  email: string,
+) {
+  const { data, error } = await admin.auth.admin.getUserById(id);
+  const user = data.user;
+  if (
+    error || !user ||
+    normalizeMemberEmail(user.email ?? "") !== normalizeMemberEmail(email) ||
+    !user.email_confirmed_at ||
+    (user as User & { deleted_at?: string }).deleted_at ||
+    ((user as User & { banned_until?: string }).banned_until &&
+      Date.parse((user as User & { banned_until: string }).banned_until) >
+        Date.now())
+  ) {
+    throw new Error(
+      "Auth identity or sign-in restriction changed. Review this member before retrying.",
+    );
+  }
 }
 
 function requireProvisionedUser(
@@ -289,6 +437,7 @@ async function ensureProvisionedUser(
   )
     .update({ user_id: user.id })
     .eq("id", invite.academy_member_id)
+    .eq("status", "active").eq("updated_at", member.updated_at)
     .or(`user_id.is.null,user_id.eq.${user.id}`)
     .select("id");
   if (memberError) throw memberError;
@@ -305,7 +454,7 @@ async function markInviteProvisioned(
   status: "provisioned" | "accepted",
 ) {
   const now = new Date().toISOString();
-  const { error } = await admin.from("academy_member_invites").update({
+  const { data, error } = await admin.from("academy_member_invites").update({
     invited_user_id: userId,
     status,
     provisioned_at: now,
@@ -314,8 +463,16 @@ async function markInviteProvisioned(
     attempt_count: invite.attempt_count + 1,
     last_action: "provision",
     error_message: null,
-  }).eq("id", invite.id);
+  }).eq("id", invite.id).eq("updated_at", invite.updated_at).neq(
+    "status",
+    "cancelled",
+  ).select("id");
   if (error) throw error;
+  if (data?.length !== 1) {
+    throw new Error(
+      "Member invite changed during account preparation. Refresh member status before retrying.",
+    );
+  }
 }
 
 async function markInviteNotified(
@@ -324,7 +481,7 @@ async function markInviteNotified(
   userId: string,
 ) {
   const now = new Date().toISOString();
-  const { error } = await admin.from("academy_member_invites").update({
+  const { data, error } = await admin.from("academy_member_invites").update({
     invited_user_id: userId,
     status: "sent",
     provisioned_at: now,
@@ -334,8 +491,16 @@ async function markInviteNotified(
     delivery_count: invite.delivery_count + 1,
     last_action: "notify",
     error_message: null,
-  }).eq("id", invite.id);
+  }).eq("id", invite.id).eq("updated_at", invite.updated_at).neq(
+    "status",
+    "cancelled",
+  ).select("id");
   if (error) throw error;
+  if (data?.length !== 1) {
+    throw new Error(
+      "Sign-in email may have been sent, but member status changed. Review delivery before retrying.",
+    );
+  }
 }
 
 async function markInviteFailed(
@@ -343,14 +508,20 @@ async function markInviteFailed(
   invite: InviteRow,
   action: Exclude<MemberAccessAction, "preview">,
   error: unknown,
+  deliveryAttempted = false,
 ) {
   await admin.from("academy_member_invites").update({
     status: "failed",
     last_attempt_at: new Date().toISOString(),
     attempt_count: invite.attempt_count + 1,
     last_action: action,
-    error_message: errorMessage(error).slice(0, 500),
-  }).eq("id", invite.id);
+    error_message: (deliveryAttempted
+      ? `${MEMBER_INVITE_DELIVERY_REVIEW_PREFIX} ${errorMessage(error)}`
+      : errorMessage(error)).slice(0, 500),
+  }).eq("id", invite.id).eq("updated_at", invite.updated_at).neq(
+    "status",
+    "cancelled",
+  );
 }
 
 async function loadInviteRows(admin: SupabaseClient, communityId: string) {
@@ -358,17 +529,19 @@ async function loadInviteRows(admin: SupabaseClient, communityId: string) {
   for (let offset = 0; offset < 100_000; offset += 1000) {
     const { data, error } = await admin.from("academy_member_invites")
       .select(
-        "id,email,academy_member_id,status,invited_user_id,attempt_count,delivery_count,academy_members(display_name,company_name,status,user_id)",
+        "id,email,academy_member_id,status,invited_user_id,attempt_count,delivery_count,updated_at,last_action,error_message,academy_members(id,academy_community_id,display_name,company_name,status,user_id,updated_at)",
       )
       .eq("academy_community_id", communityId)
-      .order("created_at")
+      .order("created_at").order("id")
       .range(offset, offset + 999);
     if (error) throw error;
     const page = (data ?? []) as unknown as InviteRow[];
     rows.push(...page);
-    if (page.length < 1000) break;
+    if (page.length < 1000) return rows;
   }
-  return rows;
+  throw new Error(
+    "Member invitation inventory exceeds the safe complete-page limit.",
+  );
 }
 
 async function loadEnrolledMemberIds(
@@ -384,9 +557,31 @@ async function loadEnrolledMemberIds(
       .range(offset, offset + 999);
     if (error) throw error;
     for (const row of data ?? []) memberIds.add(row.academy_member_id);
-    if ((data?.length ?? 0) < 1000) break;
+    if ((data?.length ?? 0) < 1000) return memberIds;
   }
-  return memberIds;
+  throw new Error("Enrollment inventory exceeds the safe complete-page limit.");
+}
+
+async function loadMemberIdentities(
+  admin: SupabaseClient,
+  communityId: string,
+) {
+  const rows: { id: string; user_id: string | null }[] = [];
+  for (let offset = 0; offset < 100_000; offset += 1000) {
+    const { data, error } = await admin.from("academy_members").select(
+      "id,user_id",
+    )
+      .eq("academy_community_id", communityId).order("id").range(
+        offset,
+        offset + 999,
+      );
+    if (error) throw error;
+    rows.push(...data ?? []);
+    if ((data?.length ?? 0) < 1000) return rows;
+  }
+  throw new Error(
+    "Member identity inventory exceeds the safe complete-page limit.",
+  );
 }
 
 async function canManageAcademy(
@@ -431,16 +626,37 @@ async function loadUsersByEmail(admin: SupabaseClient) {
     });
     if (error) throw error;
     for (const user of data.users) {
-      if (user.email) users.set(normalizeMemberEmail(user.email), user);
+      if (user.email) {
+        const email = normalizeMemberEmail(user.email);
+        if (users.has(email) && users.get(email)!.id !== user.id) {
+          throw new Error(
+            "Duplicate normalized Auth emails require identity review before member preparation.",
+          );
+        }
+        users.set(email, user);
+      }
     }
-    if (data.users.length < 1000) break;
+    if (data.users.length < 1000) return users;
   }
-  return users;
+  throw new Error(
+    "Auth identity inventory exceeds the safe complete-page limit.",
+  );
 }
 
 function authIdentities(users: Map<string, User>) {
   return Array.from(users.values()).flatMap((user) =>
-    user.email ? [{ id: user.id, email: user.email }] : []
+    user.email
+      ? [{
+        id: user.id,
+        email: user.email,
+        email_confirmed_at: user.email_confirmed_at ?? null,
+        banned_until:
+          (user as User & { banned_until?: string | null }).banned_until ??
+            null,
+        deleted_at:
+          (user as User & { deleted_at?: string | null }).deleted_at ?? null,
+      }]
+      : []
   );
 }
 
@@ -456,28 +672,10 @@ function toAccessRow(invite: InviteRow): MemberAccessRow {
   };
 }
 
-function isAccessReady(
-  invite: InviteRow,
-  member: AcademyMemberRelation,
-  users: Map<string, User>,
-) {
-  const user = users.get(normalizeMemberEmail(invite.email));
-  return Boolean(
-    user && invite.invited_user_id === user.id && member.user_id === user.id,
-  );
-}
-
 function relatedMember(invite: InviteRow) {
   return Array.isArray(invite.academy_members)
     ? invite.academy_members[0]
     : invite.academy_members;
-}
-
-function boundedLimit(value: unknown, maximum: number) {
-  const parsed = typeof value === "number" && Number.isFinite(value)
-    ? Math.floor(value)
-    : maximum;
-  return Math.min(maximum, Math.max(1, parsed));
 }
 
 function looksLikeEmail(value: string) {

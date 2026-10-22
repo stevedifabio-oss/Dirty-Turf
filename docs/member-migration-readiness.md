@@ -97,6 +97,11 @@ default or a stricter window for rollout decisions.
 - Active source members need unique email, matching active app identity/role,
   confirmed unbanned/undeleted Auth user and matching invite linkage.
 - Community and all approved current Academy courses need effective grants.
+  Published open courses can be included through a Community grant; level-gated
+  courses also use the member's actual level. A separate direct course grant is
+  not required for those paths. The export must include course access rules,
+  member levels and explicit course access denials; an older export missing
+  these fields is rejected rather than guessed.
   Included courses must be published; a grant cannot make a draft/archived course
   available to an ordinary member.
   Free-cohort access must have permanent imported/manual grants. Temporary Stripe
@@ -139,11 +144,13 @@ rollout package. Output is private, atomic, refuses overwrite and prints counts
 and reason codes only. Delivery and campaign sign-in begin unassessed even when
 an account has signed in previously.
 
-The current provisioning endpoint loads the community-wide queue without an
-exact member filter. Its preview exposes counts only and selects differently
-from provisioning. Independently reconcile the actual full execution queue, or
-add and review exact targeting before any authorized execution. A local review
-batch and a limit of 50 do not constrain the live endpoint to those people.
+The prepared endpoint upgrade requires exact member IDs and a fresh server-signed
+preview for every account or email action. See
+[targeted account preparation](member-migration-targeted-actions.md). Confirm that
+upgrade is deployed before executing a migration wave. The older production
+endpoint loads a community-wide queue and its count-only preview selects
+differently from provisioning. Do not execute the old queue for a reviewed local
+batch: a limit of 50 does not constrain it to those people.
 
 Use the [launch pack](member-migration-launch-pack.md) for the device pilot,
 owner decisions, announcement/reminder drafts and changeover checks.

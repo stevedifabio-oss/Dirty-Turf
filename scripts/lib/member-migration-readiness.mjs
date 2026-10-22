@@ -78,7 +78,7 @@ export function auditMemberMigration(source, app, policy, options = {}) {
 
   const communityId = app.academyCommunityId;
   const members = scopedRows(app.members, "App members", communityId);
-  if (members.some(row => !memberStatuses.has(row.status) || !roles.has(row.role) || (row.user_id !== null && !identifier(row.user_id)))) throw new Error("App members have an invalid status, role or user ID");
+  if (members.some(row => !memberStatuses.has(row.status) || !roles.has(row.role) || !Number.isInteger(row.level) || row.level < 1 || (row.user_id !== null && !identifier(row.user_id)))) throw new Error("App members have an invalid status, role, level or user ID");
   // Links use academy_member_id as their primary key in the existing database.
   const links = rows(app.links, "App member links");
   if (links.some(row => row.academy_community_id !== communityId || !identifier(row.academy_member_id) || row.external_provider !== "highlevel" || (row.external_member_id !== null && !identifier(row.external_member_id)) || (row.external_contact_id !== null && !identifier(row.external_contact_id)) || (!row.external_member_id && !row.external_contact_id))) throw new Error("App member links are invalid or outside the exact community");
@@ -87,16 +87,18 @@ export function auditMemberMigration(source, app, policy, options = {}) {
   const users = uniqueRows(app.authUsers, "Auth identities");
   if (users.some(row => typeof row.email !== "string" || (row.email_confirmed_at !== null && !validTimestamp(row.email_confirmed_at)) || (row.banned_until !== null && !validTimestamp(row.banned_until)) || (row.deleted_at !== null && !validTimestamp(row.deleted_at)))) throw new Error("Auth identities require email confirmation, ban and deletion state");
   const courses = scopedRows(app.courses, "App courses", communityId);
-  if (courses.some(course => !["draft", "published", "archived"].includes(course.status))) throw new Error("App courses require explicit publication status");
+  if (courses.some(course => !["draft", "published", "archived"].includes(course.status) || !["open", "level", "purchase"].includes(course.access_type) || (course.required_level !== null && (!Number.isInteger(course.required_level) || course.required_level < 1)))) throw new Error("App courses require explicit publication, access type and required level");
   if (courseIds.some(id => !courses.some(course => course.id === id))) throw new Error("An included Academy course is missing from the app snapshot");
   const grants = scopedRows(app.accessGrants, "App access grants", communityId);
   if (grants.some(row => !identifier(row.academy_member_id) || (row.course_id !== null && !courses.some(course => course.id === row.course_id)) || !grantStatuses.has(row.status) || !grantSources.has(row.source_type) || !validTimestamp(row.starts_at) || (row.ends_at !== null && (!validTimestamp(row.ends_at) || Date.parse(row.ends_at) <= Date.parse(row.starts_at))))) throw new Error("App access grants are invalid");
+  const denials = rows(app.courseAccessDenials, "App course access denials");
+  if (denials.some(row => row.academy_community_id !== communityId || !identifier(row.academy_member_id) || !courses.some(course => course.id === row.course_id)) || new Set(denials.map(row => `${row.academy_member_id}:${row.course_id}`)).size !== denials.length) throw new Error("App course access denials require unique scoped member and course identities");
   const plans = scopedRows(app.billingPlans, "App billing plans", communityId);
   if (plans.some(row => !["membership", "course", "tool"].includes(row.offer_kind))) throw new Error("App billing plans require explicit offer kinds");
   const subscriptions = scopedRows(app.billingSubscriptions, "App billing subscriptions", communityId);
   if (subscriptions.some(row => !identifier(row.academy_member_id) || !plans.some(plan => plan.id === row.plan_id) || !["pending", "trialing", "active", "past_due", "paused", "cancelled", "expired"].includes(row.status))) throw new Error("App billing subscriptions are invalid");
   const memberById = new Map(members.map(member => [member.id, member]));
-  if ([...links, ...invites, ...grants, ...subscriptions].some(row => !memberById.has(row.academy_member_id))) throw new Error("App snapshot contains a dangling member reference");
+  if ([...links, ...invites, ...grants, ...denials, ...subscriptions].some(row => !memberById.has(row.academy_member_id))) throw new Error("App snapshot contains a dangling member reference");
 
   const tally = (records, getKey) => {
     const result = new Map();
@@ -148,13 +150,20 @@ export function auditMemberMigration(source, app, policy, options = {}) {
         if (user && (!user.email_confirmed_at || user.deleted_at || (user.banned_until && Date.parse(user.banned_until) > now))) reasons.add("auth_sign_in_restricted");
         if (invite && (invite.status === "cancelled" || invite.invited_user_id !== member.user_id || email(invite.email) !== normalizedEmail)) reasons.add("invite_identity_mismatch");
         accountReady = reasons.size === 0;
-        const requiredTargets = [null, ...courseIds];
+        const courseAccess = (courseId, durableOnly = false) => {
+          if (denials.some(denial => denial.academy_member_id === member.id && denial.course_id === courseId)) return false;
+          const availableGrants = durableOnly ? memberGrants.filter(grant => ["import", "manual"].includes(grant.source_type) && grant.ends_at === null) : memberGrants;
+          if (availableGrants.some(grant => grant.course_id === courseId)) return true;
+          const course = courses.find(course => course.id === courseId);
+          return availableGrants.some(grant => grant.course_id === null) && (course.access_type === "open" || (course.access_type === "level" && member.level >= (course.required_level ?? 1)));
+        };
         const includedCoursesPublished = courseIds.every(courseId => courses.find(course => course.id === courseId)?.status === "published");
-        accessReady = member.status === "active" && includedCoursesPublished && requiredTargets.every(courseId => memberGrants.some(grant => grant.course_id === courseId));
+        accessReady = member.status === "active" && includedCoursesPublished && memberGrants.some(grant => grant.course_id === null) && courseIds.every(courseId => courseAccess(courseId));
         if (!includedCoursesPublished) reasons.add("included_course_not_published");
         if (!memberGrants.some(grant => grant.course_id === null)) reasons.add("missing_community_access");
-        if (!courseIds.every(courseId => memberGrants.some(grant => grant.course_id === courseId))) reasons.add("missing_current_academy_access");
-        if (approvedFree && !requiredTargets.every(courseId => memberGrants.some(grant => grant.course_id === courseId && ["import", "manual"].includes(grant.source_type) && grant.ends_at === null))) reasons.add("free_access_not_durable");
+        if (!courseIds.every(courseId => courseAccess(courseId))) reasons.add("missing_current_academy_access");
+        if (courseIds.some(courseId => denials.some(denial => denial.academy_member_id === member.id && denial.course_id === courseId))) reasons.add("included_course_access_denied");
+        if (approvedFree && (!memberGrants.some(grant => grant.course_id === null && ["import", "manual"].includes(grant.source_type) && grant.ends_at === null) || !courseIds.every(courseId => courseAccess(courseId, true)))) reasons.add("free_access_not_durable");
         if (!approvedFree && memberGrants.some(grant => grant.course_id === null && ["import", "manual"].includes(grant.source_type))) reasons.add("free_access_outside_approved_cohort");
         if (approvedFree && subscriptions.some(subscription => subscription.academy_member_id === member.id && ["active", "trialing", "past_due", "pending", "paused"].includes(subscription.status) && plans.find(plan => plan.id === subscription.plan_id)?.offer_kind === "membership")) reasons.add("free_member_membership_billing_review");
       }

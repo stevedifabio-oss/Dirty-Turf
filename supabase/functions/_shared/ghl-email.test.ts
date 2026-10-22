@@ -11,6 +11,7 @@ describe("HighLevel existing email connection", () => {
     await expect(verifyGhlEmailRecipient(config, contact.id, contact.email, fetcher)).resolves.toBe(contact.id);
     expect(fetcher.mock.calls[0][1].method).toBe("GET");
     expect(fetcher.mock.calls[0][1].redirect).toBe("error");
+    expect(fetcher.mock.calls[0][1].headers.Version).toBe("v3");
   });
   it("never invents missing contact mappings", async () => {
     const fetcher = vi.fn();
@@ -23,10 +24,16 @@ describe("HighLevel existing email connection", () => {
     { ...contact, id: "other-contact" },
     { ...contact, dnd: true },
     { ...contact, dndSettings: { Email: { status: "active" } } },
+    { ...contact, dndSettings: { email: { status: "active" } } },
+    { ...contact, dndSettings: { Email: { status: "inactive" }, email: { status: "active" } } },
   ])("fails closed for changed identity, tenant or recipient opt-out", async changed => {
     const fetcher = vi.fn().mockResolvedValue(json({ contact: changed }));
     await expect(verifyGhlEmailRecipient(config, contact.id, contact.email, fetcher)).rejects.toBeInstanceOf(GhlRecipientUnavailable);
     expect(fetcher).toHaveBeenCalledOnce();
+  });
+  it("permits email when only another channel is opted out", async () => {
+    const fetcher = vi.fn().mockResolvedValue(json({ contact: { ...contact, dnd: false, dndSettings: { email: { status: "inactive" }, sms: { status: "active" } } } }));
+    await expect(verifyGhlEmailRecipient(config, contact.id, contact.email, fetcher)).resolves.toBe(contact.id);
   });
   it("preserves branded HTML and signed unsubscribe content without creating contacts", async () => {
     const fetcher = vi.fn().mockResolvedValue(json({ messageId: "message-1" }));

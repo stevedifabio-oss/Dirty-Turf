@@ -23,7 +23,9 @@ additional_redirect_urls = ["http://localhost:5173", "http://127.0.0.1:5173", "h
 
 [storage]
 enabled = true
-file_size_limit = "20MiB"
+# Match the hosted plan's 50 MB global cap. The editor uses a conservative
+# 50,000,000-byte video limit; a bucket cannot raise the hosted global limit.
+file_size_limit = "50MiB"
 
 [functions.health]
 verify_jwt = false
@@ -64,4 +66,20 @@ verify_jwt = false
 
 # Outbound GHL workflow secret is checked before reading or storing payloads.
 [functions.academy-community-sync]
+verify_jwt = false
+
+# Dedicated business-service checkout verifies the caller with Auth.getUser.
+[functions.create-service-checkout]
+verify_jwt = false
+
+# Dedicated Stripe signature and authoritative Session verification.
+[functions.service-stripe-webhook]
+verify_jwt = false
+
+# Auth.getUser and immutable service-order ownership are checked server-side.
+[functions.create-service-billing-portal]
+verify_jwt = false
+
+# Auth.getUser validates the JWT before bounded private-photo processing.
+[functions.create-community-photo-post]
 verify_jwt = false

@@ -1,5 +1,6 @@
 // Serve the confirmation on our domain. Supabase's shared domain forces HTML
 // responses to text/plain. Signature validation and writes remain in Supabase.
+import { buildNotificationPreferenceStatus } from "../../supabase/functions/_shared/notification-email.ts";
 const endpoint = "https://ipbtldajgsoxixqmajec.supabase.co/functions/v1/academy-notifications/unsubscribe";
 const headers = {
   "content-type": "text/html; charset=utf-8",
@@ -7,9 +8,9 @@ const headers = {
   "referrer-policy": "no-referrer",
   "x-content-type-options": "nosniff",
   "x-frame-options": "DENY",
-  "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+  "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
 };
-const failure = (status: number) => new Response('<!doctype html><html lang="en"><meta charset="utf-8"><title>Email preferences</title><h1>Email preferences could not be opened</h1><p>Use the link in your latest email, or <a href="https://app.dirtyturf.com/?panel=settings&amp;section=notifications">open notification settings</a>.</p></html>', { status, headers });
+const failure = (status: number) => new Response(buildNotificationPreferenceStatus("Email preferences could not be opened", "Use the link in your latest email, or open notification settings in the Academy."), { status, headers });
 
 export default async function unsubscribe(request: Request) {
   if (!["GET", "POST"].includes(request.method)) return failure(405);

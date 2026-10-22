@@ -38,7 +38,7 @@
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSCameraUsageDescription</key>
-	<string>Dirty Turf uses the camera to place live measurement points around a turf boundary.</string>
+	<string>Dirty Turf uses the camera for live turf measurement and photos you choose to add to job records or Community posts.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Dirty Turf uses your location to center the property map while measuring turf.</string>
 	<key>UIApplicationSceneManifest</key>

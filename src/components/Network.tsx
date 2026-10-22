@@ -7,7 +7,6 @@ import {
   loadMemberAccessSummary,
   loadNotificationPreferences,
   openAcademyBillingPortal,
-  provisionAcademyMemberAccounts,
   requestAccountDeletion,
   saveNotificationPreferences,
   webBillingAvailable,
@@ -65,7 +64,6 @@ function SettingsPanel({ onToast, dataMode, canManage, onSignOut, readOnly = fal
   const [memberAccess, setMemberAccess] = useState<MemberAccessSummary | null>(null);
   const [checkingAccess, setCheckingAccess] = useState(dataMode === "cloud" && canManage && !readOnly);
   const [memberAccessError, setMemberAccessError] = useState(false);
-  const [provisioning, setProvisioning] = useState(false);
   const [billing, setBilling] = useState<AcademyBillingOverview | null>(null);
   const [billingError, setBillingError] = useState(false);
   const [billingBusy, setBillingBusy] = useState(false);
@@ -135,21 +133,6 @@ function SettingsPanel({ onToast, dataMode, canManage, onSignOut, readOnly = fal
     return () => { mounted = false; };
   }, [dataMode, settingsRetry, readOnly]);
 
-  const provisionMembers = async () => {
-    if (readOnly || provisioning) return;
-    setProvisioning(true);
-    try {
-      const response = await provisionAcademyMemberAccounts();
-      setMemberAccess(response.summary);
-      onToast(response.summary.allEligibleReady
-        ? "Every current Academy member now has a provisioned account."
-        : `${response.summary.membersNotReady} member account${response.summary.membersNotReady === 1 ? "" : "s"} still need review.`);
-    } catch {
-      onToast("Member accounts could not be provisioned. Review the access service logs.");
-    } finally {
-      setProvisioning(false);
-    }
-  };
 
   const manageBilling = async () => {
     if (readOnly || billingBusy) return;
@@ -220,7 +203,7 @@ function SettingsPanel({ onToast, dataMode, canManage, onSignOut, readOnly = fal
         : memberAccessError ? <div className="settings-loading" role="alert">Account readiness could not load. <button type="button" className="secondary-button" disabled={readOnly} onClick={() => { if (!readOnly) setSettingsRetry((value) => value + 1); }}>Try again</button></div>
         : memberAccess && <>
           <div className="setting-row"><span>{memberAccess.allEligibleReady ? <CheckCircle2 size={18} /> : <UserRoundCheck size={18} />}</span><span><strong>{memberAccess.provisionedMembers} of {memberAccess.eligibleMembers} current members ready</strong><small>{memberAccess.enrolledReady} of {memberAccess.enrolledMembers} course enrollments are linked. Accounts are created without sending email.</small></span></div>
-          <button className="secondary-button" disabled={readOnly || memberAccess.allEligibleReady || provisioning} onClick={() => void provisionMembers()}>{provisioning ? "Provisioning accounts..." : memberAccess.allEligibleReady ? "Every current member is ready" : `Provision ${memberAccess.membersNotReady} missing account${memberAccess.membersNotReady === 1 ? "" : "s"}`}</button>
+          <p className="settings-loading">To prepare accounts or send sign-in emails, open Admin Studio → Members → Account setup. Review exact members before continuing.</p>
         </>}
     </div>}
     <div className="setting-group notification-settings">

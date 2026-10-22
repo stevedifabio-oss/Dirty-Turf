@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { communityMediaStoragePaths, normalizeCommunityMediaItems, safeCommunityMediaUrl } from "./communityMedia";
+import { communityMediaPathsByBucket, communityMediaStoragePaths, normalizeCommunityMediaItems, safeCommunityMediaUrl } from "./communityMedia";
 
 describe("community media", () => {
+  it("signs only supported buckets and keeps same-path native/course signatures distinct",()=>{
+    const rows=[{storage_path:"same/path.png",storage_bucket:"community-photos",mime_type:"image/png",label:"Job photo"},{storage_path:"same/path.png",mime_type:"image/png"},{storage_path:"same/path.png",storage_bucket:"unknown-private-bucket"}];
+    expect([...communityMediaPathsByBucket(rows)]).toEqual([["community-photos",["same/path.png"]],["academy-assets",["same/path.png"]]]);
+    const signed=new Map([["community-photos:same/path.png","https://project.supabase.co/native-photo"],["academy-assets:same/path.png","https://project.supabase.co/course-photo"]]);
+    expect(normalizeCommunityMediaItems(rows,signed).map(row=>row.url)).toEqual(["https://project.supabase.co/native-photo","https://project.supabase.co/course-photo"]);
+    expect(normalizeCommunityMediaItems([rows[0]],new Map([["same/path.png","https://project.supabase.co/wrong-bucket"]]))).toEqual([]);
+  });
   it("collects private object paths and resolves signed images", () => {
     const media = [
       { url: "https://source.example/photo.webp", storage_path: "community/shared/photo.webp", mime_type: "image/webp" },

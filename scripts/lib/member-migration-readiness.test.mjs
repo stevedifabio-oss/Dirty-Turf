@@ -15,13 +15,13 @@ function inputs() {
     app: {
       schemaVersion: 1, source: "dirty-turf-member-readonly-export", scope: { ...scope }, capturedAt: "2026-10-05T14:45:00Z", coverage: "complete", academyCommunityId: "community-1",
       sourceMapping: { groupId: "group-1", groupSlug: "group-slug", databaseExternalGroupId: "group-slug", externalProvider: "highlevel", verificationReference: "source-group-proof-1", verifiedAt: "2026-10-05T14:30:00Z" },
-      members: [{ id: "member-1", academy_community_id: "community-1", status: "active", role: "member", user_id: "user-1" }],
+      members: [{ id: "member-1", academy_community_id: "community-1", status: "active", role: "member", level: 1, user_id: "user-1" }],
       links: [{ academy_community_id: "community-1", academy_member_id: "member-1", external_provider: "highlevel", external_member_id: "source-1", external_contact_id: "contact-1" }],
       invites: [{ id: "invite-1", academy_community_id: "community-1", academy_member_id: "member-1", email: "one@example.test", status: "accepted", invited_user_id: "user-1" }],
       authUsers: [{ id: "user-1", email: "one@example.test", email_confirmed_at: "2026-09-18T00:00:00Z", banned_until: null, deleted_at: null, last_sign_in_at: "2026-09-20T00:00:00Z" }],
-      courses: [{ id: "course-1", academy_community_id: "community-1", status: "published" }],
+      courses: [{ id: "course-1", academy_community_id: "community-1", status: "published", access_type: "purchase", required_level: null }],
       accessGrants: [null, "course-1"].map((course_id, index) => ({ id: `grant-${index}`, academy_community_id: "community-1", academy_member_id: "member-1", course_id, status: "active", source_type: "import", starts_at: "2026-09-18T00:00:00Z", ends_at: null })),
-      billingPlans: [], billingSubscriptions: [],
+      courseAccessDenials: [], billingPlans: [], billingSubscriptions: [],
     },
     policy: { schemaVersion: 1, scope: { ...scope }, approvedAt: "2026-10-03T10:00:00Z", approvedBy: "owner-approved-cohort-1", freeMemberExternalIds: ["source-1"], currentAcademyCourseIds: ["course-1"] },
   };
@@ -62,6 +62,10 @@ describe("member migration readiness", () => {
     ["dangling member link", input => { input.app.links[0].academy_member_id = "missing-member"; }],
     ["unknown included course", input => { input.policy.currentAcademyCourseIds = ["unknown-course"]; }],
     ["unobserved course publication", input => { delete input.app.courses[0].status; }],
+    ["unobserved course access rules", input => { delete input.app.courses[0].access_type; }],
+    ["unobserved member level", input => { delete input.app.members[0].level; }],
+    ["unobserved course denial coverage", input => { delete input.app.courseAccessDenials; }],
+    ["cross-community course denial", input => { input.app.courseAccessDenials = [{ academy_community_id: "other", academy_member_id: "member-1", course_id: "course-1" }]; }],
     ["duplicate cohort entry", input => { input.policy.freeMemberExternalIds.push("source-1"); }],
     ["grant without timezone", input => { input.app.accessGrants[0].starts_at = "2026-09-18T00:00:00"; }],
   ])("rejects %s rather than treating it as ready", (_label, mutate) => {
@@ -120,8 +124,8 @@ describe("member migration readiness", () => {
 
   it("keeps missing active imported records review-only and app-only records preserved", () => {
     const input = inputs();
-    input.app.members.push({ id: "native-member", academy_community_id: "community-1", status: "active", role: "member", user_id: null });
-    input.app.members.push({ id: "missing-source-member", academy_community_id: "community-1", status: "active", role: "member", user_id: null });
+    input.app.members.push({ id: "native-member", academy_community_id: "community-1", status: "active", role: "member", level: 1, user_id: null });
+    input.app.members.push({ id: "missing-source-member", academy_community_id: "community-1", status: "active", role: "member", level: 1, user_id: null });
     input.app.links.push({ ...input.app.links[0], academy_member_id: "missing-source-member", external_member_id: "source-2", external_contact_id: null });
     const report = audit(input);
     expect(report.counts.appOnlyMembersPreserved).toBe(1);
@@ -133,7 +137,7 @@ describe("member migration readiness", () => {
     const input = inputs();
     input.source.members.push({ externalId: "historical", contactId: null, email: "", role: "member", status: "cancelled" });
     expect(audit(input).technicalReady).toBe(true);
-    input.app.members.push({ id: "historical-member", academy_community_id: "community-1", status: "active", role: "member", user_id: null });
+    input.app.members.push({ id: "historical-member", academy_community_id: "community-1", status: "active", role: "member", level: 1, user_id: null });
     input.app.links.push({ ...input.app.links[0], academy_member_id: "historical-member", external_member_id: "historical", external_contact_id: null });
     expect(audit(input).members[1].reasons).toContain("restricted_source_member_active_in_app");
   });
@@ -162,6 +166,40 @@ describe("member migration readiness", () => {
     expect(report.technicalReady).toBe(false);
     expect(report.members[0].accessReady).toBe(false);
     expect(report.members[0].reasons).toContain("included_course_not_published");
+  });
+
+  it("accepts published open courses through durable Community access without inventing redundant course grants", () => {
+    const input = inputs(); input.app.courses[0].access_type = "open";
+    input.app.accessGrants = input.app.accessGrants.filter(grant => grant.course_id === null);
+    const report = audit(input);
+    expect(report.technicalReady).toBe(true);
+    expect(report.members[0]).toMatchObject({ approvedFree: true, accessReady: true, reasons: [] });
+    expect(input.app.accessGrants).toHaveLength(1);
+  });
+
+  it("applies level-gated included courses to the actual member level", () => {
+    const input = inputs(); input.app.courses[0].access_type = "level"; input.app.courses[0].required_level = 2;
+    input.app.accessGrants = input.app.accessGrants.filter(grant => grant.course_id === null);
+    expect(codes(input)).toContain("missing_current_academy_access");
+    input.app.members[0].level = 2;
+    expect(audit(input).technicalReady).toBe(true);
+  });
+
+  it("does not treat temporary membership as durable free access to open courses", () => {
+    const input = inputs(); input.app.courses[0].access_type = "open";
+    input.app.accessGrants = input.app.accessGrants.filter(grant => grant.course_id === null);
+    input.app.accessGrants[0].source_type = "stripe_subscription";
+    expect(audit(input).members[0].accessReady).toBe(true);
+    expect(codes(input)).toContain("free_access_not_durable");
+  });
+
+  it.each(["open", "purchase", "level"])("holds explicit denial of an included %s course even when a direct grant exists", accessType => {
+    const input = inputs(); input.app.courses[0].access_type = accessType;
+    input.app.courseAccessDenials = [{ academy_community_id: "community-1", academy_member_id: "member-1", course_id: "course-1" }];
+    const result = audit(input);
+    expect(result.technicalReady).toBe(false);
+    expect(result.members[0].accessReady).toBe(false);
+    expect(result.members[0].reasons).toContain("included_course_access_denied");
   });
 
   it.each(["pending", "cancelled", "suspended"])("does not count %s app membership as accessible despite active grants", status => {

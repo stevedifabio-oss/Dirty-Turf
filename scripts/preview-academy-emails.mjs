@@ -4,13 +4,13 @@ import { resolve } from 'node:path';
 import { createServer } from 'vite';
 const server = await createServer({ configFile: false, optimizeDeps: { noDiscovery: true, include: [] }, server: { middlewareMode: true }, appType: 'custom' });
 try {
- const { buildAcademyEmail, lifecycleEmailTemplates, escapeHtml } = await server.ssrLoadModule('/supabase/functions/_shared/notification-email.ts');
+ const { buildAcademyEmail, buildUnsubscribeConfirmation, buildNotificationPreferenceStatus, lifecycleEmailTemplates, escapeHtml } = await server.ssrLoadModule('/supabase/functions/_shared/notification-email.ts');
  const templates = ['welcome','new_post','announcement','comment','reply','mention','post_reaction','comment_reaction','new_event','event_reminder','event_updated','event_cancelled','event_rsvp','new_course','course_unlocked','lesson_published','course_certificate','weekly_digest',...Object.keys(lifecycleEmailTemplates)];
  const output = resolve('output/email-preview'); await mkdir(output,{recursive:true});
  await cp(resolve('public/email-assets'),resolve(output,'email-assets'),{recursive:true});
  await cp(resolve('public/dirty-turf-logo.png'),resolve(output,'dirty-turf-logo.png'));
  const examples = {
- welcome: ['Welcome to 7 Figure Turf Cleaning', 'Your community and courses are ready.'],
+ welcome: ['Welcome to 7 Figure Turf Cleaning', 'Your Academy account is ready.'],
  new_post: ['Steve posted in 7 Figure Turf Cleaning', 'How to price your next turf restoration'],
  announcement: ['Live training schedule for October', 'Join this month’s training sessions.'],
  comment: ['Steve commented on your post', 'How to price your next turf restoration'],
@@ -44,13 +44,17 @@ try {
  };
  const prepared = new Set(['membership_requested','membership_request_admin','private_channel_added','mention_everyone_post','mention_everyone_comment']);
  const rows=[];
+ const localAssets = html => html.replaceAll('https://app.dirtyturf.com/email-assets/', './email-assets/').replaceAll('https://app.dirtyturf.com/dirty-turf-logo.png', './dirty-turf-logo.png');
  for(const template of templates) {
   const delivery={id:'00000000-0000-4000-8000-000000000001',recipient_member_id:'00000000-0000-4000-8000-000000000002',recipient_email:'preview@example.com',recipient_name:'Taylor Member',template_key:template,title:examples[template][0],detail:examples[template][1],target_type:template.includes('event')?'event':template.includes('course')||template==='lesson_published'?'course':'community',target_id:'00000000-0000-4000-8000-000000000003',idempotency_key:'preview:'+template,payload:{actorName:'Steve',communityName:'7 Figure Turf Cleaning',eventTitle:'Turf Clean call',startsAt:'2026-10-04T20:00:00Z',endsAt:'2026-10-04T21:00:00Z',timezone:'America/Phoenix',meetingUrl:'https://example.com/meeting',hoursBefore:24,rsvpStatus:'going'}};
   const email=buildAcademyEmail(delivery,{appUrl:'https://app.dirtyturf.com',unsubscribeUrl:'https://example.com/unsubscribe-preview'});
-  await writeFile(resolve(output,template+'.html'),email.html.replaceAll('https://app.dirtyturf.com/email-assets/', './email-assets/').replaceAll('https://app.dirtyturf.com/dirty-turf-logo.png', './dirty-turf-logo.png'));
-  const status = template.includes('payment') || template.includes('subscription') ? 'Awaiting Stripe setup' : prepared.has(template) ? 'Template ready · feature connection pending' : 'Built locally · waiting to publish';
+  await writeFile(resolve(output,template+'.html'),localAssets(email.html));
+  const status = template.includes('payment') || template.includes('subscription') ? 'Payment-event template · producer connection needs verification' : prepared.has(template) ? 'Template ready · feature connection pending' : 'Synthetic preview · see the dated delivery and trigger evidence';
   rows.push(`<li><a href="${template}.html">${escapeHtml(template.replaceAll('_',' ').replace(/\b\w/g, c=>c.toUpperCase()))}</a><small>${escapeHtml(email.subject)}</small><small>${status}</small></li>`);
  }
+ await writeFile(resolve(output,'unsubscribe-confirmation.html'),localAssets(buildUnsubscribeConfirmation('synthetic-preview.not-a-live-signature','Comments and replies','https://app.dirtyturf.com')));
+ await writeFile(resolve(output,'unsubscribe-success.html'),localAssets(buildNotificationPreferenceStatus('You are unsubscribed','Comments and replies emails are now off. You can turn them back on in notification settings.','https://app.dirtyturf.com')));
+ rows.push('<li><a href="unsubscribe-confirmation.html">Unsubscribe confirmation</a><small>Utility page preview · synthetic invalid token · no provider call</small></li>','<li><a href="unsubscribe-success.html">Unsubscribe success</a><small>Utility page preview · no preference was changed</small></li>');
  await writeFile(resolve(output,'index.html'),`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Academy email previews</title><style>body{font:16px/1.6 system-ui;background:#f1f5ee;color:#123420;margin:0;padding:32px}main{max-width:850px;margin:auto}h1{line-height:1.2}ul{padding:0;list-style:none}li{background:white;margin:12px 0;padding:16px;border-radius:8px}a{color:#087a3d;font-weight:700}small{display:block;color:#54665a}</style><main><h1>Academy email previews</h1><p>Synthetic examples only. No emails sent. This catalog includes both wired notifications and prepared templates; see docs/community-email-parity.md for activation status.</p><ul>${rows.join('')}</ul></main></html>`);
- console.log(`${templates.length} local previews: ${output}/index.html`);
+ console.log(`${templates.length} local email previews and 2 preference-page previews: ${output}/index.html`);
 } finally { await server.close(); }

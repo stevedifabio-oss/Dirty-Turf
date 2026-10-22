@@ -24,6 +24,13 @@ function navigation(settingsOpen: boolean) {
 }
 
 describe("PrimaryNavigation", () => {
+  it("keeps Grow your business under Dashboard without adding a fourth mobile tab", () => {
+    const markup = renderToStaticMarkup(<PrimaryNavigation activeView="grow" settingsOpen={false} onNavigate={noOp} onOpenSettings={noOp} />);
+    expect(markup.match(/aria-current="page"/g)).toHaveLength(1);
+    expect(markup).toMatch(/aria-current="page"[^>]*>[^]*?Dashboard/);
+    expect(markup.match(/<button/g)).toHaveLength(3);
+    expect(markup).not.toMatch(/class="nav-item active"[^>]*>[^]*?Academy/);
+  });
   it("keeps exactly one primary destination active when Settings is open", () => {
     const markup = renderToStaticMarkup(navigation(true));
     expect(markup.match(/aria-current="page"/g)).toHaveLength(1);

@@ -23,7 +23,13 @@ export async function verifyGhlEmailRecipient(config: GhlEmailConfig, contactId:
   if (contact?.id !== contactId || contact?.locationId !== config.locationId || typeof contact?.email !== "string" || contact.email.trim().toLowerCase() !== recipient.trim().toLowerCase()) {
     throw new GhlRecipientUnavailable("HighLevel recipient identity mismatch; operator review required");
   }
-  if (contact.dnd === true || contact.dndSettings?.Email?.status === "active") {
+  // Current v3 contacts use lowercase `email`; older records/webhooks use `Email`.
+  // Honor either representation, including mixed data, before any provider write.
+  const emailDnd = contact.dndSettings && typeof contact.dndSettings === "object"
+    ? Object.entries(contact.dndSettings).some(([channel, setting]) => channel.toLowerCase() === "email" &&
+      setting && typeof setting === "object" && "status" in setting && String(setting.status).toLowerCase() === "active")
+    : false;
+  if (contact.dnd === true || emailDnd) {
     throw new GhlRecipientUnavailable("HighLevel recipient has email disabled; operator review required");
   }
   return contactId;

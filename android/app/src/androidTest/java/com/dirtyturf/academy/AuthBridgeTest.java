@@ -8,6 +8,7 @@ import android.net.Uri;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.lifecycle.Lifecycle;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -32,6 +33,35 @@ public class AuthBridgeTest {
     public void coldEmailLinkReachesJavaScript() throws Exception {
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(callbackIntent("Cold callback received"))) {
             awaitText(scenario, "Cold callback received");
+        }
+    }
+
+    @Test
+    public void coldEmailLinkSurvivesBackgroundResumeAndRecreation() throws Exception {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(callbackIntent("Restored cold callback"))) {
+            awaitText(scenario, "Restored cold callback");
+            scenario.moveToState(Lifecycle.State.CREATED);
+            scenario.moveToState(Lifecycle.State.RESUMED);
+            awaitText(scenario, "Restored cold callback");
+            scenario.recreate();
+            scenario.onActivity(activity -> assertNotNull("App plugin must survive recreation", activity.getBridge().getPlugin("App")));
+            awaitText(scenario, "Restored cold callback");
+        }
+    }
+
+    @Test
+    public void warmEmailLinkWorksAfterBackgroundResumeAndRecreation() throws Exception {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            awaitText(scenario, "Welcome back.");
+            scenario.moveToState(Lifecycle.State.CREATED);
+            scenario.moveToState(Lifecycle.State.RESUMED);
+            scenario.recreate();
+            awaitText(scenario, "Welcome back.");
+            scenario.onActivity(activity -> {
+                assertNotNull("App plugin must survive recreation", activity.getBridge().getPlugin("App"));
+                activity.startActivity(callbackIntent("Resumed warm callback received"));
+            });
+            awaitText(scenario, "Resumed warm callback received");
         }
     }
 

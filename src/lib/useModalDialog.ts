@@ -9,6 +9,11 @@ const FOCUSABLE = [
   "[tabindex]:not([tabindex='-1'])",
 ].join(",");
 
+// Only the foremost modal owns keyboard focus. Keep scroll locking correct if
+// a parent closes while a second dialog is still mounted.
+const dialogs: HTMLElement[] = [];
+let overflowBeforeDialogs = "";
+
 export function useModalDialog(dialogRef: RefObject<HTMLElement | null>, onClose: () => void) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -18,14 +23,17 @@ export function useModalDialog(dialogRef: RefObject<HTMLElement | null>, onClose
     if (!dialog) return;
 
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const previousOverflow = document.body.style.overflow;
+    if (!dialogs.length) overflowBeforeDialogs = document.body.style.overflow;
+    dialogs.push(dialog);
     document.body.style.overflow = "hidden";
+    const isForemost = () => dialogs[dialogs.length - 1] === dialog;
 
     const focusTimer = window.setTimeout(() => {
-      dialog.querySelector<HTMLElement>("[data-dialog-autofocus]")?.focus();
+      if (isForemost()) dialog.querySelector<HTMLElement>("[data-dialog-autofocus]")?.focus();
     });
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (!isForemost()) return;
       if (event.key === "Escape") {
         event.preventDefault();
         onCloseRef.current();
@@ -40,7 +48,10 @@ export function useModalDialog(dialogRef: RefObject<HTMLElement | null>, onClose
       }
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
+      if (!dialog.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();
       } else if (!event.shiftKey && document.activeElement === last) {
@@ -49,12 +60,23 @@ export function useModalDialog(dialogRef: RefObject<HTMLElement | null>, onClose
       }
     };
 
+    const handleFocusIn = (event: FocusEvent) => {
+      if (isForemost() && event.target instanceof Node && !dialog.contains(event.target)) {
+        dialog.querySelector<HTMLElement>("[data-dialog-autofocus]")?.focus();
+      }
+    };
+
     document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("focusin", handleFocusIn);
     return () => {
       window.clearTimeout(focusTimer);
       document.removeEventListener("keydown", handleKeyDown);
-      document.body.style.overflow = previousOverflow;
-      previousFocus?.focus();
+      document.removeEventListener("focusin", handleFocusIn);
+      const wasForemost = isForemost();
+      const index = dialogs.lastIndexOf(dialog);
+      if (index >= 0) dialogs.splice(index, 1);
+      document.body.style.overflow = dialogs.length ? "hidden" : overflowBeforeDialogs;
+      if (wasForemost) previousFocus?.focus();
     };
   }, [dialogRef]);
 }

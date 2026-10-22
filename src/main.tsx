@@ -13,6 +13,7 @@ import "@fontsource/poppins/latin-700.css";
 import "@fontsource/poppins/latin-800.css";
 import {
   ArrowLeft,
+  ArrowRight,
   Bell,
   BookOpen,
   CalendarDays,
@@ -38,6 +39,7 @@ import {
   Settings2,
   ShieldCheck,
   Smartphone,
+  TrendingUp,
   Users,
   X,
 } from "lucide-react";
@@ -90,6 +92,8 @@ import {
 import { hasNativeLiveMeasurement, startNativeLiveMeasurement } from "./lib/liveMeasurement";
 import { academyPaymentLink, checkoutReturnNotice } from "./lib/academyPaymentLink";
 import { billingPageRoute } from "./lib/membershipBilling";
+import { communityRequestFromSearch } from "./lib/communityPost";
+import { createCommunityPhotoPost } from "./lib/communityPhotos";
 import { createCommunityPostPageGate } from "./lib/communityPostPageGate";
 import { createCourseRefresh, watchCourseRefresh } from "./lib/courseRefresh";
 import { communityHasActiveDraft, createCommunityRefresh, loadCommunityPostWindow, mergeCommunityPostWindow } from "./lib/communityRefresh";
@@ -121,6 +125,7 @@ const AdminStudio = lazy(() =>
   import("./components/AdminStudio").then((module) => ({ default: module.AdminStudio })),
 );
 const MembershipPages = lazy(() => import("./components/MembershipPages").then((module) => ({ default: module.MembershipPages })));
+const Growth = lazy(() => import("./components/Growth").then((module) => ({ default: module.Growth })));
 
 type View = PrimaryNavigationView;
 
@@ -149,12 +154,13 @@ const navTitles: Record<View, string> = {
   community: "Academy",
   events: "Academy",
   admin: "Admin Studio",
+  grow: "Grow your business",
 };
 
 function initialViewFromUrl(): View {
   const requested = new URLSearchParams(window.location.search).get("view");
-  if (requested === "tools") return "home";
-  return requested && requested in navTitles ? requested as View : "home";
+  if (requested === "tools" || (requested === "grow" && Capacitor.isNativePlatform())) return "home";
+  return requested && Object.hasOwn(navTitles, requested) ? requested as View : "home";
 }
 
 function initialHubSectionFromUrl(): HubSection | null {
@@ -217,11 +223,12 @@ function App() {
   const [arrivalChecks, setArrivalChecks] = useState<boolean[]>([false, false, false, false]);
   const [certificates, setCertificates] = useState<AcademyCertificate[]>([]);
   const [requestedLessonId, setRequestedLessonId] = useState<string>();
-  const [requestedCommentCloudId, setRequestedCommentCloudId] = useState<string>();
+  const [initialCommunityRequest] = useState(() => communityRequestFromSearch(window.location.search));
+  const [requestedCommentCloudId, setRequestedCommentCloudId] = useState<string | undefined>(() => initialCommunityRequest.commentId);
   const [requestedMemberCloudId, setRequestedMemberCloudId] = useState<string>();
   const [requestedCourseCloudId, setRequestedCourseCloudId] = useState(() => new URLSearchParams(window.location.search).get("course") ?? undefined);
   const [requestedEventCloudId, setRequestedEventCloudId] = useState(() => new URLSearchParams(window.location.search).get("event") ?? undefined);
-  const [requestedPostCloudId, setRequestedPostCloudId] = useState(() => new URLSearchParams(window.location.search).get("post") ?? undefined);
+  const [requestedPostCloudId, setRequestedPostCloudId] = useState(() => initialCommunityRequest.postId);
   const [dataMode, setDataMode] = useState<DataMode>("device");
   const [workspaceAccess, setWorkspaceAccess] = useState<
     WorkspaceAccessState | { status: "loading" | "error" }
@@ -722,7 +729,7 @@ function App() {
   useEffect(() => {
     const url = new URL(window.location.href);
     url.searchParams.set("view", activeView);
-    if (activeView !== "community") url.searchParams.delete("post");
+    if (activeView !== "community") { url.searchParams.delete("post"); url.searchParams.delete("comment"); }
     window.history.replaceState(window.history.state, "", url);
   }, [activeView]);
 
@@ -794,7 +801,7 @@ function App() {
     setHubSection(null);
     setQuoteOpen(false);
     setSelectedJob(null);
-    if (view !== "community") setRequestedPostCloudId(undefined);
+    if (view !== "community") { setRequestedPostCloudId(undefined); setRequestedCommentCloudId(undefined); }
     setSearchOpen(false);
     setQuery("");
     document.querySelector(".phone-frame")?.scrollTo({ top: 0, behavior: "auto" });
@@ -947,6 +954,7 @@ function App() {
         <nav className="desktop-nav" aria-label="App sections">
           <DesktopNavItem icon={<Home size={19} />} label="Dashboard" active={activeView === "home"} onClick={() => changeView("home")} />
           <DesktopNavItem icon={<BookOpen size={19} />} label="Academy" active={["learn", "community", "events"].includes(activeView)} onClick={() => changeView("learn")} />
+          {!Capacitor.isNativePlatform() && <DesktopNavItem icon={<TrendingUp size={19} />} label="Grow your business" active={activeView === "grow"} onClick={() => changeView("grow")} />}
           {canManage && <DesktopNavItem icon={<ShieldCheck size={19} />} label="Admin Studio" active={activeView === "admin"} onClick={() => changeView("admin")} />}
         </nav>
         <div className="desktop-sidebar-footer">
@@ -979,10 +987,11 @@ function App() {
         {!waitingForWorkspace && <>
         {searchOpen && <GlobalSearch key={renderedCourseAccount} query={query} onQuery={setQuery} content={{ jobs, courses: dataMode === "cloud" ? visibleCourses : [], posts: hasCommunity ? posts : [], comments: hasCommunity ? comments : [], events: hasCommunity ? events : [], members: hasCommunity ? members : [] }} readOnly={readOnly} searchRemote={hasCommunity && supabase ? searchCommunityPosts : undefined} onOpen={openSearchResult} />}
         <div hidden={searchOpen}>
-        {activeView !== "home" && activeView !== "admin" && <AcademyTabs activeView={activeView} canManage={canManage} hasCommunity={hasCommunity} onNavigate={changeView} />}
-        {activeView === "home" && <HomeView jobs={jobs} openQuote={openQuote} checks={arrivalChecks} setChecks={next => { if (renderedCourseAccount === courseAccountGeneration.current) setArrivalChecks(next); }} setToast={setToast} />}
+        {activeView !== "home" && activeView !== "admin" && activeView !== "grow" && <AcademyTabs activeView={activeView} canManage={canManage} hasCommunity={hasCommunity} onNavigate={changeView} />}
+        {activeView === "home" && <HomeView jobs={jobs} openQuote={openQuote} checks={arrivalChecks} setChecks={next => { if (renderedCourseAccount === courseAccountGeneration.current) setArrivalChecks(next); }} setToast={setToast} onGrow={() => changeView("grow")} />}
+        {activeView === "grow" && <Suspense fallback={<div className="sheet-loading" role="status">Loading business services…</div>}><Growth key={renderedCourseAccount} access={workspaceAccess} readOnly={readOnly} onToast={setToast} /></Suspense>}
         {activeView === "learn" && <AcademyView key={renderedCourseAccount} readOnly={readOnly} requestedLessonId={requestedLessonId} onRenewLessonAssets={renewLessonAssets} requestedCourseCloudId={requestedCourseCloudId} onRequestedCourseOpened={() => { setRequestedCourseCloudId(undefined); setRequestedLessonId(undefined); }} courses={visibleCourses} certificates={certificates} dataMode={dataMode} refreshError={courseRefreshError} onRefresh={() => refreshCoursesRef.current()} onCoursesChange={changeCourses} onLessonCompletion={(id, completed) => writeCourseProgress(() => saveLessonCompletion(id, completed))} onQuizAttempt={(id, score, answers) => writeCourseProgress(() => recordAcademyQuizAttempt(id, score, answers))} onRequestCertificate={async (courseId) => { await writeCourseProgress(() => requestAcademyCertificate(courseId)); const next = await loadAcademyCertificates(); if (renderedCourseAccount === courseAccountGeneration.current) setCertificates(next); }} onToast={setToast} onDiscuss={() => changeView("community")} />}
-        {activeView === "community" && hasCommunity && <CommunityView key={renderedCourseAccount} readOnly={readOnly} accessScopeKey={renderedCourseAccount} onLoadRequestedPost={loadRequestedPost} requestedCommentCloudId={requestedCommentCloudId} onRequestedCommentOpened={() => setRequestedCommentCloudId(undefined)} requestedMemberCloudId={requestedMemberCloudId} onRequestedMemberOpened={() => setRequestedMemberCloudId(undefined)} posts={posts} comments={comments} members={members} events={events} requestedPostCloudId={requestedPostCloudId} onRequestedPostOpened={() => setRequestedPostCloudId(undefined)} onPostsChange={next => changeCommunity(setPosts, next)} onCommentsChange={next => changeCommunity(setComments, next)} onMembersChange={next => changeCommunity(setMembers, next)} onToggleFollow={(member, following) => writeCommunity(() => member.cloudId ? setAcademyMemberFollow(member.cloudId, following) : Promise.resolve(following))} onLoadMorePosts={loadMoreCommunityPosts} hasMorePosts={hasMorePosts} loadingMorePosts={loadingMorePosts} onCreatePost={post => writeCommunity(() => savePost(post))} onCreateComment={(comment, postCloudId) => writeCommunity(() => saveComment(comment, postCloudId))} onToggleLike={(post) => writeCommunity(() => post.cloudId ? togglePostReaction(post.cloudId) : Promise.resolve(null))} onToggleCommentLike={(comment) => writeCommunity(() => comment.cloudId ? toggleCommentReaction(comment.cloudId) : Promise.resolve(null))} onToggleBookmark={(post) => writeCommunity(() => post.cloudId ? togglePostBookmark(post.cloudId) : Promise.resolve(null))} onReport={(contentType, contentId, reason) => writeCommunity(() => reportAcademyContent(contentType, contentId, reason)).then(() => undefined)} onBlockMember={memberId => writeCommunity(() => toggleAcademyMemberBlock(memberId))} onLoadBlockedMembers={loadBlockedAcademyMemberIds} onRefreshCommunity={() => refreshCommunityRef.current()} onNavigate={changeView} onToast={setToast} />}
+        {activeView === "community" && hasCommunity && <CommunityView key={renderedCourseAccount} readOnly={readOnly} accessScopeKey={renderedCourseAccount} onLoadRequestedPost={loadRequestedPost} requestedCommentCloudId={requestedCommentCloudId} onRequestedCommentOpened={() => setRequestedCommentCloudId(undefined)} requestedMemberCloudId={requestedMemberCloudId} onRequestedMemberOpened={() => setRequestedMemberCloudId(undefined)} posts={posts} comments={comments} members={members} events={events} requestedPostCloudId={requestedPostCloudId} onRequestedPostOpened={() => setRequestedPostCloudId(undefined)} onPostsChange={next => changeCommunity(setPosts, next)} onCommentsChange={next => changeCommunity(setComments, next)} onMembersChange={next => changeCommunity(setMembers, next)} onToggleFollow={(member, following) => writeCommunity(() => member.cloudId ? setAcademyMemberFollow(member.cloudId, following) : Promise.resolve(following))} onLoadMorePosts={loadMoreCommunityPosts} hasMorePosts={hasMorePosts} loadingMorePosts={loadingMorePosts} onCreatePost={post => writeCommunity(() => savePost(post))} onCreatePhotoPost={(post, photos, requestId) => writeCommunity(() => createCommunityPhotoPost(post, photos, requestId))} onCreateComment={(comment, postCloudId) => writeCommunity(() => saveComment(comment, postCloudId))} onToggleLike={(post) => writeCommunity(() => post.cloudId ? togglePostReaction(post.cloudId) : Promise.resolve(null))} onToggleCommentLike={(comment) => writeCommunity(() => comment.cloudId ? toggleCommentReaction(comment.cloudId) : Promise.resolve(null))} onToggleBookmark={(post) => writeCommunity(() => post.cloudId ? togglePostBookmark(post.cloudId) : Promise.resolve(null))} onReport={(contentType, contentId, reason) => writeCommunity(() => reportAcademyContent(contentType, contentId, reason)).then(() => undefined)} onBlockMember={memberId => writeCommunity(() => toggleAcademyMemberBlock(memberId))} onLoadBlockedMembers={loadBlockedAcademyMemberIds} onRefreshCommunity={() => refreshCommunityRef.current()} onNavigate={changeView} onToast={setToast} />}
         {activeView === "events" && hasCommunity && <EventsView readOnly={readOnly} requestedEventCloudId={requestedEventCloudId} onRequestedEventOpened={() => setRequestedEventCloudId(undefined)} events={events} onEventsChange={next => changeCommunity(setEvents, next)} onToggleRsvp={(event) => writeCommunity(() => event.cloudId ? toggleAcademyEventRsvp(event.cloudId) : Promise.resolve(null))} onToast={setToast} />}
         {["community", "events"].includes(activeView) && !hasCommunity && <><AccessRequired title="Community access required">This account does not currently have access to community conversations and events.</AccessRequired><AvailableUpgrades readOnly={readOnly} access={workspaceAccess} kind="membership" /></>}
         {activeView === "learn" && <AvailableUpgrades readOnly={readOnly} access={workspaceAccess} kind="course" />}
@@ -1107,7 +1116,7 @@ function LaunchAccessGate({
   </main>;
 }
 
-function AcademyTabs({ activeView, canManage, hasCommunity, onNavigate }: { activeView: Exclude<View, "home">; canManage: boolean; hasCommunity: boolean; onNavigate: (view: View) => void }) {
+function AcademyTabs({ activeView, canManage, hasCommunity, onNavigate }: { activeView: Exclude<View, "home" | "grow">; canManage: boolean; hasCommunity: boolean; onNavigate: (view: View) => void }) {
   return <nav className={canManage ? "academy-tabs manage" : "academy-tabs"} aria-label="Academy sections">
     <button className={activeView === "learn" ? "active" : ""} aria-current={activeView === "learn" ? "page" : undefined} onClick={() => onNavigate("learn")}><BookOpen size={16} /> Courses</button>
     <button className={activeView === "community" ? "active" : ""} aria-current={activeView === "community" ? "page" : undefined} onClick={() => onNavigate("community")}><Users size={16} /> Community{!hasCommunity && <LockKeyhole size={12} aria-label="Access required" />}</button>
@@ -1116,7 +1125,7 @@ function AcademyTabs({ activeView, canManage, hasCommunity, onNavigate }: { acti
   </nav>;
 }
 
-function HomeView({ jobs, openQuote, checks, setChecks, setToast }: { jobs: Job[]; openQuote: (mode: MeasurementMode) => void; checks: boolean[]; setChecks: React.Dispatch<React.SetStateAction<boolean[]>>; setToast: (message: string) => void }) {
+function HomeView({ jobs, openQuote, checks, setChecks, setToast, onGrow }: { jobs: Job[]; openQuote: (mode: MeasurementMode) => void; checks: boolean[]; setChecks: React.Dispatch<React.SetStateAction<boolean[]>>; setToast: (message: string) => void; onGrow: () => void }) {
   const latest = jobs[0];
   const historyPhotos = jobs.flatMap((job) => (job.photoItems ?? []).map((photo) => ({ ...photo, label: job.address }))).slice(0, 6);
   const checklist = ["Photograph problem areas", "Check seams and edges", "Confirm water access", "Log infill condition"];
@@ -1132,6 +1141,8 @@ function HomeView({ jobs, openQuote, checks, setChecks, setToast }: { jobs: Job[
         <Action icon={<Map size={20} />} label="Map trace" onClick={() => openQuote("map")} />
         <Action icon={<Package size={20} />} label="Infill calculator" onClick={() => openQuote("manual")} />
       </nav>
+
+      {!Capacitor.isNativePlatform() && <section className="dashboard-growth-card"><span className="dashboard-growth-icon"><TrendingUp size={23} /></span><div><h3>Grow your business</h3><p>Explore training, tools, marketing services and products.</p></div><button className="secondary-button" onClick={onGrow}>Explore options <ArrowRight size={17} /></button></section>}
 
       <section className="tool-panel">
         {latest ? <>

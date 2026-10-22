@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { inspectApplePublicMetadata } from "./lib/store-metadata.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relativePath, encoding = "utf8") => fs.readFileSync(path.join(root, relativePath), encoding);
@@ -41,6 +42,7 @@ function pngDetails(relativePath) {
 }
 
 const { identity, release, urls, apple, googlePlay, privacy } = metadata;
+failures.push(...inspectApplePublicMetadata(metadata).failures);
 check(identity.name === "Dirty Turf Academy", "Store app name must be Dirty Turf Academy");
 check(identity.bundleId === "com.dirtyturf.academy", "Bundle/package ID must be com.dirtyturf.academy");
 check(identity.appleId === "6813588770", "App Store Connect Apple ID is missing or incorrect");

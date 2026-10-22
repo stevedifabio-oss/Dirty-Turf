@@ -1,5 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createCommunityRefresh } from "./communityRefresh";
+import { REMOVED_COMMUNITY_COMMENT_BODY } from "./communitySafety";
 
 const mocks = vi.hoisted(() => {
   const getSession = vi.fn();
@@ -63,6 +64,29 @@ beforeEach(() => {
 });
 
 describe("complete community comment reads", () => {
+  it("never signs or exposes removed comment attachments across either private bucket", async () => {
+    mocks.commentPage.mockResolvedValue({ data: [{
+      ...row(1), body: REMOVED_COMMUNITY_COMMENT_BODY, media: [
+        { url: "https://source.example/removed.jpg", storage_path: "community/comments/removed.jpg", type: "image" },
+        { storage_bucket: "community-photos", storage_path: "removed-photo.webp", type: "image" },
+        { url: "https://source.example/removed.pdf", type: "file" },
+      ],
+    }, {
+      ...row(2), media: [
+        { url: "https://source.example/visible.jpg", storage_path: "community/comments/visible.jpg", type: "image" },
+        { storage_bucket: "community-photos", storage_path: "visible-photo.webp", type: "image" },
+      ],
+    }], error: null });
+    const comments = await loadComments([]);
+    expect(comments[0]).toMatchObject({ body: REMOVED_COMMUNITY_COMMENT_BODY, mediaItems: [] });
+    expect(comments[1].mediaItems).toHaveLength(2);
+    expect(mocks.signedUrls.mock.calls).toEqual([
+      [["community/comments/visible.jpg"], 3600],
+      [["visible-photo.webp"], 3600],
+    ]);
+    expect(mocks.client.storage.from.mock.calls).toEqual([["academy-assets"], ["community-photos"]]);
+  });
+
   it("keeps reply attachments with the correct comment and signs private media", async () => {
     const parent = row(1);
     const reply = { ...row(2), parent_id: id(1), media: [

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Capacitor } from "@capacitor/core";
 import { ArrowLeft, Award, BadgeCheck, BookOpen, Check, CheckCircle2, ChevronDown, Circle, Download, ExternalLink, FileText, Lock, MessageSquare, Play, Printer, RotateCcw, Trophy, XCircle } from "lucide-react";
 import type { AcademyCertificate, Course, LessonQuiz } from "../domain";
 import { combinedCourseProgress } from "../lib/courseProgress";
@@ -173,6 +174,9 @@ export function AcademyView({ courses, requestedCourseCloudId, requestedLessonId
   if (selected) {
     const visibleModules = selected.modules.filter((module) => module.lessons.length > 0);
     const lessonCount = selected.modules.reduce((total, module) => total + module.lessons.length, 0);
+    // The server honors verified imported completion as well as in-app lesson
+    // completion, but cannot issue a certificate for a course with no lessons.
+    const certificateReady = lessonCount > 0 && selected.progress >= 100;
     const certificate = certificates.find((item) => item.courseId === (selected.cloudId ?? selected.id) && item.status === "active");
     const requestCertificate = async () => {
       if (readOnly) return;
@@ -217,7 +221,7 @@ export function AcademyView({ courses, requestedCourseCloudId, requestedLessonId
           })}
           {visibleModules.length === 0 && <div className="empty-state"><BookOpen size={24} /><h3>No published lessons yet</h3><p>Lessons will appear here when they are available.</p></div>}
         </section>
-        {certificate ? <CertificateCard certificate={certificate} /> : selected.progress >= 100 ? <section className="certificate-ready"><Award size={24} /><div><p>Course complete</p><h3>Your certificate is ready</h3><span>Create a verified completion record you can print or share.</span></div><button className="primary-button" disabled={readOnly || certificateBusy} onClick={() => void requestCertificate()}>{certificateBusy ? "Issuing..." : "Issue certificate"}</button></section> : null}
+        {certificate ? <CertificateCard certificate={certificate} /> : certificateReady ? <section className="certificate-ready"><Award size={24} /><div><p>Course complete</p><h3>Your certificate is ready</h3><span>Create a verified completion record you can print or share.</span></div><button className="primary-button" disabled={readOnly || certificateBusy} onClick={() => void requestCertificate()}>{certificateBusy ? "Issuing..." : "Issue certificate"}</button></section> : null}
         <div className="course-actions"><button className="secondary-button" onClick={onDiscuss}><MessageSquare size={17} /> Discuss this course</button></div>
       </div>
     );
@@ -245,7 +249,7 @@ export function AcademyView({ courses, requestedCourseCloudId, requestedLessonId
             <span><span className="course-meta"><span>{course.category}</span><span>{count} lessons · {academyDurationLabel(course.duration)}</span></span><strong className="course-title">{course.title}</strong><span className="course-description">{course.description}</span><span className="course-foot"><span className="progress-track"><span style={{ width: `${course.progress}%` }} /></span><span>{course.progress}%</span></span></span>
           </button>;
         })}
-        {visibleCourses.length === 0 && <div className="empty-state"><BookOpen size={24} /><h3>No courses assigned yet</h3><p>Your Academy access is active. Assigned courses will appear here.</p></div>}
+        {visibleCourses.length === 0 && <div className="empty-state"><BookOpen size={24} /><h3>No {filter.toLowerCase()} courses yet</h3><p>Choose All to return to your available training.</p><button className="secondary-button" onClick={() => setFilter("All")}>View all courses</button></div>}
       </section>
     </div>
   );
@@ -257,17 +261,19 @@ function QuizLesson({ quiz, onSubmit, readOnly = false }: { quiz: LessonQuiz; on
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ passed: boolean; requiredScore: number } | null>(null);
   const [submitError, setSubmitError] = useState("");
+  const submissionPending = useRef(false);
   const answerKeyCount = quiz.questions.filter((question) => question.correctOptionIndex !== undefined).length;
   const correctCount = quiz.questions.filter((question, index) => question.correctOptionIndex !== undefined && answers[index] === question.correctOptionIndex).length;
   const allAnswered = quiz.questions.every((_, index) => answers[index] !== undefined);
   const score = answerKeyCount ? Math.round(correctCount / answerKeyCount * 100) : null;
 
   const chooseAnswer = (questionIndex: number, optionIndex: number) => {
-    if (submitted || submitting) return;
+    if (submitted || submitting || submissionPending.current) return;
     setAnswers((current) => ({ ...current, [questionIndex]: optionIndex }));
   };
 
   const retry = () => {
+    if (submissionPending.current) return;
     setAnswers({});
     setSubmitted(false);
     setResult(null);
@@ -275,7 +281,8 @@ function QuizLesson({ quiz, onSubmit, readOnly = false }: { quiz: LessonQuiz; on
   };
 
   const submit = async () => {
-    if (readOnly || submitting || submitted) return;
+    if (readOnly || submitting || submitted || submissionPending.current) return;
+    submissionPending.current = true;
     setSubmitting(true);
     setSubmitError("");
     try {
@@ -285,6 +292,7 @@ function QuizLesson({ quiz, onSubmit, readOnly = false }: { quiz: LessonQuiz; on
     } catch (error) {
       setSubmitError(error instanceof Error && error.message ? error.message : "Your answers could not be saved. Please try again.");
     } finally {
+      submissionPending.current = false;
       setSubmitting(false);
     }
   };
@@ -325,6 +333,8 @@ function QuizLesson({ quiz, onSubmit, readOnly = false }: { quiz: LessonQuiz; on
 }
 
 function CertificateCard({ certificate }: { certificate: AcademyCertificate }) {
+  const native = Capacitor.isNativePlatform();
+  const verificationPath = `/?certificate=${encodeURIComponent(certificate.verificationCode)}`;
   return <section className="academy-certificate" aria-label={`Certificate for ${certificate.courseTitle}`}>
     <div className="certificate-seal"><BadgeCheck size={28} /></div>
     <p>Dirty Turf Academy</p>
@@ -335,7 +345,7 @@ function CertificateCard({ certificate }: { certificate: AcademyCertificate }) {
     <h4>{certificate.courseTitle}</h4>
     <div className="certificate-signature"><strong>{certificate.signatoryName}</strong><span>{certificate.signatoryTitle}</span></div>
     <small>Issued {new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(new Date(certificate.issuedAt))} · {certificate.verificationCode}</small>
-    <a className="certificate-verify-link" href={`https://app.dirtyturf.com/?certificate=${encodeURIComponent(certificate.verificationCode)}`} target="_blank" rel="noreferrer">Verify certificate</a>
+    <a className="certificate-verify-link" href={native ? verificationPath : `https://app.dirtyturf.com${verificationPath}`} target={native ? undefined : "_blank"} rel="noreferrer">Verify certificate</a>
     <button className="secondary-button" onClick={() => window.print()}><Printer size={16} /> Print or save PDF</button>
   </section>;
 }

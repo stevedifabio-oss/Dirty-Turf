@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   buildAndroidIntentUrl,
   buildNativeAuthUrl,
@@ -6,6 +7,12 @@ import {
 } from "../../public/mobile-auth-callback.js";
 
 describe("mobile auth callback bridge", () => {
+  it("keeps shared sign-in help usable on either mobile platform", () => {
+    const page = readFileSync(new URL("../../public/mobile-auth-callback.html", import.meta.url), "utf8");
+    const help = page.match(/<p class="auth-callback-help">([^<]+)<\/p>/)?.[1];
+    expect(help).toContain("your device browser");
+    expect(help).not.toMatch(/Google Play|Play Store|Android|Chrome/i);
+  });
   it("carries the PKCE code and flow id into the installed app", () => {
     const url = buildNativeAuthUrl("?code=secure-code&sb_flow_id=0123456789abcdef0123456789abcdef");
     expect(url).toBe("com.dirtyturf.academy://auth/callback?code=secure-code&sb_flow_id=0123456789abcdef0123456789abcdef");

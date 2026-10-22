@@ -4,8 +4,9 @@ import { loadRuntimeConfig } from "../_shared/runtime-config.ts";
 import { verifyGhlEmailRecipient, sendGhlEmail, GhlEmailRejected, GhlRecipientUnavailable } from "../_shared/ghl-email.ts";
 import {
   buildAcademyEmail,
+  buildNotificationPreferenceStatus,
+  buildUnsubscribeConfirmation,
   createUnsubscribeToken,
-  escapeHtml,
   preferenceForTemplate,
   templatesForPreference,
   verifyUnsubscribeToken,
@@ -69,6 +70,24 @@ Deno.serve(async (request) => {
       if (prepareError) throw prepareError;
       if (!Array.isArray(prepared) || !prepared[0]) { results.push({ id: delivery.id, status: "cancelled" }); continue; }
       delivery = prepared[0] as AcademyEmailDelivery;
+      let contactId: string | null = null;
+      if (config.provider === "ghl") {
+        const { data: link, error: linkError } = await admin.from("academy_member_links")
+          .select("external_contact_id").eq("academy_member_id", delivery.recipient_member_id)
+          .eq("external_provider", "highlevel").maybeSingle();
+        if (linkError) throw new Error("HighLevel contact mapping could not be read");
+        contactId = await verifyGhlEmailRecipient(config.ghl, link?.external_contact_id ?? null, delivery.recipient_email);
+      }
+      // Contact verification can take seconds. A preference, access or target
+      // change during that read must cancel the message before provider writes.
+      const verifiedRecipient = { memberId: delivery.recipient_member_id, email: delivery.recipient_email };
+      const { data: finalPrepared, error: finalPrepareError } = await admin.rpc("prepare_academy_email_delivery", {
+        p_delivery_id: delivery.id, p_lock_token: lockToken,
+      });
+      if (finalPrepareError) throw finalPrepareError;
+      if (!Array.isArray(finalPrepared) || !finalPrepared[0]) { results.push({ id: delivery.id, status: "cancelled" }); continue; }
+      delivery = finalPrepared[0] as AcademyEmailDelivery;
+      if (delivery.recipient_member_id !== verifiedRecipient.memberId || delivery.recipient_email !== verifiedRecipient.email) throw new Error("Delivery recipient changed during provider verification");
       const preference = preferenceForTemplate(delivery.template_key);
       const token = await createUnsubscribeToken(
         delivery.recipient_member_id,
@@ -78,14 +97,6 @@ Deno.serve(async (request) => {
       const unsubscribeUrl = new URL("/email/unsubscribe", config.appUrl);
       unsubscribeUrl.searchParams.set("token", token);
       const email = buildAcademyEmail(delivery, { appUrl: config.appUrl, unsubscribeUrl: unsubscribeUrl.toString() });
-      let contactId: string | null = null;
-      if (config.provider === "ghl") {
-        const { data: link, error: linkError } = await admin.from("academy_member_links")
-          .select("external_contact_id").eq("academy_member_id", delivery.recipient_member_id)
-          .eq("external_provider", "highlevel").maybeSingle();
-        if (linkError) throw new Error("HighLevel contact mapping could not be read");
-        contactId = await verifyGhlEmailRecipient(config.ghl, link?.external_contact_id ?? null, delivery.recipient_email);
-      }
       providerAttempted = true;
       const providerMessageId = config.provider === "ghl"
         ? await sendGhlEmail(config.ghl, contactId!, delivery.recipient_email, email)
@@ -147,7 +158,7 @@ async function handleUnsubscribe(request: Request, url: URL) {
 
   if (request.method === "GET") {
     const label = preferenceLabel(payload.preference);
-    return new Response(confirmUnsubscribeHtml(token, label, config.appUrl), {
+    return new Response(buildUnsubscribeConfirmation(token, label, config.appUrl), {
       headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
     });
   }
@@ -303,12 +314,8 @@ function preferenceLabel(preference: EmailPreferenceKey) {
   return labels[preference];
 }
 
-function confirmUnsubscribeHtml(token: string, label: string, appUrl: string) {
-  return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Manage email notifications</title><body style="margin:0;background:#eef4ea;font-family:Arial,sans-serif;color:#122218"><main style="max-width:520px;margin:10vh auto;background:#fff;border:1px solid #d8e4d3;border-radius:8px;padding:30px"><p style="color:#07833f;font-weight:700;text-transform:uppercase;font-size:12px">Dirty Turf Academy</p><h1 style="font-size:25px">Turn off ${escapeHtml(label)} emails?</h1><p>You will still see these updates in the Academy notification center.</p><form method="post"><input type="hidden" name="token" value="${escapeHtml(token)}"><button style="border:0;border-radius:6px;background:#07833f;color:#fff;font-weight:700;padding:13px 18px;cursor:pointer">Unsubscribe</button></form><p><a style="color:#287448" href="${escapeHtml(appUrl)}">Return to the Academy</a></p></main></body></html>`;
-}
-
 function htmlPage(title: string, detail: string, status: number, appUrl = "https://app.dirtyturf.com") {
-  return new Response(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)}</title><body style="margin:0;background:#eef4ea;font-family:Arial,sans-serif;color:#122218"><main style="max-width:520px;margin:10vh auto;background:#fff;border:1px solid #d8e4d3;border-radius:8px;padding:30px"><p style="color:#07833f;font-weight:700;text-transform:uppercase;font-size:12px">Dirty Turf Academy</p><h1>${escapeHtml(title)}</h1><p>${escapeHtml(detail)}</p><a style="color:#287448" href="${escapeHtml(appUrl)}">Open the Academy</a></main></body></html>`, {
+  return new Response(buildNotificationPreferenceStatus(title, detail, appUrl), {
     status,
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
   });

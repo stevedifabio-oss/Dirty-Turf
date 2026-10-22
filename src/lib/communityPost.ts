@@ -6,6 +6,17 @@ export type CommunityBodyBlock =
 const POST_ACTION_LABELS = new Set(["like", "comment", "share"]);
 const VIDEO_CONTROL_LABEL = /^(?:play|rewind 10s|forward 10s|\d{1,2}:\d{2}|mute|settings|pip|enter fullscreen)$/i;
 
+/** Notification links can focus one exact reply inside its visible parent. */
+export function communityRequestFromSearch(search: string) {
+  const query = new URLSearchParams(search);
+  const read = (name: string) => {
+    const values = query.getAll(name);
+    return values.length === 1 && /^[A-Za-z0-9_-]{1,128}$/.test(values[0]) ? values[0] : undefined;
+  };
+  const postId = read("post");
+  return { postId, commentId: postId ? read("comment") : undefined };
+}
+
 function comparableText(value: string) {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
 }

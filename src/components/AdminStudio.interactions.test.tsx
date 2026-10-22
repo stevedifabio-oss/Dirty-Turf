@@ -1,4 +1,5 @@
 import type { ComponentProps, ReactElement, ReactNode } from "react";
+vi.mock("./GrowthAdmin", () => ({ GrowthAdmin: () => null }));
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminCourse, AdminSnapshot } from "../lib/adminBackend";
 import type { LessonContentBlock } from "../lib/lessonContent";
@@ -171,6 +172,107 @@ beforeEach(() => {
 afterEach(() => { allHarnesses.splice(0).reverse().forEach(item => item.dispose()); hooks.contexts.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("Admin Studio authoring interactions", () => {
+  it("keeps a cleared course price empty while editing, then submits numeric cents", async () => {
+    const studio = await workspace(), form = studio.openForm(); form.setTitle("Editable course price");
+    const price = () => find(find(form.render(), e => e.type === "label" && text(e.props.children).startsWith("Price (USD)")), e => e.type === "input");
+    price().props.onChange({ target: { value: "" } });
+    expect(price().props.value).toBe("");
+    expect(price().props).toMatchObject({ type: "number", min: "0", step: "0.01", required: true });
+    price().props.onChange({ target: { value: "29.95" } });
+    find(form.render(), e => e.type === "form").props.onSubmit({ preventDefault: vi.fn() }); await flush();
+    expect(backend.saveCourse.mock.calls[0][0].priceCents).toBe(2995);
+  });
+
+  it("keeps cleared lesson minutes empty while editing, then submits numeric seconds", async () => {
+    const editor = await newLessonWorkspace(); editor.setTitle("Editable lesson duration");
+    const minutes = () => find(find(editor.render(), e => e.type === "label" && text(e.props.children).startsWith("Minutes")), e => e.type === "input");
+    minutes().props.onChange({ target: { value: "" } });
+    expect(minutes().props.value).toBe("");
+    expect(minutes().props).toMatchObject({ type: "number", min: "0" });
+    minutes().props.onChange({ target: { value: "12" } }); await editor.submit();
+    expect(backend.saveLesson.mock.calls[0][0].durationSeconds).toBe(720);
+  });
+
+  it("lets a required member level be cleared and replaced without changing its native constraints", async () => {
+    const studio = await workspace(), form = studio.openForm(); form.setTitle("Member level draft");
+    find(find(form.render(), e => e.type === "label" && text(e.props.children).startsWith("Access")), e => e.type === "select").props.onChange({ target: { value: "level" } });
+    const level = () => find(find(form.render(), e => e.type === "label" && text(e.props.children).startsWith("Required level")), e => e.type === "input");
+    level().props.onChange({ target: { value: "" } }); expect(level().props.value).toBe("");
+    expect(level().props).toMatchObject({ type: "number", min: "1", step: "1", required: true });
+    level().props.onChange({ target: { value: "3" } });
+    find(form.render(), e => e.type === "form").props.onSubmit({ preventDefault: vi.fn() }); await flush();
+    expect(backend.saveCourse.mock.calls[0][0]).toMatchObject({ requiredLevel: 3, priceCents: null });
+  });
+
+  it("keeps quiz numeric drafts empty when cleared, holds a blank score, and saves numeric answers after replacement", async () => {
+    const editor = await newLessonWorkspace(); editor.setTitle("Numeric quiz edit");
+    find(find(editor.render(), e => e.type === "label" && text(e.props.children).startsWith("Type")), e => e.type === "select").props.onChange({ target: { value: "quiz" } });
+    find(find(editor.render(), e => e.type === "label" && text(e.props.children) === "Question"), e => e.type === "input").props.onChange({ target: { value: "First step?" } });
+    find(find(editor.render(), e => e.type === "label" && text(e.props.children) === "Answer choices"), e => e.type === "textarea").props.onChange({ target: { value: "Inspect\nRinse" } });
+    const correct = () => find(find(editor.render(), e => e.type === "label" && text(e.props.children).startsWith("Correct choice number")), e => e.type === "input");
+    const passing = () => find(find(editor.render(), e => e.type === "label" && text(e.props.children).startsWith("Passing score")), e => e.type === "input");
+    correct().props.onChange({ target: { value: "" } }); expect(correct().props.value).toBe("");
+    expect(correct().props).toMatchObject({ type: "number", min: "1", max: 2, required: true });
+    expect(button(editor.render(), "Save lesson").props.disabled).toBe(true);
+    correct().props.onChange({ target: { value: "2" } });
+    passing().props.onChange({ target: { value: "" } }); expect(passing().props.value).toBe("");
+    expect(passing().props).toMatchObject({ type: "number", min: "1", max: "100" });
+    expect(passing().props.required).toBeUndefined(); await editor.submit();
+    expect(backend.saveLesson).not.toHaveBeenCalled(); expect(text(editor.render())).toContain("Choose a passing score from 1 to 100");
+    passing().props.onChange({ target: { value: "75" } }); await editor.submit();
+    expect(backend.saveLesson.mock.calls[0][0].body.quiz).toMatchObject({ passingPercent: 75, questions: [{ correctOptionIndex: 1 }] });
+  });
+
+  it("holds videos above the hosted 50 MB cap in the actual file picker before saving or uploading", async () => {
+    const editor = await newLessonWorkspace();
+    editor.setBlocks([{ id: "video", type: "video", url: "", caption: "Demonstration" }]);
+    let builderElement = editor.builder();
+    const builder = harness(() => (builderElement.type as (props: any) => ReactNode)(builderElement.props));
+    const render = () => { builderElement = editor.builder(); return builder.render(); };
+    const picker = () => find(render(), element => element.type === "input" && element.props.type === "file");
+    picker().props.onChange({ target: { files: [{ name: "too-large.mp4", type: "video/mp4", size: 50_000_001 }], value: "" } });
+    expect(text(render())).toContain("up to 50 MB");
+    expect(text(render())).toContain("Use a video link for a larger video");
+    expect(editor.builder().props.files).toEqual({});
+    expect(backend.saveLesson).not.toHaveBeenCalled(); expect(backend.uploadBlock).not.toHaveBeenCalled();
+    const allowed = { name: "allowed.mp4", type: "video/mp4", size: 50_000_000 };
+    picker().props.onChange({ target: { files: [allowed], value: "" } });
+    expect(editor.builder().props.files.video).toBe(allowed);
+  });
+
+  it.each(["source-archived", "source-hidden"] as const)("labels a %s module and prevents composing hidden lessons or publishing only hidden content", async visibility => {
+    const training = course();
+    training.modules = [{ id: "retired-module", courseId: training.id, title: "Previous source module", groupTitle: "", sortOrder: 0, dripAfterDays: null, memberVisibility: visibility,
+      lessons: [{ id: "hidden-lesson", moduleId: "retired-module", title: "Previous lesson", lessonType: "guide", body: { text: "Preserved source lesson" }, videoUrl: "", transcript: "", resources: [], durationSeconds: 0, sortOrder: 0, status: "published" }] }];
+    backend.load.mockResolvedValue(snapshot([training]));
+    const studio = await workspace();
+    const courses = studio.renderCourses();
+    expect(button(courses, "Publish course").props.disabled).toBe(true);
+    expect(find(courses, e => e.type === "span" && Array.isArray(e.props.children) && e.props.children[1] === " published lessons").props.children[0]).toBe(0);
+    const moduleElement = component(courses, "ModuleEditor");
+    const module = harness(() => (moduleElement.type as (props: any) => ReactNode)(moduleElement.props));
+    const tree = module.render();
+    expect(text(tree)).toContain("hidden from members");
+    expect(text(tree)).toContain("Use Add module above");
+    expect(elements(tree).some(e => typeof e.type === "function" && e.type.name === "LessonComposer")).toBe(false);
+    expect(elements(tree).some(e => e.type === "button" && text(e.props.children).trim() === "Edit module")).toBe(false);
+    expect(component(tree, "LessonRow").props.busy).toBe("hidden-source-module");
+    button(courses, "Course settings").props.onClick();
+    const formElement = component(studio.renderCourses(), "CourseForm");
+    const form = harness(() => (formElement.type as (props: any) => ReactNode)(formElement.props));
+    expect(find(form.render(), e => e.type === "option" && e.props.value === "published").props.disabled).toBe(true);
+    expect(backend.saveCourse).not.toHaveBeenCalled(); expect(backend.saveLesson).not.toHaveBeenCalled();
+  });
+
+  it("defaults additional courses to a separate paid draft without opening sales", async () => {
+    const studio = await workspace();
+    const form = studio.openForm();
+    form.setTitle("Additional specialist training");
+    find(form.render(), element => element.type === "form").props.onSubmit({ preventDefault: vi.fn() });
+    await flush();
+    expect(backend.saveCourse).toHaveBeenCalledOnce();
+    expect(backend.saveCourse.mock.calls[0][0]).toMatchObject({ title: "Additional specialist training", accessType: "purchase", priceCents: 14995, status: "draft" });
+  });
   it("saves mixed text, video, photo and link blocks in their chosen order without uploading or storing preview URLs", async () => {
     const editor = await newLessonWorkspace();
     const blocks: LessonContentBlock[] = [

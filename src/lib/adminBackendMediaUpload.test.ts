@@ -23,6 +23,7 @@ const mocks = vi.hoisted(() => {
   const upload = vi.fn(); const remove = vi.fn(); const sign = vi.fn(); const signMany = vi.fn();
   const client = {
     rpc: vi.fn(async (name: string) => {
+      if (name === "admin_attach_academy_lesson_asset") return { data: "00000000-0000-4000-8000-000000000005", error: state.registrationError };
       if (name !== "get_academy_access_state") throw new Error(`Unexpected RPC ${name}`);
       return { data: { canManage: state.canManage, communityId: "00000000-0000-4000-8000-000000000001" }, error: null };
     }),
@@ -52,7 +53,7 @@ const mocks = vi.hoisted(() => {
   return { state, client, queries, upload, remove, sign, signMany };
 });
 vi.mock("./backend", () => ({ supabase: mocks.client }));
-import { ADMIN_LESSON_BLOCK_IMAGE_LIMIT_BYTES, ADMIN_LESSON_BLOCK_VIDEO_LIMIT_BYTES, loadAdminLessonBlockMedia, uploadAdminLessonBlockAsset } from "./adminBackend";
+import { ADMIN_LESSON_BLOCK_IMAGE_LIMIT_BYTES, ADMIN_LESSON_BLOCK_VIDEO_LIMIT_BYTES, ADMIN_LESSON_DOWNLOAD_LIMIT_BYTES, loadAdminLessonBlockMedia, uploadAdminLessonAsset, uploadAdminLessonBlockAsset } from "./adminBackend";
 
 function file(type = "image/jpeg", size = 1024, name = "Before cleaning.jpg") { return { name, type, size } as File; }
 const expectedPath = `${ids.community}/${ids.course}/${ids.lesson}/${ids.asset}-before-cleaning.jpg`;
@@ -173,7 +174,7 @@ describe("draft lesson block uploads", () => {
     expect(mocks.upload).not.toHaveBeenCalled();
   });
 
-  it.each([["image/png", ADMIN_LESSON_BLOCK_IMAGE_LIMIT_BYTES, "20"], ["video/mp4", ADMIN_LESSON_BLOCK_VIDEO_LIMIT_BYTES, "500"]] as const)("bounds %s size before starting upload", async (type, limit, label) => {
+  it.each([["image/png", ADMIN_LESSON_BLOCK_IMAGE_LIMIT_BYTES, "20"], ["video/mp4", ADMIN_LESSON_BLOCK_VIDEO_LIMIT_BYTES, "50"]] as const)("bounds %s size before starting upload", async (type, limit, label) => {
     await expect(uploadAdminLessonBlockAsset(file(type, limit + 1), ids.course, ids.lesson)).rejects.toThrow(`${label} MB`);
     expect(mocks.upload).not.toHaveBeenCalled();
     await expect(uploadAdminLessonBlockAsset(file(type, limit), ids.course, ids.lesson)).resolves.toHaveProperty("path");
@@ -221,5 +222,72 @@ describe("draft lesson block uploads", () => {
     else mocks.sign.mockRejectedValueOnce(new Error("Signing unavailable"));
     await expect(uploadAdminLessonBlockAsset(file(), ids.course, ids.lesson)).resolves.toEqual({ path: expectedPath, previewUrl: "" });
     expect(mocks.upload).toHaveBeenCalledOnce(); expect(mocks.queries.filter(query => query.values)).toHaveLength(1); expect(mocks.remove).not.toHaveBeenCalled();
+  });
+});
+
+describe("lesson downloads", () => {
+  it.each([
+    ["application/pdf", "Guide.pdf", "pdf"],
+    ["application/msword", "Guide.doc", "document"],
+    ["application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Guide.docx", "document"],
+    ["audio/mpeg", "Training.mp3", "audio"],
+    ["audio/webm", "Training.webm", "audio"],
+  ])("uploads a supported %s download after proving its lesson owner", async (type, name, assetType) => {
+    const download = file(type, 1024, name);
+    const path = await uploadAdminLessonAsset(download, ids.course, ids.lesson);
+    expect(mocks.upload).toHaveBeenCalledWith(path, download, { contentType: type, upsert: false });
+    expect(mocks.client.rpc).toHaveBeenCalledWith("admin_attach_academy_lesson_asset", expect.objectContaining({
+      p_academy_community_id: ids.community, p_course_id: ids.course, p_lesson_id: ids.lesson,
+      p_asset_type: assetType, p_storage_path: path, p_mime_type: type, p_byte_size: 1024,
+    }));
+    expect(mocks.queries.find(query => query.table === "course_modules")?.filters).toContainEqual(["course_id", ids.course]);
+  });
+
+  it.each([["Guide.PDF", "application/pdf"], ["Voice.m4a", "audio/mp4"], ["Guide.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]])("infers only explicit supported extensions for a browser's blank MIME: %s", async (name, type) => {
+    await uploadAdminLessonAsset(file("", 1024, name), ids.course, ids.lesson);
+    expect(mocks.upload).toHaveBeenCalledWith(expect.any(String), expect.anything(), { contentType: type, upsert: false });
+  });
+
+  it.each([["text/html", "Guide.html"], ["image/svg+xml", "Guide.svg"], ["application/octet-stream", "Guide.pdf"], ["", "Guide.exe"]])("rejects unsupported download %s/%s before any network work", async (type, name) => {
+    await expect(uploadAdminLessonAsset(file(type, 1024, name), ids.course, ids.lesson)).rejects.toThrow("PDF, Word document or audio");
+    expect(mocks.client.rpc).not.toHaveBeenCalled(); expect(mocks.upload).not.toHaveBeenCalled();
+  });
+
+  it("bounds downloads before upload and accepts the exact size boundary", async () => {
+    await expect(uploadAdminLessonAsset(file("application/pdf", ADMIN_LESSON_DOWNLOAD_LIMIT_BYTES + 1), ids.course, ids.lesson)).rejects.toThrow("20 MB");
+    expect(mocks.upload).not.toHaveBeenCalled();
+    await expect(uploadAdminLessonAsset(file("application/pdf", ADMIN_LESSON_DOWNLOAD_LIMIT_BYTES), ids.course, ids.lesson)).resolves.toEqual(expect.any(String));
+  });
+
+  it.each(["courseVisible", "lessonVisible", "moduleMatches"] as const)("does not upload a download when %s ownership proof is missing", async key => {
+    mocks.state[key] = false;
+    await expect(uploadAdminLessonAsset(file("application/pdf"), ids.course, ids.lesson)).rejects.toThrow(/no longer available|does not belong/);
+    expect(mocks.upload).not.toHaveBeenCalled();
+  });
+
+  it("preserves the attachment error if cleanup also fails", async () => {
+    const failure = new Error("Attachment denied"); mocks.state.registrationError = failure;
+    mocks.remove.mockRejectedValueOnce(new Error("Cleanup unavailable"));
+    await expect(uploadAdminLessonAsset(file("application/pdf"), ids.course, ids.lesson)).rejects.toBe(failure);
+    expect(mocks.remove).toHaveBeenCalledOnce();
+  });
+});
+
+describe("Storage's configured upload limit", () => {
+  it.each([
+    { statusCode: "413", message: "Request rejected" },
+    { status: 413, message: "Request rejected" },
+    { message: "The object exceeded the maximum allowed size" },
+    { code: "EntityTooLarge", message: "Upload rejected" },
+  ])("gives a useful recovery instruction when the provider's limit is below the editor limit", async failure => {
+    mocks.upload.mockResolvedValueOnce({ data: null, error: failure });
+    await expect(uploadAdminLessonBlockAsset(file("video/mp4", 30 * 1024 * 1024), ids.course, ids.lesson)).rejects.toThrow("global Storage upload limit");
+    expect(mocks.queries.some(query => query.values)).toBe(false); expect(mocks.remove).not.toHaveBeenCalled();
+  });
+
+  it("provides the same smaller-file recovery for downloads without attaching them", async () => {
+    mocks.upload.mockResolvedValueOnce({ data: null, error: { statusCode: "413", message: "Payload too large" } });
+    await expect(uploadAdminLessonAsset(file("application/pdf"), ids.course, ids.lesson)).rejects.toThrow("Your saved lesson is kept");
+    expect(mocks.client.rpc.mock.calls.some(([name]) => name === "admin_attach_academy_lesson_asset")).toBe(false);
   });
 });

@@ -12,6 +12,9 @@ export type MemberAccessRow = {
 export type AuthUserIdentity = {
   id: string;
   email: string;
+  email_confirmed_at?: string | null;
+  banned_until?: string | null;
+  deleted_at?: string | null;
 };
 
 export function resolveMemberAccessAction(
@@ -33,10 +36,14 @@ export function summarizeMemberAccess(
   rows: MemberAccessRow[],
   enrolledMemberIds: Iterable<string>,
   authUsers: Iterable<AuthUserIdentity>,
+  linkedMembers?: Iterable<{ id: string; user_id: string | null }>,
 ) {
   const authByEmail = new Map<string, AuthUserIdentity>();
+  const duplicateAuthEmails = new Set<string>();
   for (const user of authUsers) {
-    authByEmail.set(normalizeMemberEmail(user.email), user);
+    const email = normalizeMemberEmail(user.email);
+    if (authByEmail.has(email)) duplicateAuthEmails.add(email);
+    authByEmail.set(email, user);
   }
 
   const enrolled = new Set(enrolledMemberIds);
@@ -47,6 +54,10 @@ export function summarizeMemberAccess(
     eligibleRows.map((row) => [row.academyMemberId, row]),
   );
   const readyMembers = new Set<string>();
+  const userCounts = new Map<string, number>();
+  for (const member of linkedMembers ?? rows.map(row => ({ id: row.academyMemberId, user_id: row.memberUserId }))) {
+    if (member.user_id) userCounts.set(member.user_id, (userCounts.get(member.user_id) ?? 0) + 1);
+  }
   const statusCounts: Record<string, number> = {};
 
   for (const row of rows) {
@@ -54,7 +65,9 @@ export function summarizeMemberAccess(
   }
   for (const row of eligibleRows) {
     const user = authByEmail.get(normalizeMemberEmail(row.email));
-    if (user && row.invitedUserId === user.id && row.memberUserId === user.id) {
+    if (user && !duplicateAuthEmails.has(normalizeMemberEmail(row.email)) && userCounts.get(user.id) === 1 &&
+      user.email_confirmed_at && !user.deleted_at && (!user.banned_until || (Number.isFinite(Date.parse(user.banned_until)) && Date.parse(user.banned_until) <= Date.now())) &&
+      row.invitedUserId === user.id && row.memberUserId === user.id) {
       readyMembers.add(row.academyMemberId);
     }
   }
