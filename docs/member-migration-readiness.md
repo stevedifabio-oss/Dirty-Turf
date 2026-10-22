@@ -114,3 +114,36 @@ acceptance, announcement delivery, campaign sign-ins and Steve's changeover appr
 remain separate gates. Old Auth sign-ins and accepted invite rows never count as
 successful onboarding in a new campaign. Use the
 [member migration plan](member-migration-plan.md) for those gates.
+
+## Prepare the rollout package
+
+The local preparation generator uses the same strict evidence audit, then creates
+a private member tracker and review-only account preparation list. It makes no
+remote calls and produces no executable provisioning or email payloads.
+
+```sh
+node scripts/prepare-member-migration.mjs \
+  --roster output/private/fresh-exact-group-roster.json \
+  --app-snapshot output/private/fresh-app-members.json \
+  --cohort output/private/approved-free-cohort.json \
+  --location-id eqVZcs8fro8qiGD2sgoG \
+  --group-id 6a5ff7019b8d5f3bf162a694 \
+  --campaign-id dirty-turf-member-migration-draft-20261020 \
+  --report output/private/member-migration-preparation-new.json
+```
+
+Omit all three evidence options to generate blocked templates and an unapproved
+cohort worksheet. Supplying only some inputs is rejected. Preparation accepts a
+freshness window of 1–24 hours; stale archive-review evidence cannot approve a
+rollout package. Output is private, atomic, refuses overwrite and prints counts
+and reason codes only. Delivery and campaign sign-in begin unassessed even when
+an account has signed in previously.
+
+The current provisioning endpoint loads the community-wide queue without an
+exact member filter. Its preview exposes counts only and selects differently
+from provisioning. Independently reconcile the actual full execution queue, or
+add and review exact targeting before any authorized execution. A local review
+batch and a limit of 50 do not constrain the live endpoint to those people.
+
+Use the [launch pack](member-migration-launch-pack.md) for the device pilot,
+owner decisions, announcement/reminder drafts and changeover checks.

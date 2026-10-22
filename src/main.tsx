@@ -1,6 +1,6 @@
 import { communityAvailable, featureAvailable, courseAvailable, type AccessState } from "./lib/academyAccess";
 import { AccessRequired, AvailableUpgrades } from "./components/AccessOffers";
-import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
+import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Capacitor } from "@capacitor/core";
 import "@fontsource/outfit/latin-600.css";
@@ -50,6 +50,9 @@ import {
   loadAcademyCertificates,
   loadBlockedAcademyMemberIds,
   loadComments,
+  loadCommunityThread,
+  refreshLessonAssets,
+  searchCommunityPosts,
   loadCourses,
   loadEvents,
   loadJobs,
@@ -70,6 +73,7 @@ import {
   savePost,
   signInWithPassword,
   signOut,
+  subscribeToCommunityChanges,
   subscribeToNotifications,
   supabase,
   toggleAcademyEventRsvp,
@@ -86,11 +90,15 @@ import {
 import { hasNativeLiveMeasurement, startNativeLiveMeasurement } from "./lib/liveMeasurement";
 import { academyPaymentLink, checkoutReturnNotice } from "./lib/academyPaymentLink";
 import { billingPageRoute } from "./lib/membershipBilling";
-import { cloudCollectionOrEmpty } from "./lib/cloudCollection";
 import { createCommunityPostPageGate } from "./lib/communityPostPageGate";
 import { createCourseRefresh, watchCourseRefresh } from "./lib/courseRefresh";
 import { communityHasActiveDraft, createCommunityRefresh, loadCommunityPostWindow, mergeCommunityPostWindow } from "./lib/communityRefresh";
+import { GlobalSearch } from "./components/GlobalSearch";
+import type { SearchTarget } from "./lib/globalSearch";
+import { createWorkspaceContinuity } from "./lib/workspaceContinuity";
 import { createWorkspaceSession } from "./lib/workspaceSession";
+import { createTermsConsent } from "./lib/termsConsent";
+import { CommunityTermsGate, TermsChoice } from "./components/TermsConsent";
 import { calculateQuote, INFILL_RATES } from "./lib/quote";
 import { useModalDialog } from "./lib/useModalDialog";
 import { AcademyView } from "./components/Academy";
@@ -169,7 +177,14 @@ function CertificateVerificationPage({ code }: { code: string }) {
 }
 
 function App() {
+  const [termsConsent] = useState(() => { try { return createTermsConsent(window.localStorage); } catch { return createTermsConsent(); } });
+  const [termsAccepted, setTermsAccepted] = useState(() => termsConsent.granted());
+  const [termsUserId, setTermsUserId] = useState<string | null>(null);
+  const [nativeConsentPending, setNativeConsentPending] = useState(false);
+  const nativeConsentResumeRef = useRef<(() => Promise<void>) | undefined>(undefined);
+  const resumeAfterConsentRef = useRef<() => void>(() => undefined);
   const [activeView, setActiveView] = useState<View>(initialViewFromUrl);
+  const adminLeaveGuard = useRef<(() => boolean) | undefined>(undefined);
   const [quoteOpen, setQuoteOpen] = useState(false);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -201,6 +216,9 @@ function App() {
   const [notifications, setNotifications] = useState<AppNotification[]>(supabase ? [] : initialNotifications);
   const [arrivalChecks, setArrivalChecks] = useState<boolean[]>([false, false, false, false]);
   const [certificates, setCertificates] = useState<AcademyCertificate[]>([]);
+  const [requestedLessonId, setRequestedLessonId] = useState<string>();
+  const [requestedCommentCloudId, setRequestedCommentCloudId] = useState<string>();
+  const [requestedMemberCloudId, setRequestedMemberCloudId] = useState<string>();
   const [requestedCourseCloudId, setRequestedCourseCloudId] = useState(() => new URLSearchParams(window.location.search).get("course") ?? undefined);
   const [requestedEventCloudId, setRequestedEventCloudId] = useState(() => new URLSearchParams(window.location.search).get("event") ?? undefined);
   const [requestedPostCloudId, setRequestedPostCloudId] = useState(() => new URLSearchParams(window.location.search).get("post") ?? undefined);
@@ -208,6 +226,17 @@ function App() {
   const [workspaceAccess, setWorkspaceAccess] = useState<
     WorkspaceAccessState | { status: "loading" | "error" }
   >({ status: "loading" });
+  const continuity = useRef(createWorkspaceContinuity());
+  const [connection, setConnection] = useState<"online" | "offline" | "recovering">(() => navigator.onLine === false ? "offline" : "online");
+  const connectionRef = useRef(connection);
+  const updateConnection = (value: typeof connection) => { connectionRef.current = value; setConnection(value); };
+  const readOnly = Boolean(supabase) && connection !== "online";
+  const requireConnection = () => {
+    if (!termsConsent.granted()) throw new Error("Agree to the current community terms before continuing.");
+    if (supabase && (!continuity.current.canWrite(navigator.onLine !== false) || connectionRef.current !== "online")) {
+      throw new Error("Reconnect before saving changes. Your draft is still here.");
+    }
+  };
   const [workspaceRefreshToken, setWorkspaceRefreshToken] = useState(0);
   const [workspaceContentLoading, setWorkspaceContentLoading] = useState(Boolean(supabase));
   const workspaceContentReady = useRef(false);
@@ -218,12 +247,26 @@ function App() {
   const refreshCoursesRef = useRef<() => void>(() => undefined);
   const [courseRefreshError, setCourseRefreshError] = useState(false);
   const refreshWorkspaceRef = useRef<() => void>(() => undefined);
+  const beginSignOutRef = useRef<() => (() => boolean)>(() => () => true);
   const hasCommunity = communityAvailable(workspaceAccess);
   const canMeasure = featureAvailable(workspaceAccess, "measuring_tool");
   const visibleCourses = courses.filter((course) => courseAvailable(workspaceAccess, course.cloudId));
   const canManage = workspaceAccess.status === "member" && workspaceAccess.canManage;
 
+  const clearQuoteDraft = () => {
+    setDraft({ ...defaultDraft });
+    setPhotoFile(null);
+    // The existing photo effect releases the previous object URL.
+    setPhotoUrl("");
+    setQuoteOpen(false);
+    setSelectedJob(null);
+    setArrivalChecks([false, false, false, false]);
+  };
+
   const clearWorkspaceContent = () => {
+    // Invalidate delayed child saves at revocation/expiry as well as account switches.
+    courseAccountGeneration.current += 1;
+    courseRevision.current += 1;
     communityRevision.current += 1;
     setCommunityRefreshError(false);
     setJobs([]);
@@ -240,30 +283,48 @@ function App() {
     let mounted = true;
     const session = createWorkspaceSession();
     let lastAccess: WorkspaceAccessState | null = null;
-    let accessRefreshPending = false;
+    let accessRefreshPending: number | null = null;
+    let authUserId: string | null = null;
+    let signingOut = false;
+    let signOutAccount: string | null = null;
+    let signOutRevision = 0;
+    let disposeCommunityChanges: () => void = () => undefined;
+    let communitySubscriptionGeneration = 0;
 
     const refreshWorkspace = async () => {
-      if (!mounted) return;
+      if (!mounted || signingOut) return;
       const activeRefresh = session.beginRefresh();
       workspaceRefreshPending.current = true;
       courseRevision.current += 1;
       communityRevision.current += 1;
-      communityPagePending.current = false;
-      postCursorRef.current = undefined;
-      postPageGate.current.refresh();
-      setLoadingMorePosts(false);
-      setHasMorePosts(false);
-      setPostCursor(undefined);
+      const preserveLoaded = workspaceContentReady.current;
+      if (!preserveLoaded) {
+        communityPagePending.current = false;
+        postCursorRef.current = undefined;
+        postPageGate.current.refresh();
+        setLoadingMorePosts(false);
+        setHasMorePosts(false);
+        setPostCursor(undefined);
+      }
       if (supabase) {
         setWorkspaceContentLoading(true);
         setCloudLoadError("");
       }
       try {
         const mode = await getDataMode();
+        if (!mounted || !session.isCurrent(activeRefresh)) return;
+        if (!termsConsent.granted()) {
+          setWorkspaceContentLoading(false);
+          if (mode === "device") { setDataMode(mode); setWorkspaceAccess(supabase ? { status: "signed_out" } : { status: "preview" }); }
+          return;
+        }
         if (mode === "cloud") await claimAcademyMemberships();
         const access = await getWorkspaceAccessState();
         if (!mounted || !session.isCurrent(activeRefresh)) return;
         if (access.status === "signed_out" || access.status === "no_access") {
+          lastAccess = null;
+          continuity.current.revoke();
+          clearQuoteDraft();
           clearWorkspaceContent();
           workspaceContentReady.current = false;
           setWorkspaceContentLoading(false);
@@ -272,6 +333,8 @@ function App() {
           return;
         }
         lastAccess = access;
+        continuity.current.confirm();
+        updateConnection("online");
         setDataMode(mode);
         setWorkspaceAccess(access);
         const community = communityAvailable(access);
@@ -288,35 +351,43 @@ function App() {
         if (!mounted || !session.isCurrent(activeRefresh)) return;
         courseRevision.current += 1;
         const [jobsResult, coursesResult, postsResult, commentsResult, eventsResult, membersResult, notificationsResult, certificatesResult] = results;
-        setJobs(cloudCollectionOrEmpty(jobsResult));
-        setCourses(cloudCollectionOrEmpty(coursesResult));
+        const applyCollection = <T,>(setter: React.Dispatch<React.SetStateAction<T[]>>, result: PromiseSettledResult<T[]>) => {
+          if (result.status === "fulfilled") setter(result.value);
+          else if (!preserveLoaded) setter([]);
+        };
+        applyCollection(setJobs, jobsResult);
+        applyCollection(setCourses, coursesResult);
         if (postsResult.status === "fulfilled") {
           postPageGate.current.activate();
           setPosts(postsResult.value.posts);
           postCursorRef.current = postsResult.value.nextCursor;
           setPostCursor(postsResult.value.nextCursor);
           setHasMorePosts(postsResult.value.hasMore);
-        } else setPosts([]);
-        setComments(cloudCollectionOrEmpty(commentsResult));
-        setEvents(cloudCollectionOrEmpty(eventsResult));
-        setMembers(cloudCollectionOrEmpty(membersResult));
-        setNotifications(cloudCollectionOrEmpty(notificationsResult));
-        setCertificates(cloudCollectionOrEmpty(certificatesResult));
+        } else if (!preserveLoaded) setPosts([]);
+        applyCollection(setComments, commentsResult);
+        applyCollection(setEvents, eventsResult);
+        applyCollection(setMembers, membersResult);
+        applyCollection(setNotifications, notificationsResult);
+        applyCollection(setCertificates, certificatesResult);
         setDataMode(mode);
         setWorkspaceAccess(access);
         workspaceContentReady.current = true;
         setWorkspaceContentLoading(false);
         const names = ["jobs", "courses", "posts", "comments", "events", "members", "notifications", "certificates"];
         const failed = results.flatMap((result, index) => result.status === "rejected" ? [names[index]] : []);
-        setCloudLoadError(failed.length ? `Could not load ${failed.join(", ")}. This content is unavailable until you retry.` : "");
+        setCloudLoadError(failed.length ? `Could not load ${failed.join(", ")}. Reconnect or retry to update this content.` : "");
       } catch {
         if (mounted && session.isCurrent(activeRefresh)) {
           setWorkspaceContentLoading(false);
-          clearWorkspaceContent();
-          workspaceContentReady.current = false;
-          setQuoteOpen(false);
-          setSelectedJob(null);
-          setWorkspaceAccess(supabase ? { status: "error" } : { status: "preview" });
+          continuity.current.fail();
+          updateConnection(navigator.onLine === false ? "offline" : "recovering");
+          if (!workspaceContentReady.current || !continuity.current.canKeepLoaded()) {
+            clearWorkspaceContent();
+            workspaceContentReady.current = false;
+            setQuoteOpen(false);
+            setSelectedJob(null);
+            setWorkspaceAccess(supabase ? { status: "error" } : { status: "preview" });
+          }
           if (!supabase) setToast("Cloud data is unavailable. Working on this device.");
         }
       } finally {
@@ -328,7 +399,7 @@ function App() {
       load: () => loadCourses([]),
       apply: setCourses,
       version: () => courseRevision.current,
-      eligible: () => Boolean(supabase) && mounted && workspaceContentReady.current
+      eligible: () => Boolean(supabase) && termsConsent.granted() && connectionRef.current === "online" && navigator.onLine !== false && mounted && workspaceContentReady.current
         && !workspaceRefreshPending.current && courseWritesPending.current === 0 && document.visibilityState === "visible"
         // Keep a member’s current reading, paused video and quiz answers stable.
         && !document.querySelector(".lesson-content"),
@@ -348,6 +419,7 @@ function App() {
         setPosts(current => mergeCommunityPostWindow(current, postWindow));
         // A bounded partial read must not move the user's older-page cursor.
         if (postWindow.complete) {
+          postPageGate.current.activate();
           postCursorRef.current = postWindow.nextCursor;
           setPostCursor(postWindow.nextCursor);
           setHasMorePosts(postWindow.hasMore);
@@ -357,7 +429,7 @@ function App() {
         setMembers(members);
       },
       version: () => communityRevision.current,
-      eligible: () => Boolean(supabase) && mounted && workspaceContentReady.current
+      eligible: () => Boolean(supabase) && termsConsent.granted() && connectionRef.current === "online" && navigator.onLine !== false && mounted && workspaceContentReady.current
         && Boolean(lastAccess && communityAvailable(lastAccess)) && communityViewVisible.current
         && !workspaceRefreshPending.current && !communityPagePending.current && communityWritesPending.current === 0
         && document.visibilityState === "visible" && !communityHasActiveDraft(document)
@@ -366,13 +438,47 @@ function App() {
       onSuccess: () => setCommunityRefreshError(false),
     });
     refreshCommunityRef.current = () => { void communityRefresh.refresh(); };
+    const resetCommunitySubscription = (signedIn: boolean) => {
+      disposeCommunityChanges();
+      communitySubscriptionGeneration += 1;
+      communityRefresh.reset();
+      const generation = communitySubscriptionGeneration;
+      disposeCommunityChanges = signedIn && termsConsent.granted() ? subscribeToCommunityChanges(() => {
+        if (mounted && generation === communitySubscriptionGeneration) communityRefresh.invalidate();
+      }) : () => undefined;
+    };
+    resumeAfterConsentRef.current = () => {
+      if (!mounted || signingOut || !termsConsent.granted()) return;
+      resetCommunitySubscription(Boolean(authUserId));
+      void refreshWorkspace();
+    };
+    beginSignOutRef.current = () => {
+      signingOut = true;
+      signOutAccount = authUserId;
+      const intent = ++signOutRevision;
+      // Invalidate access/content work at the click, before the SDK's network
+      // sign-out can emit its eventual SIGNED_OUT event.
+      session.authChanged("SIGNED_OUT", null);
+      session.invalidate();
+      lastAccess = null;
+      accessRefreshPending = null;
+      workspaceRefreshPending.current = false;
+      resetCommunitySubscription(false);
+      return () => {
+        if (!mounted || intent !== signOutRevision) return false;
+        signingOut = false;
+        return true;
+      };
+    };
     const refreshAccess = async () => {
-      if (!supabase || !mounted || accessRefreshPending || workspaceRefreshPending.current) return;
-      accessRefreshPending = true;
+      if (!supabase || !mounted || signingOut || !termsConsent.granted() || accessRefreshPending !== null || workspaceRefreshPending.current) return;
       const generation = session.snapshot();
+      accessRefreshPending = generation;
       try {
         const access = await getWorkspaceAccessState();
         if (!mounted || !session.isCurrent(generation)) return;
+        if (access.status === "member") { continuity.current.confirm(); updateConnection("online"); }
+        else { continuity.current.revoke(); clearQuoteDraft(); }
         if (JSON.stringify(access) !== JSON.stringify(lastAccess) || !workspaceContentReady.current) {
           courseRevision.current += 1;
           setQuoteOpen(false);
@@ -386,13 +492,17 @@ function App() {
         }
       } catch {
         if (mounted && session.isCurrent(generation)) {
-          courseRevision.current += 1;
-          clearWorkspaceContent();
-          workspaceContentReady.current = false;
-          setQuoteOpen(false); setSelectedJob(null);
-          setWorkspaceAccess({ status: "error" });
+          continuity.current.fail();
+          updateConnection(navigator.onLine === false ? "offline" : "recovering");
+          if (!workspaceContentReady.current || !continuity.current.canKeepLoaded()) {
+            courseRevision.current += 1;
+            clearWorkspaceContent();
+            workspaceContentReady.current = false;
+            setQuoteOpen(false); setSelectedJob(null);
+            setWorkspaceAccess({ status: "error" });
+          }
         }
-      } finally { accessRefreshPending = false; }
+      } finally { if (accessRefreshPending === generation) accessRefreshPending = null; }
     };
     const stopCourseRefresh = watchCourseRefresh({
       refresh: () => { void refreshAccess(); }, document, window,
@@ -401,11 +511,51 @@ function App() {
         return NativeApp.addListener("appStateChange", ({ isActive }) => { if (isActive) onResume(); });
       } : undefined,
     });
-    refreshWorkspaceRef.current = () => { void refreshWorkspace(); };
+    const connectivityChanged = () => {
+      if (navigator.onLine === false) { continuity.current.fail(); updateConnection("offline"); }
+      else if (connectionRef.current !== "online") { updateConnection("recovering"); void refreshAccess(); }
+    };
+    window.addEventListener("offline", connectivityChanged);
+    window.addEventListener("online", connectivityChanged);
+    const offlineExpiry = window.setInterval(() => {
+      if (connectionRef.current !== "online" && workspaceContentReady.current && !continuity.current.canKeepLoaded()) {
+        clearWorkspaceContent(); workspaceContentReady.current = false;
+        setQuoteOpen(false); setSelectedJob(null); setWorkspaceAccess({ status: "error" });
+      }
+    }, 1000);
+    refreshWorkspaceRef.current = () => { void (workspaceContentReady.current && connectionRef.current !== "online" ? refreshAccess() : refreshWorkspace()); };
     const authSubscription = supabase?.auth.onAuthStateChange((event, authSession) => {
+      if (signingOut && event !== "SIGNED_OUT") {
+        // A refreshed token or same-account resume confirmation belongs to
+        // the session being closed. A different account's explicit sign-in
+        // supersedes the old intent and its delayed UI completion.
+        if (event !== "SIGNED_IN" || !authSession?.user.id || authSession.user.id === signOutAccount) return;
+        signingOut = false;
+        signOutRevision += 1;
+      }
       const action = session.authChanged(event, authSession?.user.id ?? null);
-      if (action === "ignore") return;
+      if (event === "SIGNED_OUT") authUserId = null;
+      if (action === "ignore") {
+        // Same-user token confirmations may extend the token lifetime. An
+        // ambiguous late null INITIAL_SESSION must not erase verified access.
+        if (authSession?.user.id && ["INITIAL_SESSION", "SIGNED_IN", "USER_UPDATED", "TOKEN_REFRESHED"].includes(event)) {
+          setTermsUserId(authSession.user.id);
+          setTermsAccepted(termsConsent.identify(authSession.user.id));
+          continuity.current.identify(authSession.user.id, authSession.expires_at);
+        }
+        return;
+      }
+      authUserId = authSession?.user.id ?? null;
+      setTermsUserId(authUserId);
+      setTermsAccepted(termsConsent.identify(authUserId));
+      if (authUserId) setNativeConsentPending(false);
+      continuity.current.identify(authSession?.user.id ?? null, authSession?.expires_at);
+      if (action === "restore") {
+        setWorkspaceContentLoading(true);
+        setWorkspaceAccess({ status: "loading" });
+      }
       if (action === "reset" || action === "signed_out") {
+        const hadAccount = courseAccountGeneration.current > 0;
         lastAccess = null;
         courseAccountGeneration.current += 1;
         courseRevision.current += 1;
@@ -413,6 +563,7 @@ function App() {
         communityPagePending.current = false;
         postCursorRef.current = undefined;
         setCourseRefreshError(false);
+        clearQuoteDraft();
         clearWorkspaceContent();
         workspaceContentReady.current = false;
         postPageGate.current.refresh();
@@ -425,9 +576,15 @@ function App() {
         setHubSection(null);
         setSearchOpen(false);
         setQuery("");
+        if (hadAccount) {
+          setRequestedCourseCloudId(undefined); setRequestedLessonId(undefined);
+          setRequestedPostCloudId(undefined); setRequestedCommentCloudId(undefined); setRequestedMemberCloudId(undefined); setRequestedEventCloudId(undefined);
+        }
+        updateConnection(navigator.onLine === false ? "offline" : "online");
         setDataMode(action === "signed_out" ? "device" : "cloud");
         setWorkspaceContentLoading(action !== "signed_out");
         setWorkspaceAccess({ status: action === "signed_out" ? "signed_out" : "loading" });
+        resetCommunitySubscription(action === "reset");
       }
       if (action !== "signed_out") {
         const scheduledGeneration = session.snapshot();
@@ -438,17 +595,26 @@ function App() {
     }).data.subscription;
     if (!supabase) void refreshWorkspace();
     const disposeNotifications = subscribeToNotifications(() => {
+      if (signingOut || !termsConsent.granted()) return;
       const activeGeneration = session.snapshot();
+      const accountGeneration = courseAccountGeneration.current;
       void loadNotifications(initialNotifications)
-        .then((items) => { if (mounted && session.isCurrent(activeGeneration)) setNotifications(items); })
+        .then((items) => { if (mounted && session.isCurrent(activeGeneration) && accountGeneration === courseAccountGeneration.current) setNotifications(items); })
         .catch(() => undefined);
     });
 
     return () => {
       mounted = false;
+      signOutRevision += 1;
+      beginSignOutRef.current = () => () => false;
+      resumeAfterConsentRef.current = () => undefined;
+      window.removeEventListener("offline", connectivityChanged);
+      window.removeEventListener("online", connectivityChanged);
+      window.clearInterval(offlineExpiry);
       session.invalidate();
       courseRevision.current += 1;
       courseRefresh.dispose();
+      disposeCommunityChanges();
       communityRefresh.dispose();
       refreshCommunityRef.current = () => undefined;
       stopCourseRefresh();
@@ -467,14 +633,25 @@ function App() {
   useEffect(() => {
     let mounted = true;
     let disposeNativeAuth: () => void = () => undefined;
-    void initializeNativeAuth((message) => mounted && setToast(message)).then((dispose) => {
+    void initializeNativeAuth((message) => mounted && setToast(message), {
+      canProcess: () => termsConsent.canProcessNativeLink(),
+      onRequired: resume => {
+        if (!mounted) return;
+        nativeConsentResumeRef.current = resume;
+        setNativeConsentPending(true);
+      },
+    }).then((dispose) => {
       if (mounted) disposeNativeAuth = dispose;
       else dispose();
     }).catch(() => {
       if (mounted) setToast("The sign-in link could not be opened. Please try again.");
     });
-    return () => { mounted = false; disposeNativeAuth(); };
+    return () => { mounted = false; nativeConsentResumeRef.current = undefined; disposeNativeAuth(); };
   }, []);
+
+  useEffect(() => {
+    if (searchOpen) document.querySelectorAll<HTMLVideoElement>(".lesson-content video, .community-media-video").forEach(video => video.pause());
+  }, [searchOpen]);
 
   useEffect(() => {
     if (activeView === "learn") refreshCoursesRef.current();
@@ -488,18 +665,20 @@ function App() {
     setCourses(next);
   };
   const writeCourseProgress = async <T,>(write: () => Promise<T>): Promise<T> => {
+    requireConnection();
     courseRevision.current += 1;
     courseWritesPending.current += 1;
     try { return await write(); }
     finally { courseWritesPending.current -= 1; courseRevision.current += 1; }
   };
 
-  const changeCommunity = <T,>(setter: React.Dispatch<React.SetStateAction<T>>, next: T) => {
+  const changeCommunity = <T,>(setter: React.Dispatch<React.SetStateAction<T>>, next: React.SetStateAction<T>) => {
     if (renderedCourseAccount !== courseAccountGeneration.current) return;
     communityRevision.current += 1;
     setter(next);
   };
   const writeCommunity = async <T,>(write: () => Promise<T>): Promise<T> => {
+    requireConnection();
     communityRevision.current += 1;
     communityWritesPending.current += 1;
     try { return await write(); }
@@ -507,7 +686,7 @@ function App() {
   };
 
   const loadMoreCommunityPosts = async () => {
-    if (!hasMorePosts) return;
+    if (readOnly || navigator.onLine === false || !hasMorePosts) return;
     const requestGeneration = postPageGate.current.begin();
     if (requestGeneration === null) return;
     communityPagePending.current = true;
@@ -558,6 +737,7 @@ function App() {
   const quote = calculateQuote(draft);
 
   const openQuote = (mode: MeasurementMode = "camera") => {
+    if (activeView === "admin" && adminLeaveGuard.current?.() === false) return;
     setDraft((current) => ({ ...current, mode }));
     setHubSection(null);
     setQuoteOpen(true);
@@ -565,6 +745,8 @@ function App() {
   };
 
   const saveQuote = async () => {
+    const accountGeneration = renderedCourseAccount;
+    if (accountGeneration !== courseAccountGeneration.current) return;
     if (draft.mode !== "manual" && !canMeasure) { setToast("Measuring tool access is required."); return; }
     if (quote.area <= 0) {
       setToast("Measure a turf area before saving.");
@@ -588,7 +770,9 @@ function App() {
       photos: photoUrl ? 1 : 0,
     };
     try {
+      requireConnection();
       const savedJob = await saveJob(job, photoFile ?? undefined);
+      if (accountGeneration !== courseAccountGeneration.current) return;
       setJobs((current) => [savedJob, ...current.filter((item) => item.id !== savedJob.id)]);
       setPhotoFile(null);
       setPhotoUrl("");
@@ -600,11 +784,12 @@ function App() {
           ? "Calculation and photo saved. The photo preview is temporarily unavailable."
           : dataMode === "cloud" ? "Calculation synced to the company workspace." : "Calculation saved on this device.");
     } catch {
-      setToast("Calculation could not be saved. Check the connection and try again.");
+      if (accountGeneration === courseAccountGeneration.current) setToast("Calculation could not be saved. Check the connection and try again.");
     }
   };
 
   const changeView = (view: View) => {
+    if (activeView === "admin" && view !== "admin" && adminLeaveGuard.current?.() === false) return false;
     setActiveView(view);
     setHubSection(null);
     setQuoteOpen(false);
@@ -614,7 +799,29 @@ function App() {
     setQuery("");
     document.querySelector(".phone-frame")?.scrollTo({ top: 0, behavior: "auto" });
     window.scrollTo({ top: 0, behavior: "auto" });
+    return true;
   };
+
+  const openSearchResult = (target: SearchTarget) => {
+    if (target.kind === "job") { setSelectedJob(jobs.find(job => job.id === target.id) ?? null); setSearchOpen(false); return; }
+    if (target.kind === "course") { if (!changeView("learn")) return; setRequestedCourseCloudId(target.courseId); setRequestedLessonId(target.lessonId); }
+    else if (target.kind === "post") { if (!changeView("community")) return; setRequestedPostCloudId(target.postId ?? String(target.localId)); setRequestedCommentCloudId(target.commentId); }
+    else if (target.kind === "event") { if (!changeView("events")) return; setRequestedEventCloudId(target.id); }
+    else if (target.kind === "member") { if (!changeView("community")) return; setRequestedMemberCloudId(target.id); }
+    else changeView(target.view);
+  };
+  const loadRequestedPost = useCallback(async (id: string) => {
+    requireConnection();
+    const result = await loadCommunityThread(id);
+    if (renderedCourseAccount !== courseAccountGeneration.current) throw new Error("Account changed.");
+    return result;
+  }, [renderedCourseAccount]);
+  const renewLessonAssets = useCallback(async (id: string) => {
+    requireConnection();
+    const result = await refreshLessonAssets(id);
+    if (renderedCourseAccount !== courseAccountGeneration.current) throw new Error("Account changed.");
+    return result;
+  }, [renderedCourseAccount]);
 
   const openSettings = () => {
     setQuoteOpen(false);
@@ -622,6 +829,7 @@ function App() {
   };
 
   const sendMagicLink = async (email: string, notify = true) => {
+    if (!termsConsent.granted()) throw new Error("Agree to the community terms before signing in.");
     try {
       const { error } = await requestMagicLink(email);
       if (error) throw error;
@@ -632,7 +840,17 @@ function App() {
     }
   };
   const handleSignOut = async () => {
-    await signOut();
+    const finishSignOut = beginSignOutRef.current();
+    setTermsAccepted(termsConsent.identify(null));
+    setTermsUserId(null);
+    setNativeConsentPending(false);
+    nativeConsentResumeRef.current = undefined;
+    continuity.current.revoke();
+    clearQuoteDraft();
+    clearWorkspaceContent();
+    workspaceContentReady.current = false;
+    setWorkspaceContentLoading(false);
+    if (!supabase) {
     setJobs(initialJobs);
     setCourses(seedCourses);
     setPosts(initialPosts);
@@ -640,6 +858,7 @@ function App() {
     setEvents(initialEvents);
     setMembers(initialMembers);
     setNotifications(initialNotifications);
+    }
     setArrivalChecks([false, false, false, false]);
     setDataMode("device");
     setWorkspaceAccess(supabase ? { status: "signed_out" } : { status: "preview" });
@@ -648,19 +867,32 @@ function App() {
     setSelectedJob(null);
     setQuery("");
     setActiveView("home");
-    setToast("Signed out of the workspace.");
+    let failed = false;
+    try { await signOut(); } catch { failed = true; }
+    if (finishSignOut()) setToast(failed ? "Sign-out could not be confirmed. Please try again." : "Signed out of the workspace.");
   };
   const handlePasswordSignIn = async (email: string, password: string) => {
+    if (!termsConsent.granted()) throw new Error("Agree to the community terms before signing in.");
     const { error } = await signInWithPassword(email, password);
     if (error) throw error;
     setToast("Signed in to the Academy workspace.");
   };
+  const changeTermsConsent = (accepted: boolean) => {
+    if (!accepted) { termsConsent.withdraw(); setTermsAccepted(false); return; }
+    termsConsent.accept();
+    setTermsAccepted(true);
+    const resumeNative = nativeConsentResumeRef.current;
+    nativeConsentResumeRef.current = undefined;
+    if (resumeNative) void resumeNative().finally(() => setNativeConsentPending(false));
+    else resumeAfterConsentRef.current();
+  };
 
   const openNotification = (notification: AppNotification) => {
-    setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, read: true } : item));
-    if (notification.cloudId) void markNotificationRead(notification.cloudId).catch(() => setToast("Notification could not be marked as read."));
+    if (!readOnly) setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, read: true } : item));
+    if (!readOnly && notification.cloudId) void markNotificationRead(notification.cloudId).catch(() => setToast("Notification could not be marked as read."));
     setHubSection(null);
     if (notification.targetType === "post") {
+      setRequestedCommentCloudId(undefined); setRequestedMemberCloudId(undefined);
       setRequestedPostCloudId(notification.targetCloudId);
       changeView("community");
     } else if (notification.targetType === "event") {
@@ -675,6 +907,7 @@ function App() {
   };
 
   const markEveryNotificationRead = async () => {
+    requireConnection();
     const previous = notifications;
     setNotifications((current) => current.map((notification) => ({ ...notification, read: true })));
     try {
@@ -686,12 +919,16 @@ function App() {
   };
 
   const waitingForWorkspace = workspaceContentLoading && !workspaceContentReady.current;
-  const workspaceStatus = workspaceContentLoading ? "Loading workspace..." : cloudLoadError ? "Workspace needs attention" : dataMode === "cloud" ? "Workspace synced" : "Device preview";
+  const workspaceStatus = readOnly ? (connection === "offline" ? "Offline · loaded content" : "Reconnecting…") : workspaceContentLoading ? "Loading workspace..." : cloudLoadError ? "Workspace needs attention" : dataMode === "cloud" ? "Workspace synced" : "Device preview";
   const unreadNotifications = notifications.filter((notification) => !notification.read).length;
 
-  if (workspaceAccess.status === "loading" || workspaceAccess.status === "signed_out" || workspaceAccess.status === "no_access" || workspaceAccess.status === "error") {
+  if (!termsAccepted && (termsUserId || nativeConsentPending || workspaceAccess.status === "member" || workspaceAccess.status === "preview")) {
+    return <CommunityTermsGate onAccept={() => changeTermsConsent(true)} onSignOut={handleSignOut} pendingLink={nativeConsentPending} />;
+  }
+  if (nativeConsentPending || workspaceAccess.status === "loading" || workspaceAccess.status === "signed_out" || workspaceAccess.status === "no_access" || workspaceAccess.status === "error") {
     return <LaunchAccessGate
-      status={workspaceAccess.status}
+      status={nativeConsentPending ? "loading" : workspaceAccess.status as "loading" | "signed_out" | "no_access" | "error"}
+      onConsentChange={changeTermsConsent}
       authMessage={toast}
       onRequestMagicLink={(email) => sendMagicLink(email, false)}
       onPasswordSignIn={handlePasswordSignIn}
@@ -732,6 +969,7 @@ function App() {
           </div>
         </header>
 
+        {readOnly && <div className="cloud-load-alert offline-alert" role="status"><span>{connection === "offline" ? "You’re offline." : "The connection could not be verified."} Loaded content and drafts are still here. Reconnect to save or load new content.</span><button type="button" onClick={() => refreshWorkspaceRef.current()}>Reconnect</button></div>}
         {cloudLoadError && <div className="cloud-load-alert" role="alert"><span>{cloudLoadError}</span><button type="button" onClick={() => setWorkspaceRefreshToken((token) => token + 1)}>Try again</button></div>}
 
         {communityRefreshError && (activeView === "community" || activeView === "events") && <div className="cloud-load-alert" role="status"><span>Updates are temporarily unavailable. Your loaded content is still here; we’ll retry automatically.</span></div>}
@@ -739,23 +977,25 @@ function App() {
         {workspaceContentLoading && <div className="cloud-load-alert" role="status"><span>{waitingForWorkspace ? "Loading your workspace..." : "Updating your workspace..."}</span></div>}
 
         {!waitingForWorkspace && <>
-        {searchOpen && <SearchPanel query={query} setQuery={setQuery} jobs={jobs} onOpenJob={(job) => { setSelectedJob(job); setSearchOpen(false); }} onNavigate={changeView} />}
-        {!searchOpen && activeView !== "home" && <AcademyTabs activeView={activeView} canManage={canManage} hasCommunity={hasCommunity} onNavigate={changeView} />}
-        {!searchOpen && activeView === "home" && <HomeView jobs={jobs} openQuote={openQuote} checks={arrivalChecks} setChecks={setArrivalChecks} setToast={setToast} />}
-        {!searchOpen && activeView === "learn" && <AcademyView requestedCourseCloudId={requestedCourseCloudId} onRequestedCourseOpened={() => setRequestedCourseCloudId(undefined)} courses={visibleCourses} certificates={certificates} dataMode={dataMode} refreshError={courseRefreshError} onRefresh={() => refreshCoursesRef.current()} onCoursesChange={changeCourses} onLessonCompletion={(id, completed) => writeCourseProgress(() => saveLessonCompletion(id, completed))} onQuizAttempt={(id, score, answers) => writeCourseProgress(() => recordAcademyQuizAttempt(id, score, answers))} onRequestCertificate={async (courseId) => { await requestAcademyCertificate(courseId); setCertificates(await loadAcademyCertificates()); }} onToast={setToast} onDiscuss={() => changeView("community")} />}
-        {!searchOpen && activeView === "community" && hasCommunity && <CommunityView posts={posts} comments={comments} members={members} events={events} requestedPostCloudId={requestedPostCloudId} onRequestedPostOpened={() => setRequestedPostCloudId(undefined)} onPostsChange={next => changeCommunity(setPosts, next)} onCommentsChange={next => changeCommunity(setComments, next)} onMembersChange={next => changeCommunity(setMembers, next)} onToggleFollow={(member, following) => writeCommunity(() => member.cloudId ? setAcademyMemberFollow(member.cloudId, following) : Promise.resolve(following))} onLoadMorePosts={loadMoreCommunityPosts} hasMorePosts={hasMorePosts} loadingMorePosts={loadingMorePosts} onCreatePost={post => writeCommunity(() => savePost(post))} onCreateComment={(comment, postCloudId) => writeCommunity(() => saveComment(comment, postCloudId))} onToggleLike={(post) => writeCommunity(() => post.cloudId ? togglePostReaction(post.cloudId) : Promise.resolve(null))} onToggleCommentLike={(comment) => writeCommunity(() => comment.cloudId ? toggleCommentReaction(comment.cloudId) : Promise.resolve(null))} onToggleBookmark={(post) => writeCommunity(() => post.cloudId ? togglePostBookmark(post.cloudId) : Promise.resolve(null))} onReport={(contentType, contentId, reason) => reportAcademyContent(contentType, contentId, reason).then(() => undefined)} onBlockMember={memberId => writeCommunity(() => toggleAcademyMemberBlock(memberId))} onLoadBlockedMembers={loadBlockedAcademyMemberIds} onRefreshCommunity={() => setWorkspaceRefreshToken((current) => current + 1)} onNavigate={changeView} onToast={setToast} />}
-        {!searchOpen && activeView === "events" && hasCommunity && <EventsView requestedEventCloudId={requestedEventCloudId} onRequestedEventOpened={() => setRequestedEventCloudId(undefined)} events={events} onEventsChange={next => changeCommunity(setEvents, next)} onToggleRsvp={(event) => writeCommunity(() => event.cloudId ? toggleAcademyEventRsvp(event.cloudId) : Promise.resolve(null))} onToast={setToast} />}
-        {!searchOpen && ["community", "events"].includes(activeView) && !hasCommunity && <><AccessRequired title="Community access required">This account does not currently have access to community conversations and events.</AccessRequired><AvailableUpgrades access={workspaceAccess} kind="membership" /></>}
-        {!searchOpen && activeView === "learn" && <AvailableUpgrades access={workspaceAccess} kind="course" />}
-        {!searchOpen && activeView === "admin" && canManage && <Suspense fallback={<div className="admin-loading" role="status">Loading Admin Studio...</div>}><AdminStudio onToast={setToast} onContentChange={() => setWorkspaceRefreshToken((token) => token + 1)} /></Suspense>}
+        {searchOpen && <GlobalSearch key={renderedCourseAccount} query={query} onQuery={setQuery} content={{ jobs, courses: dataMode === "cloud" ? visibleCourses : [], posts: hasCommunity ? posts : [], comments: hasCommunity ? comments : [], events: hasCommunity ? events : [], members: hasCommunity ? members : [] }} readOnly={readOnly} searchRemote={hasCommunity && supabase ? searchCommunityPosts : undefined} onOpen={openSearchResult} />}
+        <div hidden={searchOpen}>
+        {activeView !== "home" && activeView !== "admin" && <AcademyTabs activeView={activeView} canManage={canManage} hasCommunity={hasCommunity} onNavigate={changeView} />}
+        {activeView === "home" && <HomeView jobs={jobs} openQuote={openQuote} checks={arrivalChecks} setChecks={next => { if (renderedCourseAccount === courseAccountGeneration.current) setArrivalChecks(next); }} setToast={setToast} />}
+        {activeView === "learn" && <AcademyView key={renderedCourseAccount} readOnly={readOnly} requestedLessonId={requestedLessonId} onRenewLessonAssets={renewLessonAssets} requestedCourseCloudId={requestedCourseCloudId} onRequestedCourseOpened={() => { setRequestedCourseCloudId(undefined); setRequestedLessonId(undefined); }} courses={visibleCourses} certificates={certificates} dataMode={dataMode} refreshError={courseRefreshError} onRefresh={() => refreshCoursesRef.current()} onCoursesChange={changeCourses} onLessonCompletion={(id, completed) => writeCourseProgress(() => saveLessonCompletion(id, completed))} onQuizAttempt={(id, score, answers) => writeCourseProgress(() => recordAcademyQuizAttempt(id, score, answers))} onRequestCertificate={async (courseId) => { await writeCourseProgress(() => requestAcademyCertificate(courseId)); const next = await loadAcademyCertificates(); if (renderedCourseAccount === courseAccountGeneration.current) setCertificates(next); }} onToast={setToast} onDiscuss={() => changeView("community")} />}
+        {activeView === "community" && hasCommunity && <CommunityView key={renderedCourseAccount} readOnly={readOnly} accessScopeKey={renderedCourseAccount} onLoadRequestedPost={loadRequestedPost} requestedCommentCloudId={requestedCommentCloudId} onRequestedCommentOpened={() => setRequestedCommentCloudId(undefined)} requestedMemberCloudId={requestedMemberCloudId} onRequestedMemberOpened={() => setRequestedMemberCloudId(undefined)} posts={posts} comments={comments} members={members} events={events} requestedPostCloudId={requestedPostCloudId} onRequestedPostOpened={() => setRequestedPostCloudId(undefined)} onPostsChange={next => changeCommunity(setPosts, next)} onCommentsChange={next => changeCommunity(setComments, next)} onMembersChange={next => changeCommunity(setMembers, next)} onToggleFollow={(member, following) => writeCommunity(() => member.cloudId ? setAcademyMemberFollow(member.cloudId, following) : Promise.resolve(following))} onLoadMorePosts={loadMoreCommunityPosts} hasMorePosts={hasMorePosts} loadingMorePosts={loadingMorePosts} onCreatePost={post => writeCommunity(() => savePost(post))} onCreateComment={(comment, postCloudId) => writeCommunity(() => saveComment(comment, postCloudId))} onToggleLike={(post) => writeCommunity(() => post.cloudId ? togglePostReaction(post.cloudId) : Promise.resolve(null))} onToggleCommentLike={(comment) => writeCommunity(() => comment.cloudId ? toggleCommentReaction(comment.cloudId) : Promise.resolve(null))} onToggleBookmark={(post) => writeCommunity(() => post.cloudId ? togglePostBookmark(post.cloudId) : Promise.resolve(null))} onReport={(contentType, contentId, reason) => writeCommunity(() => reportAcademyContent(contentType, contentId, reason)).then(() => undefined)} onBlockMember={memberId => writeCommunity(() => toggleAcademyMemberBlock(memberId))} onLoadBlockedMembers={loadBlockedAcademyMemberIds} onRefreshCommunity={() => refreshCommunityRef.current()} onNavigate={changeView} onToast={setToast} />}
+        {activeView === "events" && hasCommunity && <EventsView readOnly={readOnly} requestedEventCloudId={requestedEventCloudId} onRequestedEventOpened={() => setRequestedEventCloudId(undefined)} events={events} onEventsChange={next => changeCommunity(setEvents, next)} onToggleRsvp={(event) => writeCommunity(() => event.cloudId ? toggleAcademyEventRsvp(event.cloudId) : Promise.resolve(null))} onToast={setToast} />}
+        {["community", "events"].includes(activeView) && !hasCommunity && <><AccessRequired title="Community access required">This account does not currently have access to community conversations and events.</AccessRequired><AvailableUpgrades readOnly={readOnly} access={workspaceAccess} kind="membership" /></>}
+        {activeView === "learn" && <AvailableUpgrades readOnly={readOnly} access={workspaceAccess} kind="course" />}
+        {activeView === "admin" && canManage && <Suspense fallback={<div className="admin-loading" role="status">Loading Admin Studio...</div>}><AdminStudio readOnly={readOnly} leaveGuardRef={adminLeaveGuard} onToast={setToast} onContentChange={() => setWorkspaceRefreshToken((token) => token + 1)} onExit={() => changeView("learn")} /></Suspense>}
 
+        </div>
         </>}
 
         {!quoteOpen && !hubSection && <PrimaryNavigation activeView={activeView} settingsOpen={false} onNavigate={changeView} onOpenSettings={openSettings} />}
 
-        {quoteOpen && <QuoteSheet canMeasure={canMeasure} access={workspaceAccess} draft={draft} setDraft={setDraft} quote={quote} photoUrl={photoUrl} setPhotoUrl={setPhotoUrl} setPhotoFile={setPhotoFile} onClose={() => setQuoteOpen(false)} onSave={saveQuote} onError={setToast} primaryNavigation={<PrimaryNavigation activeView={activeView} settingsOpen={false} onNavigate={changeView} onOpenSettings={openSettings} />} />}
+        {quoteOpen && <QuoteSheet canMeasure={canMeasure} access={workspaceAccess} draft={draft} setDraft={next => { if (renderedCourseAccount === courseAccountGeneration.current) setDraft(next); }} quote={quote} photoUrl={photoUrl} setPhotoUrl={url => { if (renderedCourseAccount === courseAccountGeneration.current) setPhotoUrl(url); }} setPhotoFile={file => { if (renderedCourseAccount === courseAccountGeneration.current) setPhotoFile(file); }} onClose={() => setQuoteOpen(false)} onSave={saveQuote} onError={setToast} primaryNavigation={<PrimaryNavigation activeView={activeView} settingsOpen={false} onNavigate={changeView} onOpenSettings={openSettings} />} />}
         {selectedJob && <SavedJobSheet job={selectedJob} onClose={() => setSelectedJob(null)} />}
-        {hubSection && <Suspense fallback={<div className="sheet-loading" role="status">Loading workspace...</div>}><HubSheet section={hubSection} onClose={() => setHubSection(null)} onToast={setToast} onRequestMagicLink={sendMagicLink} onSignOut={handleSignOut} dataMode={dataMode} canManage={canManage} notifications={notifications} onOpenNotification={openNotification} onMarkAllNotificationsRead={markEveryNotificationRead} primaryNavigation={<PrimaryNavigation activeView={activeView} settingsOpen onNavigate={changeView} onOpenSettings={openSettings} />} /></Suspense>}
+        {hubSection && <Suspense fallback={<div className="sheet-loading" role="status">Loading workspace...</div>}><HubSheet readOnly={readOnly} section={hubSection} onClose={() => setHubSection(null)} onToast={setToast} onRequestMagicLink={sendMagicLink} onSignOut={handleSignOut} dataMode={dataMode} canManage={canManage} notifications={notifications} onOpenNotification={openNotification} onMarkAllNotificationsRead={markEveryNotificationRead} primaryNavigation={<PrimaryNavigation activeView={activeView} settingsOpen onNavigate={changeView} onOpenSettings={openSettings} />} /></Suspense>}
         {toast && <div className="toast" role="status"><CheckCircle2 size={18} />{toast}</div>}
       </section>
     </main>
@@ -769,6 +1009,7 @@ function LaunchAccessGate({
   onPasswordSignIn,
   onSignOut,
   onRetry,
+  onConsentChange,
 }: {
   status: "loading" | "signed_out" | "no_access" | "error";
   authMessage?: string;
@@ -776,18 +1017,20 @@ function LaunchAccessGate({
   onPasswordSignIn: (email: string, password: string) => Promise<void>;
   onSignOut: () => Promise<void>;
   onRetry: () => void;
+  onConsentChange: (accepted: boolean) => void;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordMode, setPasswordMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [agreed, setAgreed] = useState(false);
   const paymentLink = academyPaymentLink();
   const checkoutNotice = checkoutReturnNotice(window.location.search);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!email.trim() || (passwordMode && !password)) return;
+    if (busy || !agreed || !email.trim() || (passwordMode && !password)) return;
     setBusy(true);
     setMessage("");
     try {
@@ -841,7 +1084,8 @@ function LaunchAccessGate({
         <form className="access-form" onSubmit={submit}>
           <label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="operator@company.com" autoComplete="email" inputMode="email" required /></label>
           {passwordMode && <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></label>}
-          <button className="primary-button wide" disabled={busy || !email.trim() || (passwordMode && !password)}>{busy ? (passwordMode ? "Signing in..." : "Sending...") : (passwordMode ? "Sign in" : "Email me a sign-in link")}</button>
+          <TermsChoice checked={agreed} disabled={busy} onChange={accepted => { setAgreed(accepted); onConsentChange(accepted); }} />
+          <button className="primary-button wide" disabled={busy || !agreed || !email.trim() || (passwordMode && !password)}>{busy ? (passwordMode ? "Signing in..." : "Sending...") : (passwordMode ? "Sign in" : "Email me a sign-in link")}</button>
         </form>
         <button className="launch-auth-switch" type="button" disabled={busy} onClick={() => { setPasswordMode((current) => !current); setPassword(""); setMessage(""); }}>
           {passwordMode ? "Email me a sign-in link instead" : "Use a password"}
@@ -858,7 +1102,7 @@ function LaunchAccessGate({
       {message && <p className="launch-message" role="status">{message}</p>}
       {authMessage && <p className="launch-message" role="alert">{authMessage}</p>}
       <p className="launch-support">Need help? <a href="mailto:hello@dirtyturf.com">hello@dirtyturf.com</a></p>
-      <nav className="launch-legal" aria-label="Privacy and support"><a href="/privacy.html">Privacy</a><a href="/support.html">Support</a><a href="/delete-account.html">Delete account</a></nav>
+      <nav className="launch-legal" aria-label="Privacy and support"><a href="/terms.html">Terms</a><a href="/privacy.html">Privacy</a><a href="/support.html">Support</a><a href="/delete-account.html">Delete account</a></nav>
     </section>
   </main>;
 }
@@ -915,19 +1159,6 @@ function HomeView({ jobs, openQuote, checks, setChecks, setToast }: { jobs: Job[
 
       <section className="jobs"><div className="section-heading"><div><p>Pipeline</p><h3>Recent properties</h3></div><ClipboardList size={18} /></div>{jobs.slice(0, 4).map((job) => <JobRow job={job} key={job.id} />)}</section>
     </div>
-  );
-}
-
-function SearchPanel({ query, setQuery, jobs, onOpenJob, onNavigate }: { query: string; setQuery: (query: string) => void; jobs: Job[]; onOpenJob: (job: Job) => void; onNavigate: (view: View) => void }) {
-  const normalized = query.trim().toLowerCase();
-  const results = [
-    ...jobs.map((job) => ({ key: `job-${job.cloudId ?? job.id}`, type: "Property", title: job.address, detail: `${job.area} sq ft · ${formatCurrency(job.quote)}`, icon: <MapPin size={18} />, action: () => onOpenJob(job) })),
-    { key: "academy", type: "Academy", title: "Course library", detail: "Courses, lessons, resources, and progress", icon: <BookOpen size={18} />, action: () => onNavigate("learn") },
-    { key: "community", type: "Community", title: "7 Figure Turf Cleaning", detail: "Discussions, members, and operator answers", icon: <Users size={18} />, action: () => onNavigate("community") },
-    { key: "events", type: "Events", title: "Academy event calendar", detail: "Sessions, workshops, and RSVPs", icon: <CalendarDays size={18} />, action: () => onNavigate("events") },
-  ].filter((item) => !normalized || `${item.type} ${item.title} ${item.detail}`.toLowerCase().includes(normalized));
-  return (
-    <section className="search-view"><label className="search-input"><Search size={19} /><span className="sr-only">Search properties and Academy destinations</span><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search properties and Academy" />{query && <button onClick={() => setQuery("")} aria-label="Clear search"><X size={16} /></button>}</label><p className="result-count">{results.length} {normalized ? "matches" : "destinations and recent properties"}</p><div className="search-results">{results.slice(0, 9).map((item) => <button className="result-row" key={item.key} onClick={item.action}><span className="result-icon">{item.icon}</span><span><small>{item.type}</small><strong>{item.title}</strong><em>{item.detail}</em></span><ChevronRight size={17} /></button>)}{results.length === 0 && <div className="empty-state"><Search size={24} /><h3>No matches yet</h3><p>Try a saved calculation, Academy, community, or events.</p></div>}</div></section>
   );
 }
 

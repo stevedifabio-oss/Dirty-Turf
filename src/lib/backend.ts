@@ -2,6 +2,7 @@ import { parseAcademyAccess, type WorkspaceAccessState } from "./academyAccess";
 export type { WorkspaceAccessState } from "./academyAccess";
 import { Capacitor } from "@capacitor/core";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { lessonContentMarkup } from "./lessonContent";
 import type { AcademyCertificate, AcademyEvent, AppNotification, CommunityComment, CommunityPost, Course, Job, LessonQuiz, Member, NotificationPreferences } from "../domain";
 import { NATIVE_AUTH_EMAIL_REDIRECT, parseNativeAuthRedirect } from "./authRedirect";
 import { communityMediaStoragePaths, normalizeCommunityMediaItems } from "./communityMedia";
@@ -236,16 +237,31 @@ async function invokeMemberAccess(action: "preview" | "provision", limit?: numbe
   return data;
 }
 
-export async function initializeNativeAuth(onError: (message: string) => void = () => undefined) {
+export async function initializeNativeAuth(onError: (message: string) => void = () => undefined, consent?: {
+  canProcess: () => boolean;
+  onRequired: (resume: () => Promise<void>) => void;
+}) {
   if (!supabase || !Capacitor.isNativePlatform()) return () => undefined;
   const { App } = await import("@capacitor/app");
   const handledUrls = new Set<string>();
   const pendingUrls = new Set<string>();
+  let deferredUrl: string | undefined;
+  let disposed = false;
+  const resumeDeferred = async () => {
+    const url = deferredUrl;
+    if (!disposed && consent?.canProcess()) { deferredUrl = undefined; await handleUrl(url); }
+  };
 
   const handleUrl = async (rawUrl?: string) => {
-    if (!rawUrl || handledUrls.has(rawUrl) || pendingUrls.has(rawUrl)) return;
+    if (disposed || !rawUrl || handledUrls.has(rawUrl) || pendingUrls.has(rawUrl)) return;
     const redirect = parseNativeAuthRedirect(rawUrl);
     if (!redirect) return;
+    if (consent && !consent.canProcess()) {
+      // Keep only the current callback in memory, never in storage or logs.
+      deferredUrl = rawUrl;
+      consent.onRequired(resumeDeferred);
+      return;
+    }
     pendingUrls.add(rawUrl);
     if (redirect.error) {
       pendingUrls.delete(rawUrl);
@@ -272,12 +288,12 @@ export async function initializeNativeAuth(onError: (message: string) => void = 
   const listener = await App.addListener("appUrlOpen", ({ url }) => { void handleUrl(url); });
   const launch = await App.getLaunchUrl();
   await handleUrl(launch?.url);
-  return () => { void listener.remove(); };
+  return () => { disposed = true; deferredUrl = undefined; void listener.remove(); };
 }
 
 export async function signOut() {
   if (!supabase) return;
-  const { error } = await supabase.auth.signOut();
+  const { error } = await supabase.auth.signOut({ scope: "local" });
   if (error) throw error;
 }
 
@@ -535,6 +551,20 @@ export async function loadPosts(seed: CommunityPost[], cursor?: CommunityPostCur
 
   if (error) throw error;
   const rows = (data ?? []).slice(0, COMMUNITY_POST_PAGE_SIZE);
+  const posts = await hydrateCommunityPosts(rows, context);
+  const last = rows.at(-1);
+  return { posts, hasMore: (data ?? []).length > COMMUNITY_POST_PAGE_SIZE, nextCursor: last ? { createdAt: last.created_at, id: last.id } : undefined };
+}
+
+
+type CommunityPostRow = {
+  id: string; title: string; author_name: string; academy_author_id: string | null;
+  body: string; reply_count: number; created_at: string; category_name: string;
+  like_count: number; is_pinned: boolean; media: unknown;
+};
+const COMMUNITY_POST_FIELDS = "id,academy_community_id,title,body,author_name,reply_count,created_at,category_name,is_pinned,media,like_count,academy_author_id";
+
+async function hydrateCommunityPosts(rows: CommunityPostRow[], context: AcademyContext): Promise<CommunityPost[]> {
   const postIds = rows.map((row) => row.id);
   const [reactionResult, bookmarkResult] = postIds.length
     ? await Promise.all([
@@ -558,7 +588,7 @@ export async function loadPosts(seed: CommunityPost[], cursor?: CommunityPostCur
     }
   }
 
-  const posts = rows.map((row) => {
+  return rows.map((row) => {
     const mediaItems = normalizeCommunityMediaItems(row.media, signedByPath);
     return {
       id: stableNumericId(row.id),
@@ -578,8 +608,36 @@ export async function loadPosts(seed: CommunityPost[], cursor?: CommunityPostCur
       mediaItems,
     } satisfies CommunityPost;
   });
-  const last = rows.at(-1);
-  return { posts, hasMore: (data ?? []).length > COMMUNITY_POST_PAGE_SIZE, nextCursor: last ? { createdAt: last.created_at, id: last.id } : undefined };
+
+}
+
+/** An authorized target is loaded independently; it never moves the feed cursor. */
+export async function loadCommunityThread(postCloudId: string): Promise<{ post: CommunityPost; comments: CommunityComment[] } | null> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(postCloudId)) return null;
+  const context = await getAcademyContext();
+  if (!context) return null;
+  const { data, error } = await supabase!.from("community_feed").select(COMMUNITY_POST_FIELDS)
+    .eq("academy_community_id", context.communityId).eq("id", postCloudId).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const [posts, comments] = await Promise.all([hydrateCommunityPosts([data], context), loadComments([], postCloudId)]);
+  return { post: posts[0], comments };
+}
+
+/** Literal substring search through the member-scoped feed, including older pages. */
+export async function searchCommunityPosts(query: string): Promise<CommunityPost[]> {
+  const term = query.trim().slice(0, 120);
+  if (term.length < 2) return [];
+  const context = await getAcademyContext();
+  if (!context) return [];
+  const pattern = `%${term.replace(/[\\%_]/g, char => `\\${char}`)}%`;
+  // Separate filters avoid interpolating user input into PostgREST's OR grammar.
+  const reads = await Promise.all(["title", "body", "author_name", "category_name"].map(column => supabase!.from("community_feed")
+    .select(COMMUNITY_POST_FIELDS).eq("academy_community_id", context.communityId)
+    .ilike(column, pattern).order("created_at", { ascending: false }).order("id", { ascending: false }).limit(30)));
+  for (const result of reads) if (result.error) throw result.error;
+  const rows = [...new Map(reads.flatMap(result => result.data ?? []).map(row => [row.id, row])).values()];
+  return hydrateCommunityPosts(rows, context);
 }
 
 export async function savePost(post: CommunityPost): Promise<CommunityPost> {
@@ -607,7 +665,7 @@ type AcademyCommentRow = {
   media?: unknown;
 };
 
-export async function loadComments(seed: CommunityComment[]): Promise<CommunityComment[]> {
+export async function loadComments(seed: CommunityComment[], postCloudId?: string): Promise<CommunityComment[]> {
   const context = await getAcademyContext();
   if (!context) return (await hasCloudSession()) ? [] : readLocal(COMMENTS_KEY, seed);
 
@@ -624,6 +682,7 @@ export async function loadComments(seed: CommunityComment[]): Promise<CommunityC
       .eq("academy_community_id", context.communityId)
       .order("created_at", { ascending: true })
       .order("id", { ascending: true });
+    if (postCloudId) query.eq("post_id", postCloudId);
     const { data: page, error } = await (cursor
       ? query.or(`created_at.gt.${cursor.createdAt},and(created_at.eq.${cursor.createdAt},id.gt.${cursor.id})`)
       : query).limit(pageSize);
@@ -672,6 +731,7 @@ export async function loadComments(seed: CommunityComment[]): Promise<CommunityC
     id: stableNumericId(row.id),
     cloudId: row.id,
     postId: stableNumericId(row.post_id),
+    postCloudId: row.post_id,
     parentId: row.parent_id ? stableNumericId(row.parent_id) : undefined,
     parentCloudId: row.parent_id ?? undefined,
     author: row.author_name,
@@ -803,7 +863,34 @@ export async function loadCourses(seed: Course[]): Promise<Course[]> {
   });
 }
 
-async function loadSignedLessonAssets(lessonIds: string[]) {
+
+/** Re-sign only the media of a currently accessible published lesson. */
+export async function refreshLessonAssets(lessonCloudId: string) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(lessonCloudId)) throw new Error("Lesson is unavailable.");
+  const context = await getAcademyContext();
+  if (!context) throw new Error("Sign in to reload lesson media.");
+  const { data: lesson, error } = await supabase!.from("course_lessons")
+    .select("id,module_id,body,video_url,resources").eq("id", lessonCloudId).eq("status", "published").maybeSingle();
+  if (error) throw error;
+  if (!lesson) throw new Error("Lesson is unavailable.");
+  const { data: module, error: moduleError } = await supabase!.from("course_modules").select("course_id")
+    .eq("id", lesson.module_id).is("source_archived_at", null).or("source_visibility.eq.published,sync_owner.eq.local").maybeSingle();
+  if (moduleError) throw moduleError;
+  if (!module) throw new Error("Lesson is unavailable.");
+  const { data: course, error: courseError } = await supabase!.from("courses").select("id")
+    .eq("id", module.course_id).eq("academy_community_id", context.communityId).eq("status", "published").maybeSingle();
+  if (courseError) throw courseError;
+  if (!course) throw new Error("Lesson is unavailable.");
+  const assets = (await loadSignedLessonAssets([lessonCloudId], true)).get(lessonCloudId);
+  return {
+    bodyHtml: normalizeLessonHtml(lesson.body, assets),
+    videoUrl: lesson.video_url ? assets?.get(lesson.video_url) ?? lesson.video_url : undefined,
+    resources: normalizeResources(lesson.resources, assets),
+    expiresAt: Date.now() + 60 * 60 * 1000,
+  };
+}
+
+async function loadSignedLessonAssets(lessonIds: string[], strict = false) {
   const urlsByLesson = new Map<string, Map<string, string>>();
   if (!supabase || !lessonIds.length) return urlsByLesson;
 
@@ -820,6 +907,9 @@ async function loadSignedLessonAssets(lessonIds: string[]) {
     .from("academy-assets")
     .createSignedUrls(paths, 60 * 60);
   if (signedError) throw signedError;
+  if (strict && paths.some(path => !(signedRows ?? []).some(asset => asset.path === path && asset.signedUrl && !asset.error))) {
+    throw new Error("Lesson media could not be renewed.");
+  }
   const signedByPath = new Map((signedRows ?? []).flatMap((asset) => asset.signedUrl ? [[asset.path, asset.signedUrl] as const] : []));
 
   for (const asset of assetRows ?? []) {
@@ -1156,15 +1246,22 @@ export async function setLessonCompletion(cloudLessonId: string, completed: bool
   if (error) throw error;
 }
 
-export function subscribeToWorkspaceChanges(onChange: () => void) {
+export function subscribeToCommunityChanges(onChange: () => void) {
   if (!supabase) return () => undefined;
+  let disposed = false;
+  // Events only invalidate the loaded window; current membership/RLS still govern reads.
+  const changed = () => { if (!disposed) onChange(); };
   const channel = supabase
-    .channel("dirty-turf-workspace")
-    .on("postgres_changes", { event: "*", schema: "public", table: "community_posts" }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "community_comments" }, onChange)
-    .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, onChange)
-    .subscribe();
-  return () => { void supabase.removeChannel(channel); };
+    .channel(`dirty-turf-community-${crypto.randomUUID()}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "community_posts" }, changed)
+    .on("postgres_changes", { event: "*", schema: "public", table: "community_comments" }, changed)
+    // Re-read after reconnecting: changes during a disconnected socket are not replayed.
+    .subscribe((status) => { if (status === "SUBSCRIBED") changed(); });
+  return () => {
+    if (disposed) return;
+    disposed = true;
+    void supabase.removeChannel(channel);
+  };
 }
 
 export function subscribeToNotifications(onChange: () => void) {
@@ -1255,14 +1352,16 @@ function normalizeLessonBody(value: unknown) {
 
 function normalizeLessonHtml(value: unknown, assetUrls?: Map<string, string>) {
   if (!value || typeof value !== "object") return undefined;
-  const html = (value as Record<string, unknown>).html;
+  const html = lessonContentMarkup(value, assetUrls);
   if (typeof html !== "string" || !html.trim()) return undefined;
   if (!assetUrls?.size) return html;
   const documentNode = new DOMParser().parseFromString(html, "text/html");
-  for (const node of documentNode.querySelectorAll<HTMLElement>("[src]")) {
-    const source = node.getAttribute("src");
-    const signedUrl = source ? assetUrls.get(source) : undefined;
-    if (signedUrl) node.setAttribute("src", signedUrl);
+  for (const node of documentNode.querySelectorAll<HTMLElement>("[src],[href]")) {
+    for (const attribute of ["src", "href"]) {
+      const source = node.getAttribute(attribute);
+      const signedUrl = source ? assetUrls.get(source) : undefined;
+      if (signedUrl) node.setAttribute(attribute, signedUrl);
+    }
   }
   return documentNode.body.innerHTML;
 }

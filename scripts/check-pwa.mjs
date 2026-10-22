@@ -13,6 +13,7 @@ for (const [file, marker] of [
   ["privacy.html", "Privacy policy"],
   ["support.html", "Academy support"],
   ["delete-account.html", "Delete your account"],
+  ["terms.html", "Terms of Use and Community Rules"],
 ]) {
   const html = await readFile(path.join(dist, file), "utf8");
   if (!html.includes(marker)) failures.push(`${file} is missing its expected public-page marker`);

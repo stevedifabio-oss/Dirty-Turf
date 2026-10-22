@@ -1,5 +1,43 @@
 # Community post and comment sync
 
+## GHL development decision — recorded October 20, 2026
+
+The owner supplied GHL Support's development-team response to the integration
+case. This supersedes the earlier assumption that a supported native Community
+adapter or additional API access might resolve the observed gap:
+
+- Group Post Created and Group Comment Created workflows enroll the associated
+  member as a Contact. They do not provide a supported native-content contract
+  with stable post/comment/reply IDs, parent relationships or complete media.
+- Social Planner manages content published through Social Planner. It does not
+  retrieve posts or comments created directly in native Communities.
+- The observed empty HTTP 201 lists and HTTP 400 native-post lookup are expected
+  interface limitations, not authentication failures or an API outage.
+- Public APIs do not support complete native Community reads, edits, deletions,
+  attachments, pagination or historical backfill. GHL confirmed no supported
+  alternative, confirmed beta or complete export API, and no release timeline.
+
+**Decision:** a complete, supported, cloud-based real-time mirror of native GHL
+Community activity is unavailable with these interfaces. Moving the collector
+to a database or cloud worker does not supply the missing source data. Do not
+enable an adapter based on titles, contact enrollment or Social Planner IDs.
+
+Keep GHL as the main discussion space until Steve approves a changeover. Use the
+app for Academy/tools and the controlled Community pilot; existing imported
+history is a dated copy, not a live GHL mirror. Agree a bounded historical
+capture/archive and document exceptions before moving all new posts/replies to
+the app. A full automatic GHL mirror is not a prerequisite for that migration.
+
+The guarded browser collector is an assisted migration tool with local-session
+dependencies and coverage limits. It is not the requested permanent integration.
+This planning update does not change its scheduler or claim a fresh capture.
+Course authoring/sync, CRM, membership eligibility and payments have separate
+contracts and acceptance checks; the Community response does not establish their
+current live health or make a CRM Contact an entitled Community member.
+
+Source: the support response supplied by the owner in this chat on October 20;
+this records its findings without claiming a new API test or provider release.
+
 ## Confirmed migration direction — October 3, 2026
 
 The custom Dirty Turf app is the destination. Members are still using the GHL
@@ -57,7 +95,11 @@ Existing imports are adopted only if current fields match their recorded source 
 
 Production enrollment ran with the service role, as required by the existing post-write guard. Before/after checks confirmed identical post-content fingerprints, 11 attachments, 63 members, 111 grants, 62 posts, 60 comments and 7 email delivery records. No content, access or email was changed by enrollment. This shared database fix applies to web, Apple and Android without a new client binary. Automatic native GHL event application remains blocked by the missing source identities described above.
 
-## Remaining acceptance
+## Future adapter acceptance — only if GHL introduces a supported interface
+
+These are requirements for a future native source adapter, not outstanding
+implementation steps that can currently finish the requested mirror. GHL's
+October 20 response above confirms the required interface is unavailable.
 
 1. Obtain a supported GHL payload/API containing post ID, comment ID, reply-parent ID, author/contact ID, group/channel IDs, timestamps and attachments. Real native post/comment/reply testing is complete and demonstrates the current gap.
 2. Implement a fixture-backed adapter once that interface exists; preserve the raw source IDs used by the historical import.
@@ -240,37 +282,54 @@ Source fidelity gates:
   retain target IDs/reactions and stop on a local edit or identity change.
 
 Keep imported records separate from app-native discussions, progress,
-moderation and payment grants. Native Community video/audio coverage and a
-reliable unattended source reader remain gates to declaring full automatic sync.
+moderation and payment grants. Native Community video/audio still needs verified
+capture or an explicit history exception. Collector improvements do not change
+GHL's confirmed lack of a supported complete native-content integration.
 
-At the agreed cutover, stop GHL writes briefly, run a final catch-up, reconcile
-records/media and confirm member access in the app. Retain the source archive for
-rollback. Do not disable GHL or announce the move without the owner's approval.
+At the approved cutover, complete the agreed bounded history capture/archive,
+reconcile copied records/media and confirm member access. Pause GHL writes only
+through a verified supported control; otherwise Steve must direct members to
+stop posting there. Retain the source archive for rollback. Do not disable GHL
+or announce the move without the owner's approval.
 
-## GHL support request — draft, not sent
+## GHL support request — submitted October 6, 2026
+
+HighLevel's authenticated support flow confirmed ticket **6484405** and follow-up
+to **info@tothemaxmedia.com**. The technical request was sent to its AI Support
+Assistant, then raised as a ticket. The authenticated ticket portal confirms
+**API support pod** routing and **Being Processed** status at that time. Its
+automated reply said it was escalating to API and Communities specialists. The
+owner has now supplied the development-team response recorded at the top of this
+document: no supported complete native-content interface is available. The complete
+request was also added as a ticket reply, and its published text was verified
+against the submitted text. Private submission evidence and a confirmation
+screenshot are saved under `output/private/highlevel-community-support-6484405-*`.
 
 **Subject:** Native Communities integration: missing event identities and Social Planner read coverage
 
-We own Dirty Turf's existing 7 Figure Turf Cleaning group and need a supported
-one-way integration into our member app. Courses are already integrated through
+We are integrating Dirty Turf's existing 7 Figure Turf Cleaning group and need a
+supported one-way, cloud event-driven integration into our member app. It must
+deliver native Community changes in real time without scheduled browser scraping
+or a Mac/Codex session. Courses are already integrated through
 the official Courses v3 read API. Native Community data is blocked by the
 following reproducible source-interface gaps:
 
-1. Published Group Post Created and Group Comment Created workflows deliver to
-   our authenticated webhook. Real native post/comment tests, including a nested
-   reply, produce an empty `triggerData` object. The custom-value picker exposes
+1. A published workflow with Group Post Created and Group Comment Created
+   triggers delivers to our authenticated webhook. Real native post and comment
+   tests delivered an empty `triggerData` object. A nested reply did not supply a
+   distinct reply/parent identity. The custom-value picker exposes
    title/content/group/channel names but no stable post ID, comment ID, parent ID,
    source version or attachments.
 2. On October 3 we connected the existing Community group to Social Planner.
    `GET /social-media-posting/{locationId}/accounts` returns 16 Community channel
    accounts. The documented posts-list and Community-comments-list endpoints,
-   scoped to every connected channel, return zero records, although the native
+   with all 16 account/origin IDs included, return zero records, although the native
    Community has existing member posts and comments. A lookup of a known native
    post ID returns HTTP 400. These are authenticated responses, not 401/403 errors.
-3. The Community settings screen has no native-post sync toggle. Your comment
+3. The Community settings screen offers group/channel resynchronization but no
+   native-post sync option. Your comment
    management guide excludes natively created Community posts, and the October 1
-   Post Sync guide does not list Communities. Group/channel resync does not
-   resolve the missing content.
+   Post Sync guide does not list Communities.
 
 Please confirm the supported interface or feature access for native Community
 post/comment/reply reads and changes, including:

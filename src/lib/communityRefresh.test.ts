@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CommunityPost } from "../domain";
 import type { CommunityPostCursor } from "./backend";
 import { communityHasActiveDraft, createCommunityRefresh, loadCommunityPostWindow, mergeCommunityPostWindow } from "./communityRefresh";
@@ -128,6 +128,140 @@ describe("community refresh races and cadence", () => {
     read.resolve(["Fresh"]);
     await pending;
     expect(apply).not.toHaveBeenCalled();
+  });
+});
+
+describe("Community database change replay", () => {
+  afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
+
+  it("retains an event arriving during a pending read and coalesces its burst into one trailing read", async () => {
+    vi.useFakeTimers();
+    const read = deferred<string[]>();
+    const load = vi.fn().mockImplementationOnce(() => read.promise).mockResolvedValue(["Latest"]);
+    const apply = vi.fn();
+    const refresh = createCommunityRefresh({ load, apply, eligible: () => true, version: () => 0 });
+    const pending = refresh.refresh();
+    refresh.invalidate(); refresh.invalidate(); refresh.invalidate();
+    expect(load).toHaveBeenCalledOnce();
+    read.resolve(["First"]);
+    await pending;
+    await vi.advanceTimersByTimeAsync(14_999);
+    expect(load).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(apply.mock.calls.map(([rows]) => rows)).toEqual([["First"], ["Latest"]]);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it("refreshes the first change immediately and retains a burst received during the throttle", async () => {
+    vi.useFakeTimers();
+    const load = vi.fn().mockResolvedValue(["Fresh"]);
+    const refresh = createCommunityRefresh({ load, apply: vi.fn(), eligible: () => true, version: () => 0 });
+    refresh.invalidate();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(load).toHaveBeenCalledOnce();
+    refresh.invalidate(); refresh.invalidate();
+    await vi.advanceTimersByTimeAsync(9_999);
+    expect(load).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it("replays an event received before the workspace is ready, without reading while guarded", async () => {
+    vi.useFakeTimers();
+    let eligible = false;
+    const load = vi.fn().mockResolvedValue(["Fresh"]);
+    const refresh = createCommunityRefresh({ load, apply: vi.fn(), eligible: () => eligible, version: () => 0 });
+    refresh.invalidate();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(load).not.toHaveBeenCalled();
+    eligible = true;
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(load).toHaveBeenCalledOnce();
+  });
+
+  it.each(["draft or video begins", "member write or pagination changes"])("replays a change when %s invalidates the current read", async mode => {
+    vi.useFakeTimers();
+    let eligible = true;
+    let version = 0;
+    const read = deferred<string[]>();
+    const load = vi.fn().mockImplementationOnce(() => read.promise).mockResolvedValue(["Latest"]);
+    const apply = vi.fn();
+    const refresh = createCommunityRefresh({ load, apply, eligible: () => eligible, version: () => version });
+    refresh.invalidate();
+    if (mode === "draft or video begins") eligible = false;
+    else version += 1;
+    read.resolve(["Obsolete"]);
+    await vi.advanceTimersByTimeAsync(15_000);
+    if (!eligible) {
+      expect(load).toHaveBeenCalledOnce();
+      eligible = true;
+      await vi.advanceTimersByTimeAsync(1_000);
+    }
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(apply).toHaveBeenCalledOnce();
+    expect(apply).toHaveBeenCalledWith(["Latest"]);
+  });
+
+  it("retains a further event during the trailing read", async () => {
+    vi.useFakeTimers();
+    const trailing = deferred<string[]>();
+    const load = vi.fn().mockResolvedValueOnce(["First"]).mockImplementationOnce(() => trailing.promise).mockResolvedValue(["Latest"]);
+    const refresh = createCommunityRefresh({ load, apply: vi.fn(), eligible: () => true, version: () => 0 });
+    refresh.invalidate();
+    await vi.advanceTimersByTimeAsync(1_000);
+    refresh.invalidate();
+    await vi.advanceTimersByTimeAsync(14_000);
+    expect(load).toHaveBeenCalledTimes(2);
+    refresh.invalidate(); refresh.invalidate();
+    trailing.resolve(["Second"]);
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(load).toHaveBeenCalledTimes(3);
+  });
+
+  it("recovers from a failed event read without replacing loaded content", async () => {
+    vi.useFakeTimers();
+    const load = vi.fn().mockRejectedValueOnce(new Error("Offline")).mockResolvedValue(["Fresh"]);
+    const apply = vi.fn();
+    const onError = vi.fn();
+    const refresh = createCommunityRefresh({ load, apply, onError, eligible: () => true, version: () => 0 });
+    refresh.invalidate();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(onError).toHaveBeenCalledOnce();
+    expect(apply).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(apply).toHaveBeenCalledWith(["Fresh"]);
+  });
+
+  it("cancels prior account work and permits a fresh account read immediately", async () => {
+    vi.useFakeTimers();
+    const oldRead = deferred<string[]>();
+    const load = vi.fn().mockImplementationOnce(() => oldRead.promise).mockResolvedValue(["New account"]);
+    const apply = vi.fn();
+    const refresh = createCommunityRefresh({ load, apply, eligible: () => true, version: () => 0 });
+    refresh.invalidate(); refresh.invalidate();
+    refresh.reset();
+    refresh.invalidate();
+    await vi.advanceTimersByTimeAsync(1);
+    oldRead.resolve(["Old account"]);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(apply).toHaveBeenCalledOnce();
+    expect(apply).toHaveBeenCalledWith(["New account"]);
+  });
+
+  it("cancels deferred changes on disposal and ignores later events", async () => {
+    vi.useFakeTimers();
+    const load = vi.fn().mockResolvedValue(["Fresh"]);
+    const refresh = createCommunityRefresh({ load, apply: vi.fn(), eligible: () => true, version: () => 0 });
+    refresh.invalidate();
+    await vi.advanceTimersByTimeAsync(1_000);
+    refresh.invalidate();
+    refresh.dispose();
+    refresh.invalidate();
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(load).toHaveBeenCalledOnce();
   });
 });
 

@@ -5,11 +5,17 @@ import { combinedCourseProgress } from "../lib/courseProgress";
 import { academyDurationLabel, academyResourcePresentation, hasCarriedOverProgress } from "../lib/coursePresentation";
 import { safeExternalUrl } from "../lib/safeExternalUrl";
 import { SafeRichText } from "./SafeRichText";
+import { LessonContent } from "./LessonContent";
+import { captureLessonPlayback, lessonAssetExpiry, requestedAcademyLesson, restoreLessonPlayback, type LessonAssetPatch, type LessonPlayback } from "../lib/lessonMedia";
+import { useLessonAssets } from "../lib/useLessonAssets";
 
 type Props = {
   courses: Course[];
   requestedCourseCloudId?: string;
+  requestedLessonId?: string;
   onRequestedCourseOpened?: () => void;
+  onRenewLessonAssets?: (lessonId: string) => Promise<LessonAssetPatch>;
+  readOnly?: boolean;
   refreshError?: boolean;
   onRefresh?: () => void;
   certificates: AcademyCertificate[];
@@ -22,7 +28,7 @@ type Props = {
   onDiscuss: () => void;
 };
 
-export function AcademyView({ courses, requestedCourseCloudId, onRequestedCourseOpened, refreshError, onRefresh, certificates, dataMode, onCoursesChange, onLessonCompletion, onQuizAttempt, onRequestCertificate, onToast, onDiscuss }: Props) {
+export function AcademyView({ courses, requestedCourseCloudId, requestedLessonId, onRequestedCourseOpened, onRenewLessonAssets, readOnly = false, refreshError, onRefresh, certificates, dataMode, onCoursesChange, onLessonCompletion, onQuizAttempt, onRequestCertificate, onToast, onDiscuss }: Props) {
   const [filter, setFilter] = useState("All");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null);
@@ -31,13 +37,16 @@ export function AcademyView({ courses, requestedCourseCloudId, onRequestedCourse
   const [certificateBusy, setCertificateBusy] = useState(false);
   const [completionBusy, setCompletionBusy] = useState(false);
   const completionPending = useRef(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const playback = useRef<LessonPlayback | null>(null);
+  const lastPlayback = useRef<LessonPlayback | null>(null);
   useEffect(() => {
-    const requested = courses.find((course) => (course.cloudId ?? course.id) === requestedCourseCloudId);
+    const { course: requested, lesson } = requestedAcademyLesson(courses, requestedCourseCloudId, requestedLessonId);
     if (!requested) return;
     setSelectedId(requested.id);
-    setSelectedLessonId(null);
+    setSelectedLessonId(lesson?.id ?? null);
     onRequestedCourseOpened?.();
-  }, [requestedCourseCloudId, courses, onRequestedCourseOpened]);
+  }, [requestedCourseCloudId, requestedLessonId, courses, onRequestedCourseOpened]);
   const selected = courses.find((course) => course.id === selectedId);
   const visibleCourses = filter === "All" ? courses : courses.filter((course) => course.category === filter);
   const overall = useMemo(() => {
@@ -55,6 +64,7 @@ export function AcademyView({ courses, requestedCourseCloudId, onRequestedCourse
   };
 
   const completeLesson = async (lessonId: string) => {
+    if (readOnly) return;
     if (completionPending.current) return;
     completionPending.current = true;
     setCompletionBusy(true);
@@ -87,7 +97,14 @@ export function AcademyView({ courses, requestedCourseCloudId, onRequestedCourse
 
   const refreshNotice = refreshError && <p className="setting-help" role="status">Could not check for course updates. Your loaded lessons are still available. <button className="text-button" onClick={onRefresh}>Try again</button></p>;
 
-  const selectedLesson = selected?.modules.flatMap((module) => module.lessons).find((lesson) => lesson.id === selectedLessonId);
+  const originalLesson = selected?.modules.flatMap((module) => module.lessons).find((lesson) => lesson.id === selectedLessonId);
+  const assets = useLessonAssets(originalLesson, onRenewLessonAssets, dataMode === "cloud" && !readOnly, () => {
+    const video = videoRef.current;
+    playback.current = video?.error && video.readyState === 0 && lastPlayback.current
+      ? lastPlayback.current : captureLessonPlayback(video);
+  });
+  const selectedLesson = assets.lesson;
+  useEffect(() => { playback.current = null; lastPlayback.current = null; }, [selectedLessonId]);
 
   if (dataMode === "device") {
     return <div className="view-content academy-view"><div className="empty-state"><Lock size={24} /><h3>Sign in to view Academy lessons</h3><p>The training library only displays published content from the connected Academy. Demo lessons are disabled.</p></div></div>;
@@ -104,6 +121,7 @@ export function AcademyView({ courses, requestedCourseCloudId, onRequestedCourse
     const requiresPassing = Boolean(selectedLesson.quiz?.requiresPassing);
     const canComplete = !requiresPassing || selectedLesson.completed || passedQuizIds.has(selectedLesson.id);
     const submitQuiz = async (scorePercent: number, answers: number[]) => {
+      if (readOnly) throw new Error("Reconnect to save your quiz answers. Your choices are kept here.");
       const result = await onQuizAttempt(selectedLesson.cloudId ?? selectedLesson.id, scorePercent, answers);
       if (result.passed) {
         setPassedQuizIds((current) => new Set(current).add(selectedLesson.id));
@@ -122,18 +140,32 @@ export function AcademyView({ courses, requestedCourseCloudId, onRequestedCourse
       <div className="view-content lesson-view">
         {refreshNotice}
         <button className="back-link" onClick={() => setSelectedLessonId(null)}><ArrowLeft size={17} /> {selected.title}</button>
-        <article className="lesson-content">
+        <article className="lesson-content" onErrorCapture={event => {
+          if (event.target instanceof HTMLImageElement || event.target instanceof HTMLMediaElement) void assets.request("error");
+        }} onClickCapture={event => {
+          const link = event.target instanceof Element ? event.target.closest("a") : null;
+          const expiry = link ? lessonAssetExpiry({ videoUrl: link.href }) : undefined;
+          if (expiry && expiry <= Date.now()) {
+            event.preventDefault();
+            void assets.request("manual").then(renewed => onToast(renewed ? "Media links refreshed. Tap the resource again to open it." : "Reconnect and retry this lesson’s media."));
+          }
+        }}>
           <span className="lesson-type"><BookOpen size={16} /> {selectedLesson.type} · {academyDurationLabel(selectedLesson.duration)}</span>
           <h2>{selectedLesson.title}</h2>
-          {videoUrl && directVideo && <video className="lesson-video" controls preload="metadata" src={videoUrl} />}
+          {videoUrl && directVideo && <video ref={videoRef} className="lesson-video" controls preload="metadata" src={videoUrl} onTimeUpdate={event => { lastPlayback.current = captureLessonPlayback(event.currentTarget); }} onPlay={event => { lastPlayback.current = captureLessonPlayback(event.currentTarget); }} onPause={event => { if (!event.currentTarget.error) lastPlayback.current = captureLessonPlayback(event.currentTarget); }} onLoadedMetadata={event => {
+            restoreLessonPlayback(event.currentTarget, playback.current);
+            lastPlayback.current = captureLessonPlayback(event.currentTarget);
+            playback.current = null;
+          }} />}
           {videoUrl && !directVideo && <a className="lesson-video-link" href={videoUrl} target="_blank" rel="noopener noreferrer"><Play size={18} /> Open lesson video <ExternalLink size={15} /></a>}
-          {selectedLesson.type === "quiz" && selectedLesson.quiz && <QuizLesson key={selectedLesson.id} quiz={selectedLesson.quiz} onSubmit={submitQuiz} />}
-          <SafeRichText html={selectedLesson.bodyHtml} fallback={selectedLesson.body} />
+          {assets.status === "error" && <p className="setting-help" role="status">Lesson media could not reconnect. Your place and answers are kept. <button type="button" className="text-button" disabled={readOnly} onClick={() => void assets.request("manual")}>Retry media</button></p>}
+          {selectedLesson.type === "quiz" && selectedLesson.quiz && <QuizLesson key={selectedLesson.id} quiz={selectedLesson.quiz} onSubmit={submitQuiz} readOnly={readOnly} />}
+          <LessonContent html={selectedLesson.bodyHtml} fallback={selectedLesson.body} contentKey={selectedLesson.cloudId ?? selectedLesson.id} />
           {selectedLesson.transcript && <details className="lesson-transcript"><summary>Transcript</summary><p>{selectedLesson.transcript}</p></details>}
-          {!!resources.length && <section className="lesson-resources"><h3>Resources</h3>{resources.map((resource) => <a href={resource.url} target="_blank" rel="noopener noreferrer" key={`${resource.title}-${resource.url}`}>{resource.isDownload ? <Download size={17} /> : <ExternalLink size={17} />}<span><strong>{resource.title}</strong><small>{resource.type}</small></span><ExternalLink size={15} /></a>)}</section>}
+          {!!resources.length && <section className="lesson-resources"><h3>Resources</h3>{resources.map((resource, index) => <a href={resource.url} target="_blank" rel="noopener noreferrer" key={`${resource.title}-${index}`}>{resource.isDownload ? <Download size={17} /> : <ExternalLink size={17} />}<span><strong>{resource.title}</strong><small>{resource.type}</small></span><ExternalLink size={15} /></a>)}</section>}
           {!hasContent && <div className="empty-state"><XCircle size={24} /><h3>Lesson content unavailable</h3><p>This published lesson does not currently contain readable lesson text or media.</p></div>}
         </article>
-        {hasContent && <button disabled={completionBusy || !canComplete} className={selectedLesson.completed ? "secondary-button wide" : "primary-button wide"} onClick={() => void completeLesson(selectedLesson.id)}>{selectedLesson.completed ? <Check size={18} /> : canComplete ? <CheckCircle2 size={18} /> : <Lock size={18} />}{completionBusy ? "Saving…" : selectedLesson.completed ? "Completed" : canComplete ? "Mark lesson complete" : "Pass quiz to complete"}</button>}
+        {hasContent && <button disabled={readOnly || completionBusy || !canComplete} className={selectedLesson.completed ? "secondary-button wide" : "primary-button wide"} onClick={() => void completeLesson(selectedLesson.id)}>{selectedLesson.completed ? <Check size={18} /> : canComplete ? <CheckCircle2 size={18} /> : <Lock size={18} />}{completionBusy ? "Saving…" : selectedLesson.completed ? "Completed" : canComplete ? "Mark lesson complete" : "Pass quiz to complete"}</button>}
       </div>
     );
   }
@@ -143,6 +175,7 @@ export function AcademyView({ courses, requestedCourseCloudId, onRequestedCourse
     const lessonCount = selected.modules.reduce((total, module) => total + module.lessons.length, 0);
     const certificate = certificates.find((item) => item.courseId === (selected.cloudId ?? selected.id) && item.status === "active");
     const requestCertificate = async () => {
+      if (readOnly) return;
       setCertificateBusy(true);
       try {
         await onRequestCertificate(selected.cloudId ?? selected.id);
@@ -184,7 +217,7 @@ export function AcademyView({ courses, requestedCourseCloudId, onRequestedCourse
           })}
           {visibleModules.length === 0 && <div className="empty-state"><BookOpen size={24} /><h3>No published lessons yet</h3><p>Lessons will appear here when they are available.</p></div>}
         </section>
-        {certificate ? <CertificateCard certificate={certificate} /> : selected.progress >= 100 ? <section className="certificate-ready"><Award size={24} /><div><p>Course complete</p><h3>Your certificate is ready</h3><span>Create a verified completion record you can print or share.</span></div><button className="primary-button" disabled={certificateBusy} onClick={() => void requestCertificate()}>{certificateBusy ? "Issuing..." : "Issue certificate"}</button></section> : null}
+        {certificate ? <CertificateCard certificate={certificate} /> : selected.progress >= 100 ? <section className="certificate-ready"><Award size={24} /><div><p>Course complete</p><h3>Your certificate is ready</h3><span>Create a verified completion record you can print or share.</span></div><button className="primary-button" disabled={readOnly || certificateBusy} onClick={() => void requestCertificate()}>{certificateBusy ? "Issuing..." : "Issue certificate"}</button></section> : null}
         <div className="course-actions"><button className="secondary-button" onClick={onDiscuss}><MessageSquare size={17} /> Discuss this course</button></div>
       </div>
     );
@@ -218,7 +251,7 @@ export function AcademyView({ courses, requestedCourseCloudId, onRequestedCourse
   );
 }
 
-function QuizLesson({ quiz, onSubmit }: { quiz: LessonQuiz; onSubmit: (scorePercent: number, answers: number[]) => Promise<{ passed: boolean; requiredScore: number }> }) {
+function QuizLesson({ quiz, onSubmit, readOnly = false }: { quiz: LessonQuiz; onSubmit: (scorePercent: number, answers: number[]) => Promise<{ passed: boolean; requiredScore: number }>; readOnly?: boolean }) {
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -242,6 +275,7 @@ function QuizLesson({ quiz, onSubmit }: { quiz: LessonQuiz; onSubmit: (scorePerc
   };
 
   const submit = async () => {
+    if (readOnly || submitting || submitted) return;
     setSubmitting(true);
     setSubmitError("");
     try {
@@ -282,7 +316,7 @@ function QuizLesson({ quiz, onSubmit }: { quiz: LessonQuiz; onSubmit: (scorePerc
         </fieldset>;
       })}
       {submitError && <p className="quiz-submit-error" role="alert">{submitError}</p>}
-      {!submitted ? <button type="button" className="primary-button wide quiz-submit" disabled={!allAnswered || submitting} onClick={() => void submit()}><CheckCircle2 size={18} /> {submitting ? "Saving attempt..." : "Submit answers"}</button> : <div className={result?.passed ? "quiz-result passed" : "quiz-result"} aria-live="polite">
+      {!submitted ? <button type="button" className="primary-button wide quiz-submit" disabled={readOnly || !allAnswered || submitting} onClick={() => void submit()}><CheckCircle2 size={18} /> {submitting ? "Saving attempt..." : readOnly ? "Reconnect to submit answers" : "Submit answers"}</button> : <div className={result?.passed ? "quiz-result passed" : "quiz-result"} aria-live="polite">
         <div><span>{result?.passed ? `Passed · ${score ?? 0}%` : score === null ? "Responses reviewed" : `${score}% · ${result?.requiredScore ?? quiz.passingPercent ?? 0}% required`}</span><small>{answerKeyCount < quiz.questions.length ? `${answerKeyCount} of ${quiz.questions.length} captured questions include a verifiable answer key.` : `${correctCount} of ${answerKeyCount} correct.`}</small></div>
         <button type="button" className="icon-button" onClick={retry} aria-label="Retry quiz"><RotateCcw size={18} /></button>
       </div>}
