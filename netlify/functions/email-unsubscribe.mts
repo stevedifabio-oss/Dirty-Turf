@@ -10,7 +10,10 @@ const headers = {
   "x-frame-options": "DENY",
   "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
 };
-const failure = (status: number) => new Response(buildNotificationPreferenceStatus("Email preferences could not be opened", "Use the link in your latest email, or open notification settings in the Academy."), { status, headers });
+// The public edge can override response headers. Set the document policy before
+// branded fonts, images or form navigation can carry the signed link as referrer.
+const privatePreferenceHtml = (html: string) => html.replace(/<head>/i, '<head><meta name="referrer" content="no-referrer">');
+const failure = (status: number) => new Response(privatePreferenceHtml(buildNotificationPreferenceStatus("Email preferences could not be opened", "Use the link in your latest email, or open notification settings in the Academy.")), { status, headers });
 
 export default async function unsubscribe(request: Request) {
   if (!["GET", "POST"].includes(request.method)) return failure(405);
@@ -46,8 +49,8 @@ export default async function unsubscribe(request: Request) {
       signal: AbortSignal.timeout(15_000),
     });
     const html = await response.text();
-    if (!html.toLowerCase().startsWith("<!doctype html>") || html.length > 32_768) return failure(503);
-    return new Response(html, { status: response.status, headers });
+    if (!html.toLowerCase().startsWith("<!doctype html>") || !/<head>/i.test(html) || html.length > 32_768) return failure(503);
+    return new Response(privatePreferenceHtml(html), { status: response.status, headers });
   } catch {
     return failure(503);
   }
