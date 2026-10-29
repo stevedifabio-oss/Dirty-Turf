@@ -102,6 +102,7 @@ import type { SearchTarget } from "./lib/globalSearch";
 import { createWorkspaceContinuity } from "./lib/workspaceContinuity";
 import { createWorkspaceSession } from "./lib/workspaceSession";
 import { createTermsConsent } from "./lib/termsConsent";
+import { clearNativePushForSignOut, refreshNativePush, resolveNativePushTarget, startNativePush } from "./lib/nativePush";
 import { CommunityTermsGate, TermsChoice } from "./components/TermsConsent";
 import { calculateQuote, INFILL_RATES } from "./lib/quote";
 import { useModalDialog } from "./lib/useModalDialog";
@@ -186,6 +187,7 @@ function App() {
   const [termsConsent] = useState(() => { try { return createTermsConsent(window.localStorage); } catch { return createTermsConsent(); } });
   const [termsAccepted, setTermsAccepted] = useState(() => termsConsent.granted());
   const [termsUserId, setTermsUserId] = useState<string | null>(null);
+  const [pendingPushId, setPendingPushId] = useState<string | null>(null);
   const [nativeConsentPending, setNativeConsentPending] = useState(false);
   const nativeConsentResumeRef = useRef<(() => Promise<void>) | undefined>(undefined);
   const resumeAfterConsentRef = useRef<() => void>(() => undefined);
@@ -259,6 +261,45 @@ function App() {
   const canMeasure = featureAvailable(workspaceAccess, "measuring_tool");
   const visibleCourses = courses.filter((course) => courseAvailable(workspaceAccess, course.cloudId));
   const canManage = workspaceAccess.status === "member" && workspaceAccess.canManage;
+
+  useEffect(() => {
+    let disposed = false;
+    let stop: (() => void) | undefined;
+    // Registration here never requests OS permission. A member enables push in Settings.
+    void startNativePush((target) => {
+      if (!disposed) setPendingPushId(target.notificationId);
+    }).then((cleanup) => { if (disposed) cleanup(); else stop = cleanup; }).catch(() => undefined);
+    return () => { disposed = true; stop?.(); };
+  }, []);
+
+  useEffect(() => {
+    if (!termsAccepted || !termsUserId || workspaceAccess.status !== "member" || readOnly) return;
+    void refreshNativePush().catch(() => undefined);
+  }, [termsAccepted, termsUserId, workspaceAccess.status, readOnly]);
+
+  useEffect(() => {
+    if (!pendingPushId || !termsAccepted || !termsUserId || workspaceAccess.status !== "member" || readOnly) return;
+    let current = true;
+    // Keep only the notification ID across sign-in. Resolve its recipient and
+    // current target on the server before trusting any push payload navigation.
+    void resolveNativePushTarget(pendingPushId).then((target) => {
+      if (!current) return;
+      setPendingPushId(null);
+      if (!target) { setToast("This notification is no longer available for this account."); return; }
+      if (!changeView(target.targetType === "course" ? "learn" : target.targetType === "event" ? "events" : "community")) return;
+      setHubSection(null);
+      setSearchOpen(false);
+      setRequestedLessonId(undefined);
+      setRequestedCommentCloudId(target.targetType === "post" ? target.commentId : undefined);
+      setRequestedMemberCloudId(undefined);
+      setRequestedPostCloudId(target.targetType === "post" ? target.targetId : undefined);
+      setRequestedCourseCloudId(target.targetType === "course" ? target.targetId : undefined);
+      setRequestedEventCloudId(target.targetType === "event" ? target.targetId : undefined);
+    }).catch(() => {
+      if (current) { setPendingPushId(null); setToast("This notification could not open. Try it again from the notification bell."); }
+    });
+    return () => { current = false; };
+  }, [pendingPushId, termsAccepted, termsUserId, workspaceAccess.status, readOnly]);
 
   const clearQuoteDraft = () => {
     setDraft({ ...defaultDraft });
@@ -515,7 +556,7 @@ function App() {
       refresh: () => { void refreshAccess(); }, document, window,
       nativeResume: Capacitor.isNativePlatform() ? async (onResume) => {
         const { App: NativeApp } = await import("@capacitor/app");
-        return NativeApp.addListener("appStateChange", ({ isActive }) => { if (isActive) onResume(); });
+        return NativeApp.addListener("appStateChange", ({ isActive }) => { if (isActive) { onResume(); if (termsConsent.granted()) void refreshNativePush().catch(() => undefined); } });
       } : undefined,
     });
     const connectivityChanged = () => {
@@ -848,6 +889,7 @@ function App() {
   };
   const handleSignOut = async () => {
     const finishSignOut = beginSignOutRef.current();
+    setPendingPushId(null);
     setTermsAccepted(termsConsent.identify(null));
     setTermsUserId(null);
     setNativeConsentPending(false);
@@ -875,7 +917,11 @@ function App() {
     setQuery("");
     setActiveView("home");
     let failed = false;
+    // Begin local unregister/revocation immediately. Remote cleanup uses its
+    // installation capability and must not delay signing out the current user.
+    const pushCleanup = clearNativePushForSignOut().catch(() => undefined);
     try { await signOut(); } catch { failed = true; }
+    await pushCleanup;
     if (finishSignOut()) setToast(failed ? "Sign-out could not be confirmed. Please try again." : "Signed out of the workspace.");
   };
   const handlePasswordSignIn = async (email: string, password: string) => {

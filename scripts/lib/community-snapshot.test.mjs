@@ -390,3 +390,45 @@ describe("capture review boundaries", () => {
     expect(codes(planCommunitySnapshot(unproven, capture(2), config))).toContain("invalid_previous_record");
   });
 });
+
+
+describe("explicit deleted source authors", () => {
+  const proof = (entity, externalId, postExternalId = "post-1") => ({ kind: "ghl-deleted-user-avatar", entity, externalId, postExternalId,
+    detailRootId: "post-view-content-card", avatarId: "popover-avatar-trigger-undefined", role: "button", ariaLabel: "View Deleted User's profile", avatarAlt: "Deleted User" });
+  const cfg = () => ({ ...partialConfig(), capabilities: { ...partialConfig().capabilities, deletedAuthors: true } });
+  const deleted = (row, entity) => { delete row.authorExternalId; delete row.authorHandle; row.authorComplete = true;
+    row.authorDeletedProof = proof(entity, row.externalId, entity === "post" ? row.externalId : row.postExternalId); };
+  it("accepts source-proven orphan post/comment graph without synthetic IDs or member mappings", () => {
+    const source = completeCapture(); deleted(source.posts[0], "post"); deleted(source.comments[0], "comment");
+    const plan = planCommunitySnapshot(null, source, cfg()); expect(plan.captureAccepted).toBe(true); expect(plan.held).toEqual([]);
+    for (const id of ["post-1", "comment-1"]) { const r = plan.nextState.records.find(r => r.externalId === id);
+      expect(r.content.authorDeleted).toBe(true); expect(r.content).not.toHaveProperty("authorExternalId"); expect(r.source.authorDeletedProof.externalId).toBe(id); }
+    expect(planCommunitySnapshot(plan.nextState, { ...source, ...{captureId:"capture-2", observedStartedAt: completeCapture(2).observedStartedAt, observedCompletedAt: completeCapture(2).observedCompletedAt} }, cfg()).captureAccepted).toBe(true);
+  });
+  it("does not release a generic unknown author or a malformed/wrong-record proof", () => {
+    const source = completeCapture(); delete source.posts[0].authorExternalId; source.posts[0].authorComplete = false;
+    expect(planCommunitySnapshot(null, source, cfg()).held.find(row => row.entity === "post").reason).toBe("unknown_author");
+    deleted(source.posts[0], "post"); source.posts[0].authorDeletedProof.externalId = "another";
+    expect(codes(planCommunitySnapshot(null, source, cfg()))).toContain("invalid_deleted_author_proof");
+  });
+  it("requires server capability and rejects contradictory IDs/handles", () => {
+    const source = completeCapture(); deleted(source.posts[0], "post");
+    expect(codes(planCommunitySnapshot(null, source, partialConfig()))).toContain("unsupported_deleted_authors");
+    source.posts[0].authorExternalId = "author-1";
+    expect(codes(planCommunitySnapshot(null, source, cfg()))).toContain("contradictory_deleted_author");
+  });
+  it("handles account deletion without a changed post timestamp but refuses unrelated same-version body edits", () => {
+    const first = completeCapture(); first.posts[0].sourceUpdatedAt = "2026-09-01T00:00:00Z";
+    const previous = planCommunitySnapshot(null, first, cfg()).nextState;
+    const later = completeCapture(2); later.posts[0].sourceUpdatedAt = first.posts[0].sourceUpdatedAt; deleted(later.posts[0], "post");
+    expect(planCommunitySnapshot(previous, later, cfg()).captureAccepted).toBe(true);
+    later.posts[0].body = "Unrelated same-version edit";
+    expect(codes(planCommunitySnapshot(previous, later, cfg()))).toContain("same_source_version_changed");
+  });
+  it("holds later unavailable authors and rejects silent reassignment after a deleted identity", () => {
+    const first = completeCapture(); deleted(first.posts[0], "post"); const previous = planCommunitySnapshot(null, first, cfg()).nextState;
+    const unknown = completeCapture(2); delete unknown.posts[0].authorExternalId; unknown.posts[0].authorComplete = false;
+    expect(planCommunitySnapshot(previous, unknown, cfg()).held.find(row => row.entity === "post").reason).toBe("unknown_author");
+    expect(codes(planCommunitySnapshot(previous, completeCapture(2), cfg()))).toContain("author_changed");
+  });
+});

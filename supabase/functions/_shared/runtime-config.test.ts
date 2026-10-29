@@ -1,7 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import { loadRuntimeConfig } from "./runtime-config";
+import { readFileSync } from "node:fs";
+import { loadRuntimeConfig, SERVER_RUNTIME_CONFIG_NAMES } from "./runtime-config";
 
 describe("server runtime configuration", () => {
+  it("keeps the SQL and TypeScript server allowlists identical, with exact scheduler names", () => {
+    const migration = readFileSync(new URL("../../migrations/20261024022522_academy_native_push.sql", import.meta.url), "utf8");
+    const array = migration.slice(migration.lastIndexOf("s.name=any(array["));
+    const names = [...array.slice(0, array.indexOf("]::text[]")).matchAll(/'([A-Z][A-Z0-9_]*)'/g)].map(match => match[1]);
+    expect([...new Set(names)].sort()).toEqual([...SERVER_RUNTIME_CONFIG_NAMES].sort());
+    expect(names.filter(name => name.startsWith("ACADEMY_POST_SCHEDULER"))).toEqual(["ACADEMY_POST_SCHEDULER_ENABLED", "ACADEMY_POST_SCHEDULER_SECRET"]);
+    expect(names).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
+  });
   it("loads missing service-only settings from Vault and keeps explicit disabled overrides", async () => {
     const rpc = vi.fn().mockResolvedValue({ data: { STRIPE_SERVICE_CHECKOUT_ENABLED: "true", STRIPE_SERVICE_RECURRING_ENABLED: "true", STRIPE_SERVICE_WEBHOOK_SECRET: "service-fixture", SUPABASE_SERVICE_ROLE_KEY: "forbidden" }, error: null });
     const config = await loadRuntimeConfig({ rpc }, ["STRIPE_SERVICE_CHECKOUT_ENABLED", "STRIPE_SERVICE_RECURRING_ENABLED", "STRIPE_SERVICE_WEBHOOK_SECRET"], name => name === "STRIPE_SERVICE_CHECKOUT_ENABLED" ? "false" : undefined);

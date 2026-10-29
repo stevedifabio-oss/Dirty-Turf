@@ -22,3 +22,6 @@ supabase/.temp/
 
 # Local Netlify folder
 .netlify
+
+# Firebase client configuration is supplied through the protected native build.
+android/app/google-services.json

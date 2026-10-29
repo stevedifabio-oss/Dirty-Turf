@@ -1,5 +1,6 @@
 import type { ComponentProps, ReactElement, ReactNode } from "react";
 vi.mock("./GrowthAdmin", () => ({ GrowthAdmin: () => null }));
+vi.mock("./CommunityScheduler", () => ({ CommunityScheduler: () => null }));
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminCourse, AdminSnapshot } from "../lib/adminBackend";
 import type { LessonContentBlock } from "../lib/lessonContent";

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { validDeletedAuthorProof } from "../../supabase/functions/_shared/community-deleted-author.mjs";
 
 const sourceId = value => typeof value === "string" && value.length <= 200
   && /^[A-Za-z0-9](?:[A-Za-z0-9._:-]|%[0-9A-Fa-f]{2})*$/.test(value) && value !== "undefined";
@@ -21,6 +22,15 @@ export function extractCommunityDom(options = {}, suppliedDocument) {
   const countFrom = value => String(value).match(/^\s*(\d+)\s+Comments?\s*$/i)?.[1];
   const directAvatar = root => all(root, '[id^="popover-avatar-trigger-"]')
     .find(element => !element.closest('[id^="comment-"][id$="-content-div"]'));
+  // These exact source control semantics were independently observed in GHL.
+  // Missing avatars or a display name alone do not establish source deletion.
+  const deletedAuthorProof = (avatar, entity, externalId, postExternalId, rootId) => {
+    if (!visible(avatar) || avatar.id !== "popover-avatar-trigger-undefined"
+      || avatar.getAttribute("role") !== "button" || avatar.getAttribute("aria-label") !== "View Deleted User's profile"
+      || !all(avatar, '[alt]').some(node => node.getAttribute("alt") === "Deleted User")) return undefined;
+    return { kind: "ghl-deleted-user-avatar", entity, externalId, postExternalId, detailRootId: rootId,
+      avatarId: avatar.id, role: "button", ariaLabel: "View Deleted User's profile", avatarAlt: "Deleted User" };
+  };
   const sourceTimestampLabel = root => all(root, '[title]').map(element => element.getAttribute("title"))
     .find(value => /^\w+\s*\/\s*\d{2}\s+\w+\s+\d{4}\s*\//.test(value ?? "")) ?? null;
   const media = (root, ownerComment = null) => {
@@ -101,6 +111,7 @@ export function extractCommunityDom(options = {}, suppliedDocument) {
     return {
       externalId, title: text(titleNode), body: text(bodyNode), bodyComplete,
       authorExternalId: idFrom(avatar?.id, /^popover-avatar-trigger-(.+)$/),
+      ...(detail ? { deletedAuthorProof: deletedAuthorProof(avatar, "post", externalId, externalId, root.id) } : {}),
       categoryName: categoryControl ? text(categoryControl).trim() : all(root, "p").map(text).find(value => /^\s*#[^\n]+$/.test(value))?.trim(),
       ...(categoryControl ? { categoryControlText: text(categoryControl).trim() } : {}),
       ...(categoryControl === standaloneCategoryControl && categoryControl ? { categoryControlKind: "standalone_button" } : {}),
@@ -146,6 +157,7 @@ export function extractCommunityDom(options = {}, suppliedDocument) {
       externalId, postExternalId: thread.externalId,
       parentExternalId: ancestor ? idFrom(ancestor.id, /^comment-(.+)-content-div$/) : null,
       authorExternalId: idFrom(ownAvatar?.id, /^popover-avatar-trigger-(.+)$/),
+      deletedAuthorProof: deletedAuthorProof(ownAvatar, "comment", externalId, thread.externalId, modal.id),
       authorHandle: /^\s*@\S+\s*$/.test(text(authorNode?.nextElementSibling)) ? text(authorNode.nextElementSibling).trim() : null,
       body: text(ownBody), bodyComplete, ...attachmentState, ...(!bodyComplete ? { mediaComplete: false } : {}),
     };
@@ -210,6 +222,13 @@ export function normalizeCommunityThread(observation, options = {}) {
     ids.add(entry.externalId); authors.set(key, ids);
   }
   const resolveAuthor = row => {
+    const entity = row === rawPost ? "post" : "comment";
+    if (row.deletedAuthorProof !== undefined) {
+      if (!validDeletedAuthorProof(row.deletedAuthorProof, entity, row.externalId, rawPost.externalId)
+        || sourceId(row.authorExternalId) || cleanHandle(row.authorHandle)) {
+        issues.push({ code: "invalid_deleted_author_proof", externalId: row.externalId });
+      } else return { authorComplete: true, authorDeletedProof: row.deletedAuthorProof };
+    }
     const mapped = authors.get(cleanHandle(row.authorHandle));
     if (sourceId(row.authorExternalId)) {
       if (mapped && (mapped.size !== 1 || !mapped.has(row.authorExternalId))) issues.push({ code: "conflicting_author", externalId: row.externalId });

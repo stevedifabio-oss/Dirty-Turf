@@ -1,3 +1,4 @@
+import { DELETED_AUTHOR_PROOF_KEYS, validDeletedAuthorProof } from "../_shared/community-deleted-author.mjs";
 import { planCommunitySnapshot } from "../_shared/community-snapshot.mjs";
 import { CommunitySyncValidationError, canonicalCommunityJson, communitySha256 } from "../_shared/community-sync.ts";
 import type { CommunitySyncAdmin } from "./handler.ts";
@@ -75,8 +76,13 @@ export function validateSnapshotCaptureShape(value: unknown): ObjectValue {
         (capture[collection] as unknown[]).length > (collection === "posts" ? 10_000 : 50_000)) invalid();
     for (const item of capture[collection] as unknown[]) {
       const record = object(item);
-      keys(record, ["externalId", "authorExternalId", "authorComplete", "body", "bodyComplete", "media", "mediaComplete", "sourceUrl", "sourceCreatedAt", "sourceUpdatedAt",
+      keys(record, ["externalId", "authorExternalId", "authorComplete", "authorDeletedProof", "body", "bodyComplete", "media", "mediaComplete", "sourceUrl", "sourceCreatedAt", "sourceUpdatedAt",
         ...(collection === "posts" ? ["title", "commentsComplete", "categoryExternalId", "categoryComplete", "pinned", "pinnedComplete"] : ["postExternalId", "parentExternalId"])]);
+      if (record.authorDeletedProof !== undefined) {
+        keys(object(record.authorDeletedProof), DELETED_AUTHOR_PROOF_KEYS);
+        if (!validDeletedAuthorProof(record.authorDeletedProof, collection === "posts" ? "post" : "comment",
+          record.externalId, collection === "posts" ? record.externalId : record.postExternalId)) invalid();
+      }
       if (record.media !== undefined) {
         if (!Array.isArray(record.media) || record.media.length > 20) invalid();
         for (const asset of record.media as unknown[]) keys(object(asset), ["url", "type", "name"]);
@@ -106,7 +112,8 @@ function validatedContext(value: unknown, scope: { location_id: string; group_id
       capabilities: { commentMedia: object(context.capabilities).commentMedia === true,
         partialRecords: object(context.capabilities).partialRecords === true,
         sourceFieldHolds: object(context.capabilities).sourceFieldHolds === true,
-        mediaOnlyComments: object(context.capabilities).mediaOnlyComments === true } },
+        mediaOnlyComments: object(context.capabilities).mediaOnlyComments === true,
+        deletedAuthors: object(context.capabilities).deletedAuthors === true } },
     run: context.run,
   };
 }
