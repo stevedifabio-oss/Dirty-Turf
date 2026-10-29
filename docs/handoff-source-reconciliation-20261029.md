@@ -30,6 +30,8 @@ No `.env`, signing keys, reviewer credentials, member exports, build directories
 
 ## Ownership and deployment
 
-Steve's repository is canonical. The prepared source is accessible through canonical PR #41; the temporary head branch is on the existing `tothemax-media/Dirty-Turf` fork because the connected publisher lacks canonical write access. No replacement canonical repository was created. Netlify's existing project `bright-brigadeiros-df8b48` builds its `main` branch with `npm run build` and publishes `dist` to `https://app.dirtyturf.com`. Source recovery does not deploy backend migrations/functions or enable push delivery.
+Steve's repository is canonical. PR #41 merged the prepared source into canonical `main` as `ea9ff41e5e1c7490dcb879bc7c172ba0e56155dc`; the initial fork branch is retained as a historical snapshot. Steve can use current `main` from his own Codex. No replacement canonical repository, account linking, or permission expansion was needed.
+
+Netlify's existing project `bright-brigadeiros-df8b48` built that canonical commit using `npm run build` and published `dist` to `https://app.dirtyturf.com` as production deploy `6ae37b54a3bfe13c8b6ffbe8`. CI and all 10 public release-smoke checks passed. No Supabase migrations/functions were deployed and push activation remains held. See the release tracker for exact runtime receipts and the separate native gates.
 
 The supplied setup prompt located as `Dirty-Turf-Codex-Prompt.md` and the user-provided working preferences informed the maintenance files. No separate attached AGENTS/quickstart/tracker pack was accessible during preparation; merge any subsequently supplied originals without discarding these verified project details.

@@ -60,8 +60,12 @@ Focused shared-video and local preparation tests passed 17 tests across 2 files,
 
 See [native evidence](native-handoff-evidence-20261029.md) for configured asset parity, iOS compilation, Android SDK/signing constraints and physical acceptance. Local compilation is not store approval.
 
-Netlify Git CD was independently read back: existing site `9b5c6d50-2a85-4aae-9df6-f83d31b58edc`, repository `stevedifabio-oss/Dirty-Turf`, branch `main`, build `npm run build`, output `dist`, automatic builds enabled. The pre-handoff published deploy is `6adc31baaad85de176733292` (Oct 24 manual deployment, no Git commit reference).
+Netlify Git CD was independently read back: existing site `9b5c6d50-2a85-4aae-9df6-f83d31b58edc`, repository `stevedifabio-oss/Dirty-Turf`, branch `main`, build `npm run build`, output `dist`, automatic builds enabled. The prior manual deploy `6adc31baaad85de176733292` was superseded by the verified handoff release below.
 
-The connected GitHub account had read-only canonical access; an actual push returned HTTP403. The existing fork accepted the tested source, and canonical PR #41 exposes it through `pull/41/head`. Publication must be verified after the canonical merge; a local build or fork push cannot establish that the website changed. No hosted database/function/schedule changes, store uploads, reviewer replies, releases, or customer writes were performed for this handoff.
+PR #41 was merged using Steve's existing owner browser session as `ea9ff41e5e1c7490dcb879bc7c172ba0e56155dc`. [Main CI run 40916880038](https://github.com/stevedifabio-oss/Dirty-Turf/actions/runs/40916880038) passed. [Production deploy 6ae37b54a3bfe13c8b6ffbe8](https://app.netlify.com/projects/bright-brigadeiros-df8b48/deploys/6ae37b54a3bfe13c8b6ffbe8) independently reports ready/published from that exact commit at 2026-10-29T16:59:31Z. No account linking or permission expansion was needed.
+
+All 10 read-only live release-smoke checks passed at 2026-10-29T17:01:45Z: app shell, public legal/support pages, mobile-auth callback assets, manifest, service worker, SPA fallback, HTTPS redirect and security headers. This is public-site acceptance, not authenticated member-path acceptance. A separate fresh canonical clone fetched the handoff, ran `npm ci` on Node 22 with zero audit vulnerabilities, and started Vite 7.3.7 successfully. Steve can open canonical `main` directly.
+
+The web publication included Netlify's existing web function. No Supabase database/function/schedule changes, store uploads, reviewer replies, mobile releases, or customer writes were performed. These receipts capture the runtime release; subsequent documentation-only publication may have a newer commit/deploy ID with the same application code.
 
 Ignored local logs/artifacts are under `output/release/steve-handoff-20261029/`; private historical receipts remain in their original folders. This public record includes results and limits, not credentials or member exports.
