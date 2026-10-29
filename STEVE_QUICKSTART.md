@@ -1,22 +1,26 @@
 # Steve's Dirty Turf Academy quickstart
 
-Use https://github.com/stevedifabio-oss/Dirty-Turf. The prepared handoff branch is `codex/steve-maintenance-handoff-20261029`.
-The source is published in [canonical PR #41](https://github.com/stevedifabio-oss/Dirty-Turf/pull/41). The current publisher can push the existing fork but cannot create a branch in Steve's repository; the fetch command below retrieves the complete handoff through the canonical PR reference. After Steve merges it, use updated canonical `main` for new work.
+Use https://github.com/stevedifabio-oss/Dirty-Turf, branch **`main`**. The complete handoff was merged through [PR #41](https://github.com/stevedifabio-oss/Dirty-Turf/pull/41), and the verified web changes are published at https://app.dirtyturf.com.
+
+Use your own GitHub and Codex accounts. You do not need to connect them to Ty's accounts or give Ty access. The original handoff branch, `codex/steve-maintenance-handoff-20261029`, remains a historical source snapshot; start new work from current canonical `main` in a new branch.
 
 Read [the release tracker](RELEASE_TRACKER.md) for the tested source, publication state, and queued mobile batch.
 
 ## Open it in your own Codex
 
-Sign in to GitHub with an account that can access Steve's repository. On your computer, clone it once:
+On your computer, clone the canonical repository once. Its public source can be read without linking anyone's accounts; publishing uses your own authorized GitHub access.
 
 ```sh
 git clone https://github.com/stevedifabio-oss/Dirty-Turf.git
 cd Dirty-Turf
-git fetch origin pull/41/head:codex/steve-maintenance-handoff-20261029
-git switch codex/steve-maintenance-handoff-20261029
+git switch main
 ```
 
 Open that folder as a project in Codex. If you already have a checkout, ask Codex to inspect its branch and local changes first; do not replace existing work to follow these commands.
+
+You can paste this into your own Codex:
+
+> Open https://github.com/stevedifabio-oss/Dirty-Turf on current main. Read AGENTS.md, STEVE_QUICKSTART.md, and RELEASE_TRACKER.md. Preserve existing changes, verify the Node 22 setup, install locked dependencies, and start the local preview. Tell me how to open it and identify any missing access. This setup task does not publish changes or start a mobile release.
 
 Use Node **22.12 or later within Node 22**, matching GitHub CI. Then:
 
@@ -56,7 +60,7 @@ This covers secret patterns, schema contracts, store metadata, TypeScript, unit 
 
 Ask Codex to make **and publish** the web change. It should create a reviewable branch/PR, pass GitHub CI and the applicable preview checks, then merge to canonical `main` under your authorization. Netlify builds `npm run build` and publishes `dist` to **https://app.dirtyturf.com**. Confirm the successful Netlify deploy, its Git commit, and the live behavior.
 
-You need GitHub **write/merge** access and access to Steve's existing Netlify project (`bright-brigadeiros-df8b48`). Do not create a replacement site or use a manual upload to bypass repository access. The handoff branch is a saved starting point; after its authorized merge, start subsequent work from updated `main` in a new branch.
+You need your own GitHub **write/merge** access and access to the existing Netlify project (`bright-brigadeiros-df8b48`). Do not create a replacement site or use a manual upload to bypass repository access. Start each subsequent change from updated `main` in a new branch.
 
 ## iPhone and Android
 

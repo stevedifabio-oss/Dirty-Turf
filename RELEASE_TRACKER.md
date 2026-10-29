@@ -4,12 +4,12 @@ Maintained with each release. Canonical: https://github.com/stevedifabio-oss/Dir
 
 ## Handoff batch — 29 October 2026
 
-Branch: `codex/steve-maintenance-handoff-20261029`, based on canonical `67d819c7f8af6fc2a53bb08c8c91a364710a7996` (PR #40).
+The handoff branch `codex/steve-maintenance-handoff-20261029` was reconciled from canonical `67d819c7f8af6fc2a53bb08c8c91a364710a7996` (PR #40), then merged through [PR #41](https://github.com/stevedifabio-oss/Dirty-Turf/pull/41) as `ea9ff41e5e1c7490dcb879bc7c172ba0e56155dc`. Steve should open current canonical **`main`** for maintenance.
 
 | Surface | Verified position | Next gate |
 | --- | --- | --- |
-| Source handoff | Published via [canonical PR #41](https://github.com/stevedifabio-oss/Dirty-Turf/pull/41), head `tothemax-media:codex/steve-maintenance-handoff-20261029`; original worktrees preserved | Canonical owner/write access needed to merge |
-| Website | Existing production is Oct24 manual deploy `6adc31baaad85de176733292`; Git CD targets canonical `main` | Publish verified handoff through GitHub → Netlify; record resulting commit/deploy |
+| Source handoff | Merged into canonical `main` through PR #41; original worktrees preserved | No handoff merge or account linking remains required |
+| Website | Verified Git CD production deploy `6ae37b54a3bfe13c8b6ffbe8`, source `ea9ff41e`, published Oct 29 | Future web changes use the same GitHub → Netlify workflow |
 | Apple current submission | Last recorded candidate iOS 1.0/build17; last authenticated review observation was Waiting for Review | Refresh App Store Connect before any new release action; no new approval/publication inferred |
 | Google current production | Last verified Oct28: Android 1.0/code12, available at 100% rollout in existing one-country scope | Keep availability separate from a future candidate's status |
 | Queued iPhone batch | Local preparation only; see native evidence | Store inventory, signing/capabilities, physical acceptance, outstanding exact-candidate authorization, Apple review |
@@ -23,7 +23,7 @@ Branch: `codex/steve-maintenance-handoff-20261029`, based on canonical `67d819c7
 - Carry guarded native push preparation while keeping its activation/provider/schedule gates held. Source inclusion is not proof of working push delivery.
 - Add Steve's maintenance instructions, setup, reconciliation inventory and evidence.
 
-No hosted migration, function deployment, schedule activation, capture/import, customer change, reviewer reply, store upload, or store submission is implied by this source handoff. Existing server scheduling remains governed by its prior authorization.
+The web release used the established GitHub → Netlify workflow, including its existing web function. No Supabase migration/function deployment, schedule activation, capture/import, customer change, reviewer reply, store upload, or store submission occurred in this handoff. Existing server scheduling remains governed by its prior authorization.
 
 ### Release notes for the next combined mobile batch
 
@@ -33,9 +33,17 @@ Do not announce push delivery as available. Before submission, tailor these note
 
 ### Verification and publication
 
-The connected publisher (`tothemax-media`) received HTTP403 pushing to canonical `origin`; its existing fork accepted the handoff branch. PR #41 targets Steve's canonical `main`. Steve can fetch `pull/41/head` from the canonical repository using the quickstart. No merge or new website publication is claimed until its commit/deploy checks are recorded.
+The initial fork head was merged through Steve's existing signed-in owner browser session. No accounts were linked and no repository permissions were expanded. The full source is now in Steve's canonical repository.
 
-See [verification record](docs/handoff-verification-20261029.md), [native evidence](docs/native-handoff-evidence-20261029.md), and [source reconciliation](docs/handoff-source-reconciliation-20261029.md). Update this section with actual GitHub PR/commit, CI run, Netlify deploy ID/commit/live checks and separate store outcomes. Never turn an uploaded or internally tested build into a claim of public availability.
+- Runtime release commit: [`ea9ff41e5e1c7490dcb879bc7c172ba0e56155dc`](https://github.com/stevedifabio-oss/Dirty-Turf/commit/ea9ff41e5e1c7490dcb879bc7c172ba0e56155dc).
+- [Canonical main CI run `40916880038`](https://github.com/stevedifabio-oss/Dirty-Turf/actions/runs/40916880038): passed.
+- [Netlify production deploy `6ae37b54a3bfe13c8b6ffbe8`](https://app.netlify.com/projects/bright-brigadeiros-df8b48/deploys/6ae37b54a3bfe13c8b6ffbe8): ready, exact runtime commit, published October 29 at 11:59 a.m. America/Bogota (16:59 UTC).
+- [Live site](https://app.dirtyturf.com): all 10 read-only smoke checks passed at 12:01 p.m. America/Bogota, covering public pages, SPA fallback, HTTPS redirect and security headers. This does not establish authenticated member or physical-device acceptance.
+- A separate fresh canonical clone installed locked dependencies on Node 22 and started Vite successfully. Use the quickstart's canonical `main` instructions.
+
+These receipts identify the tested runtime release. Later documentation-only commits can receive separate CI and Netlify deploy IDs without adding changes to the mobile batch.
+
+See [verification record](docs/handoff-verification-20261029.md), [native evidence](docs/native-handoff-evidence-20261029.md), and [source reconciliation](docs/handoff-source-reconciliation-20261029.md). Record future releases and separate store outcomes here. Never turn an uploaded or internally tested build into a claim of public availability.
 
 ### Backend history caution
 
