@@ -946,3 +946,54 @@ describe("CUA only orchestration", () => {
     }
   });
 });
+
+
+describe("explicit source-deleted author state", () => {
+  const markDeleted = avatar => {
+    avatar.id = avatar.attrs.id = "popover-avatar-trigger-undefined";
+    avatar.attrs.role = "button"; avatar.attrs["aria-label"] = "View Deleted User's profile";
+    const alt = element("span", { alt: "Deleted User" }, "DU"); alt.parentElement = avatar; avatar.children = [alt];
+  };
+  it("extracts and normalizes exact current deleted post avatar semantics without an invented identity", () => {
+    const { documentFixture, modal } = domFixture(); markDeleted(modal.children[0]);
+    const raw = extractCommunityDom({}, documentFixture); raw.controls = [];
+    expect(raw.thread.deletedAuthorProof).toMatchObject({ entity: "post", externalId: "post-1", postExternalId: "post-1", detailRootId: "post-view-modal-" });
+    const normalized = normalizeCommunityThread(raw, options);
+    expect(normalized.complete).toBe(true); expect(normalized.post.authorComplete).toBe(true);
+    expect(normalized.post.authorDeletedProof.kind).toBe("ghl-deleted-user-avatar");
+    expect(normalized.post).not.toHaveProperty("authorExternalId");
+  });
+  it("keeps unknown/undefined and generic User avatars held rather than calling them deleted", () => {
+    const { documentFixture, modal } = domFixture(); const avatar = modal.children[0]; markDeleted(avatar);
+    avatar.attrs["aria-label"] = "View User's profile"; avatar.children[0].attrs.alt = "";
+    const normalized = normalizeCommunityThread(extractCommunityDom({}, documentFixture), options);
+    expect(normalized.post.authorComplete).toBe(false); expect(normalized.post).not.toHaveProperty("authorDeletedProof");
+    expect(normalized.evidence.heldAuthors).toContainEqual({ entity: "post", externalId: "post-1", code: "unresolved_author" });
+  });
+  it("binds own comment deletion to that comment and never to its parent post or sibling", () => {
+    const { documentFixture, rootComment } = domFixture(); markDeleted(rootComment.children[0]); rootComment.children[2].ownText = "";
+    const normalized = normalizeCommunityThread(extractCommunityDom({}, documentFixture), options);
+    expect(normalized.post.authorExternalId).toBe("author-1");
+    expect(normalized.comments[0].authorDeletedProof).toMatchObject({ entity: "comment", externalId: "comment-1", postExternalId: "post-1" });
+    expect(normalized.comments[0]).not.toHaveProperty("authorExternalId");
+    expect(normalized.comments[1]).not.toHaveProperty("authorDeletedProof");
+  });
+  it("requires all fixed current control semantics, not display text alone", () => {
+    for (const defect of ["role", "aria", "alt", "hidden", "realId"]) {
+      const { documentFixture, modal } = domFixture(); const avatar = modal.children[0]; markDeleted(avatar);
+      if (defect === "role") avatar.attrs.role = "link";
+      if (defect === "aria") avatar.attrs["aria-label"] = "Deleted User";
+      if (defect === "alt") avatar.children = [];
+      if (defect === "hidden") avatar.attrs.hidden = true;
+      if (defect === "realId") avatar.id = avatar.attrs.id = "popover-avatar-trigger-author-1";
+      expect(extractCommunityDom({}, documentFixture).thread.deletedAuthorProof).toBeUndefined();
+    }
+  });
+  it("rejects replaying another record's deletion proof or mixing a proven handle", () => {
+    const { documentFixture, modal } = domFixture(); markDeleted(modal.children[0]);
+    const raw = extractCommunityDom({}, documentFixture); raw.thread.deletedAuthorProof.externalId = "different-post";
+    expect(normalizeCommunityThread(raw, options).issues).toContainEqual({ code: "invalid_deleted_author_proof", externalId: "post-1" });
+    raw.thread.deletedAuthorProof.externalId = "post-1"; raw.thread.authorHandle = "@steve-source";
+    expect(normalizeCommunityThread(raw, options).issues).toContainEqual({ code: "invalid_deleted_author_proof", externalId: "post-1" });
+  });
+});

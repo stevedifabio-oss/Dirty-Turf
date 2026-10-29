@@ -54,6 +54,10 @@ verify_jwt = true
 [functions.academy-notifications]
 verify_jwt = false
 
+# Custom protected dispatcher header; native device registration uses Auth RPCs.
+[functions.academy-push-notifications]
+verify_jwt = false
+
 [functions.map-geocode]
 verify_jwt = true
 
@@ -82,4 +86,8 @@ verify_jwt = false
 
 # Auth.getUser validates the JWT before bounded private-photo processing.
 [functions.create-community-photo-post]
+verify_jwt = false
+
+# Dedicated scheduler secret plus independent default-off Edge and DB switches.
+[functions.academy-post-scheduler]
 verify_jwt = false

@@ -260,3 +260,23 @@ describe("authenticated Community snapshot endpoint", () => {
     expect(test.rpc.mock.calls.find(call => call[0] === "apply_academy_community_snapshot")?.[1].p_plan.counts.added).toBe(60);
   });
 });
+
+
+describe("deleted author HTTP boundary", () => {
+  const deleted = () => { const source: any = capture(); delete source.posts[0].authorExternalId; source.posts[0].authorComplete = true;
+    source.posts[0].authorDeletedProof = { kind: "ghl-deleted-user-avatar", entity: "post", externalId: "post-1", postExternalId: "post-1", detailRootId: "post-view-content-card", avatarId: "popover-avatar-trigger-undefined", role: "button", ariaLabel: "View Deleted User's profile", avatarAlt: "Deleted User" }; return source; };
+  it("accepts exact deleted-source state only from the schema-enabled authenticated collector", async () => {
+    const test = setup({ context: { ...context(), capabilities: { commentMedia: true, deletedAuthors: true } } });
+    expect((await test.handler(request("apply", { capture: deleted(), leaseToken: token }))).status).toBe(200);
+    const plan = test.rpc.mock.calls.find(call => call[0] === "apply_academy_community_snapshot")?.[1].p_plan;
+    expect(plan.nextState.records.find(r => r.entity === "post").content).toMatchObject({ authorDeleted: true });
+    expect(plan.nextState.records.find(r => r.entity === "post").content).not.toHaveProperty("authorExternalId");
+  });
+  it("rejects wrong-record/extra proof fields and disabled capability before writer calls", async () => {
+    let source = deleted(); source.posts[0].authorDeletedProof.externalId = "another-post";
+    let test = setup(); expect((await test.handler(request("apply", { capture: source, leaseToken: token }))).status).toBe(422); expect(test.rpc).not.toHaveBeenCalled();
+    source = deleted(); source.posts[0].authorDeletedProof.guessedName = "Synthetic"; test = setup();
+    expect((await test.handler(request("apply", { capture: source, leaseToken: token }))).status).toBe(422); expect(test.rpc).not.toHaveBeenCalled();
+    test = setup(); expect((await test.handler(request("apply", { capture: deleted(), leaseToken: token }))).status).toBe(422); expect(test.rpc).not.toHaveBeenCalledWith("apply_academy_community_snapshot", expect.anything());
+  });
+});

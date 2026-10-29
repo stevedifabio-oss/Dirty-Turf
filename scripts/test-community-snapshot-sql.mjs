@@ -8,9 +8,10 @@ const { PGlite } = await import(process.env.PGLITE_MODULE || '@electric-sql/pgli
 const db = new PGlite();
 await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
 alter default privileges in schema public grant all on tables to service_role;
-create schema auth; create table auth.users(id uuid primary key,email text,raw_user_meta_data jsonb default '{}');
+create schema auth; create table auth.users(id uuid primary key,email text,raw_user_meta_data jsonb default '{}',email_confirmed_at timestamptz default now(),banned_until timestamptz,deleted_at timestamptz);
 create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
-create function auth.role() returns text language sql stable as $$ select 'service_role'::text $$;
+grant usage on schema auth to authenticated,service_role;
+create function auth.role() returns text language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claim.role',true),''),'service_role')::text $$;
 create schema storage; create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
 create table storage.objects(id uuid primary key,bucket_id text,name text,owner uuid);
 create function storage.foldername(text) returns text[] language sql as $$ select string_to_array($1,'/') $$;
@@ -159,7 +160,7 @@ await reject(()=>partialApply(invalidHeldInput.captureId,invalidHeldLease.leaseT
 invalidHeldPlan.held=[{entity:'post',externalId:'missing',reason:'unobserved_media'}];await reject(()=>partialApply(invalidHeldInput.captureId,invalidHeldLease.leaseToken,invalidHeldPlan),/Invalid held source identity/);
 invalidHeldPlan.held=[held[0],held[0]];await reject(()=>partialApply(invalidHeldInput.captureId,invalidHeldLease.leaseToken,invalidHeldPlan),/Invalid held source identity/);
 await db.query('select fail_academy_community_snapshot($1,$2,$3,$4)',[partialCfg,invalidHeldInput.captureId,invalidHeldLease.leaseToken,'invalid_held']);
-const partialContext=(await db.query('select get_academy_community_snapshot_context($1) r',[partialCfg])).rows[0].r;eq(partialContext.capabilities,{commentMedia:true,partialRecords:true,sourceFieldHolds:true,mediaOnlyComments:true});
+const partialContext=(await db.query('select get_academy_community_snapshot_context($1) r',[partialCfg])).rows[0].r;eq(partialContext.capabilities,{commentMedia:true,partialRecords:true,sourceFieldHolds:true,mediaOnlyComments:true,deletedAuthors:true});
 // Actual planner holds an unmapped stable source author and its dependent comments.
 const unknownCapture=partialCapture(25);
 unknownCapture.posts.push({...unknownCapture.posts[0],externalId:'unknown-post',authorExternalId:'unknown-source-member',title:'Unmapped source author'});
@@ -299,5 +300,80 @@ const repairedMirrors=[assetA,{...assetA,url:assetB.url}];await db.exec("select 
 const beforeAbsentTarget=(await db.query("select * from academy_community_snapshot_records where config_id=$1 and external_id='ambiguous-mirror-post'",[partialCfg])).rows[0];
 const absentTargetCapture={...returnedCapture,captureId:'partial-44',observedStartedAt:partialCapture(44).observedStartedAt,observedCompletedAt:partialCapture(44).observedCompletedAt,posts:returnedCapture.posts.filter(p=>p.externalId!=='ambiguous-mirror-post')};const absentTargetLease=await partialBegin(absentTargetCapture.captureId);const absentTargetPlan=planCommunitySnapshot(absentTargetLease.previousState,absentTargetCapture,raceConfig);eq(absentTargetPlan.missing.some(r=>r.externalId==='ambiguous-mirror-post'),true);await partialApply(absentTargetCapture.captureId,absentTargetLease.leaseToken,absentTargetPlan);eq((await row('community_posts','ambiguous-mirror-post')).body,ambiguousPost.body);eq((await row('community_posts','ambiguous-mirror-post')).media,repairedMirrors);eq((await db.query("select * from academy_community_snapshot_records where config_id=$1 and external_id='ambiguous-mirror-post'",[partialCfg])).rows[0],beforeAbsentTarget);
 const returnedTargetCapture={...returnedCapture,captureId:'partial-45',observedStartedAt:partialCapture(45).observedStartedAt,observedCompletedAt:partialCapture(45).observedCompletedAt};const returnedTargetLease=await partialBegin(returnedTargetCapture.captureId);const returnedTargetPlan=planCommunitySnapshot(returnedTargetLease.previousState,returnedTargetCapture,raceConfig);await partialApply(returnedTargetCapture.captureId,returnedTargetLease.leaseToken,returnedTargetPlan);eq((await row('community_posts','ambiguous-mirror-post')).body,'Should stay held');eq((await row('community_posts','ambiguous-mirror-post')).media[0].storage_path,'a.webp');
+
+// Explicit source-deleted actors are anonymous provenance, never fake members.
+const deletedCommunity=uuid(),deletedCfg=uuid(),deletedMember=uuid();
+await db.query("insert into academy_communities(id,owner_organization_id,name,slug,portal_url) values($1,$2,'Deleted source fixture','deleted-source','https://example.com')",[deletedCommunity,org]);
+await db.query("insert into academy_members(id,academy_community_id,user_id,display_name,role) values($1,$2,$3,'Existing linked author','owner')",[deletedMember,deletedCommunity,owner]);
+await db.query("insert into academy_member_links(academy_community_id,academy_member_id,external_member_id) values($1,$2,'author')",[deletedCommunity,deletedMember]);
+await db.query("insert into academy_community_sync_configs(id,academy_community_id,location_id,group_id,enabled) values($1,$2,'deleted-location','deleted-group',true)",[deletedCfg,deletedCommunity]);
+const deletedConfig={...config,scope:{locationId:'deleted-location',groupId:'deleted-group'},capabilities:{...config.capabilities,deletedAuthors:true}};
+const deletionProof=(entity,externalId,postExternalId)=>({kind:'ghl-deleted-user-avatar',entity,externalId,postExternalId,detailRootId:'post-view-content-card',avatarId:'popover-avatar-trigger-undefined',role:'button',ariaLabel:"View Deleted User's profile",avatarAlt:'Deleted User'});
+const markSourceDeleted=(r,entity)=>{delete r.authorExternalId;delete r.authorHandle;r.authorComplete=true;r.authorDeletedProof=deletionProof(entity,r.externalId,entity==='post'?r.externalId:r.postExternalId);return r;};
+const sourceDeletedCapture=n=>({...capture(n),captureId:'deleted-'+n,scope:deletedConfig.scope,
+ posts:[markSourceDeleted({...capture(n).posts[0],externalId:'orphan-post',media:[]},'post'),{...capture(n).posts[0],externalId:'known-post',media:[]}],
+ comments:[markSourceDeleted({...capture(n).comments[0],externalId:'orphan-comment',postExternalId:'orphan-post',media:[]},'comment'),{...capture(n).comments[1],externalId:'known-reply',postExternalId:'orphan-post',parentExternalId:'orphan-comment'}]});
+const identityCounts=async()=>(await db.query("select (select count(*) from academy_members) members,(select count(*) from academy_member_links) links,(select count(*) from auth.users) auths,(select count(*) from academy_access_grants) grants,(select count(*) from academy_member_invites) invites,(select count(*) from academy_email_deliveries) emails")).rows[0];
+const ordinaryDeletedUser=uuid(),ordinaryDeletedMember=uuid();
+await db.query('insert into auth.users(id,email) values($1,$2)',[ordinaryDeletedUser,'source-deleted-member@example.com']);
+await db.query("insert into academy_members(id,academy_community_id,user_id,display_name,role,status) values($1,$2,$3,'Ordinary fixture','member','active')",[ordinaryDeletedMember,deletedCommunity,ordinaryDeletedUser]);
+const identitiesBefore=await identityCounts();
+async function deletedRun(n,mutate=()=>{}){const input=sourceDeletedCapture(n);mutate(input);await db.exec('set role service_role');try{const lease=(await db.query('select begin_academy_community_snapshot($1,$2) r',[deletedCfg,input.captureId])).rows[0].r;const plan=planCommunitySnapshot(lease.previousState,input,deletedConfig);eq(plan.captureAccepted,true);const result=(await db.query('select apply_academy_community_snapshot($1,$2,$3,$4) r',[deletedCfg,input.captureId,lease.leaseToken,plan])).rows[0].r;return{input,lease,plan,result};}finally{await db.exec('reset role');}}
+const orphanFirst=await deletedRun(46);eq(orphanFirst.result.added,4);eq(orphanFirst.result.conflicts,[]);eq(orphanFirst.result.held,[]);
+const orphanPost=await row('community_posts','orphan-post'),orphanComment=await row('community_comments','orphan-comment'),knownPost=await row('community_posts','known-post');
+eq([orphanPost.author_id,orphanPost.academy_author_id,orphanPost.source_author_deleted],[null,null,true]);
+eq([orphanComment.author_id,orphanComment.academy_author_id,orphanComment.source_author_deleted],[null,null,true]);
+eq((await row('community_comments','known-reply')).parent_id,orphanComment.id);
+eq((await db.query('select author_name from community_feed where id=$1',[orphanPost.id])).rows[0].author_name,'Deleted member');
+eq((await db.query('select author_name from academy_comment_feed where id=$1',[orphanComment.id])).rows[0].author_name,'Deleted member');
+eq(await identityCounts(),identitiesBefore);eq((await db.query("select current_setting('app.academy_community_sync',true) s")).rows[0].s,'off');
+eq((await deletedRun(47)).result.unchanged,4);
+// Fixture a real historical legacy author alongside its Academy author, then
+// prove source account deletion changes neither FK or the real member record.
+await db.exec("select set_config('app.academy_community_sync','on',false)");await db.query('update community_posts set author_id=$1 where id=$2',[owner,knownPost.id]);
+await db.query("update academy_community_snapshot_records set target_fingerprint=private.community_snapshot_target(entity,row_id) where config_id=$1 and external_id='known-post'",[deletedCfg]);await db.exec("select set_config('app.academy_community_sync','off',false)");
+const knownDeleted=await deletedRun(48,s=>{markSourceDeleted(s.posts[1],'post');s.posts[1].body='Source-owned text after account deletion';});
+eq(knownDeleted.result.updated,1);const retainedKnown=await row('community_posts','known-post');eq([retainedKnown.author_id,retainedKnown.academy_author_id,retainedKnown.source_author_deleted],[owner,deletedMember,true]);eq(retainedKnown.body,'Source-owned text after account deletion');eq(await identityCounts(),identitiesBefore);
+// Wrong-record source proof cannot be forged even by directly altering a plan.
+const spoofInput=sourceDeletedCapture(49);const spoofLease=(await db.query('select begin_academy_community_snapshot($1,$2) r',[deletedCfg,spoofInput.captureId])).rows[0].r;
+markSourceDeleted(spoofInput.posts[1],'post');spoofInput.posts[1].body=retainedKnown.body;const spoofPlan=planCommunitySnapshot(spoofLease.previousState,spoofInput,deletedConfig);eq(spoofPlan.captureAccepted,true);
+spoofPlan.nextState.records.find(r=>r.externalId==='orphan-post').source.authorDeletedProof.externalId='different-post';
+await reject(()=>db.query('select apply_academy_community_snapshot($1,$2,$3,$4)',[deletedCfg,spoofInput.captureId,spoofLease.leaseToken,spoofPlan]),/Invalid deleted source author proof/);
+eq((await row('community_posts','orphan-post')).body,orphanPost.body);eq((await db.query("select current_setting('app.academy_community_sync',true) s")).rows[0].s,'off');await db.query('select fail_academy_community_snapshot($1,$2,$3,$4)',[deletedCfg,spoofInput.captureId,spoofLease.leaseToken,'invalid_deleted_proof']);
+// Test the trigger as authenticated claims, not the old constant service stub.
+await db.exec("select set_config('request.jwt.claim.role','authenticated',false)");await db.query("select set_config('request.jwt.claim.sub',$1,false)",[owner]);
+for(const table of ['community_posts','community_comments']){
+ const existing=table==='community_posts'?orphanPost:orphanComment;
+ for(const sql of ["source_author_deleted=false","source_provider=null","external_id='different-source'","academy_community_id=null",`academy_author_id='${deletedMember}'`]) await reject(()=>db.query(`update ${table} set ${sql} where id=$1`,[existing.id]),/Deleted source author provenance is import-only/);
+}
+await reject(()=>db.query("insert into community_posts(organization_id,academy_community_id,academy_author_id,source_provider,external_id,source_author_deleted,title,body) values($1,$2,$3,'highlevel','spoofed-deleted',true,'Spoofed source','Do not import')",[org,deletedCommunity,deletedMember]),/Deleted source author provenance is import-only/);
+// Exercise actual authenticated role permissions for both an ordinary member
+// and the owner; claims-only trigger tests above are intentionally separate.
+await db.exec('set role authenticated');
+for(const user of [ordinaryDeletedUser,owner]){
+ await db.query("select set_config('request.jwt.claim.sub',$1,false)",[user]);
+ for(const table of ['community_posts','community_comments']){
+  const existing=table==='community_posts'?orphanPost:orphanComment;
+  await reject(()=>db.query(`update ${table} set source_author_deleted=false where id=$1`,[existing.id]),/permission denied|import-only/);
+  await reject(()=>db.query(`update ${table} set source_provider=null where id=$1`,[existing.id]),/permission denied|import-only/);
+ }
+ await reject(()=>db.query("insert into community_posts(organization_id,academy_community_id,academy_author_id,source_provider,external_id,source_author_deleted,title,body) values($1,$2,$3,'highlevel','spoofed-native',true,'Spoofed','Do not import')",[org,deletedCommunity,deletedMember]),/permission denied|import-only/);
+}
+await db.query("select set_config('request.jwt.claim.sub',$1,false)",[owner]);
+// An owner may still moderate an orphan through its authorized RPC, preserving
+// null authors and source provenance under the real authenticated role.
+await db.query("select admin_moderate_community_post($1,'archived',false)",[orphanPost.id]);await db.exec('reset role');
+eq((await row('community_posts','orphan-post')).status,'archived');eq((await row('community_posts','orphan-post')).source_author_deleted,true);eq((await row('community_posts','orphan-post')).sync_owner,'local');
+await db.exec('set role authenticated');await db.query('select admin_remove_community_comment($1)',[orphanComment.id]);await db.exec('reset role');eq((await row('community_comments','orphan-comment')).body,'[Removed by Academy moderator]');eq((await row('community_comments','orphan-comment')).source_author_deleted,true);
+await db.exec("select set_config('request.jwt.claim.role','service_role',false)");
+const afterModeration=await deletedRun(50,s=>{markSourceDeleted(s.posts[1],'post');s.posts[1].body=retainedKnown.body;});
+eq(afterModeration.result.conflicts.find(r=>r.externalId==='orphan-post').reason,'local_edit_or_delete');eq((await row('community_posts','orphan-post')).status,'archived');eq((await row('community_comments','orphan-comment')).body,'[Removed by Academy moderator]');eq(await identityCounts(),identitiesBefore);
+// Even a service caller cannot create an orphan without the fixed source state.
+await reject(()=>db.query("insert into community_posts(organization_id,academy_community_id,source_provider,external_id,title,body) values($1,$2,'highlevel','unproven-orphan','Unknown','No deleted proof')",[org,deletedCommunity]),/community_posts_author_check/);
+// SQL NULL provenance must never make the author CHECK pass.
+await db.exec("select set_config('app.academy_community_sync','on',false)");
+await reject(()=>db.query("insert into community_posts(organization_id,academy_community_id,source_provider,external_id,source_author_deleted,title,body) values($1,$2,null,'null-provider-orphan',true,'Unknown','No source provenance')",[org,deletedCommunity]),/community_posts_author_check/);
+await db.exec("select set_config('app.academy_community_sync','off',false)");
+
 console.log(`Community snapshot SQL: ${assertions} assertions passed against ${migrations.length} actual migrations. No hosted writes.`);
 await db.close();

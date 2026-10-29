@@ -15,6 +15,7 @@ import {
   type MemberAccessSummary,
 } from "../lib/backend";
 import { useModalDialog } from "../lib/useModalDialog";
+import { PushSettings } from "./PushSettings";
 
 export type HubSection = "settings" | "access" | "notifications";
 
@@ -223,6 +224,7 @@ function SettingsPanel({ onToast, dataMode, canManage, onSignOut, readOnly = fal
         <p className="setting-help" role="status">{notificationSaving ? "Saving notification preferences... " : ""}In-app alerts stay available in the bell even when email is off.</p>
       </> : readOnly ? <div className="settings-loading" role="status">Connect again to load notification preferences.</div> : notificationError ? <div className="settings-loading" role="alert">Notification settings could not load. Changes are unavailable until they do. <button type="button" className="secondary-button" onClick={() => { if (!readOnly) setSettingsRetry((value) => value + 1); }}>Try again</button></div> : <div className="settings-loading">Loading notification preferences...</div>}
     </div>
+    {dataMode === "cloud" && <PushSettings readOnly={readOnly} onToast={onToast} />}
     {billingError && <div className="setting-group billing-group" role="alert"><h3>Billing</h3><p>Billing details could not load.</p><button type="button" className="secondary-button" disabled={readOnly} onClick={() => { if (!readOnly) setSettingsRetry((value) => value + 1); }}>Try again</button></div>}
     {billing && <div className="setting-group billing-group">
       <h3>Billing and access</h3>

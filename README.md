@@ -2,6 +2,8 @@
 
 Responsive operator academy, community, turf measurement, and infill tools for turf cleaning companies, delivered as a desktop web app, mobile web/PWA, and native iOS and Android apps.
 
+**Steve: start with [your quickstart](STEVE_QUICKSTART.md).** Use [the release tracker](RELEASE_TRACKER.md) for current handoff, web publication, and queued mobile status. Canonical source is [stevedifabio-oss/Dirty-Turf](https://github.com/stevedifabio-oss/Dirty-Turf). Older dated release documents are historical checkpoints.
+
 ## Current state
 
 The same React workspace adapts to wide desktop screens, touch-first mobile browsers, and the Capacitor iOS/Android shells. It is fully usable in device-preview mode with browser persistence. The repository also contains the backend contract needed to switch to authenticated company workspaces:
@@ -29,8 +31,7 @@ The same React workspace adapts to wide desktop screens, touch-first mobile brow
 ## Local development
 
 ```bash
-npm install
-cp .env.example .env.local
+npm ci
 npm run dev
 ```
 
@@ -45,7 +46,7 @@ Keep setup credentials out of shell history. Enter production secrets only in
 the destination provider's protected environment-variable or secrets UI, and
 rotate any credential that is accidentally exposed locally.
 
-The app stays in device-preview mode when Supabase variables are absent or the user is signed out.
+Use Node22 (22.12 or later). Without Supabase variables the app uses local device-preview data. With the real backend configured, signed-out users must authenticate under the existing access rules. See the quickstart before adding public client configuration.
 
 Run the complete local check:
 

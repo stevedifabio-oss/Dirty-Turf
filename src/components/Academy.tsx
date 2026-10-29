@@ -153,7 +153,7 @@ export function AcademyView({ courses, requestedCourseCloudId, requestedLessonId
         }}>
           <span className="lesson-type"><BookOpen size={16} /> {selectedLesson.type} · {academyDurationLabel(selectedLesson.duration)}</span>
           <h2>{selectedLesson.title}</h2>
-          {videoUrl && directVideo && <video ref={videoRef} className="lesson-video" controls preload="metadata" src={videoUrl} onTimeUpdate={event => { lastPlayback.current = captureLessonPlayback(event.currentTarget); }} onPlay={event => { lastPlayback.current = captureLessonPlayback(event.currentTarget); }} onPause={event => { if (!event.currentTarget.error) lastPlayback.current = captureLessonPlayback(event.currentTarget); }} onLoadedMetadata={event => {
+          {videoUrl && directVideo && <video ref={videoRef} className="lesson-video" controls playsInline preload="metadata" src={videoUrl} onTimeUpdate={event => { lastPlayback.current = captureLessonPlayback(event.currentTarget); }} onPlay={event => { lastPlayback.current = captureLessonPlayback(event.currentTarget); }} onPause={event => { if (!event.currentTarget.error) lastPlayback.current = captureLessonPlayback(event.currentTarget); }} onLoadedMetadata={event => {
             restoreLessonPlayback(event.currentTarget, playback.current);
             lastPlayback.current = captureLessonPlayback(event.currentTarget);
             playback.current = null;

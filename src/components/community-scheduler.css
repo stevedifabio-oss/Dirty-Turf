@@ -1,0 +1,57 @@
+.admin-view .community-scheduler { display: grid; gap: 16px; min-width: 0; padding: 22px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+.community-scheduler :is(h3,h4,p) { margin: 0; }
+.community-scheduler-heading, .community-scheduler-editor > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.community-scheduler-heading h3 { display: flex; align-items: center; gap: 9px; font: 700 1.15rem/1.3 "Outfit",sans-serif; color: var(--turf-dark); }
+.community-scheduler-heading p, .community-scheduler-editor > header p { margin-top: 6px; max-width: 660px; color: var(--admin-muted); font-size: .77rem; }
+.community-scheduler-tools, .community-scheduler-actions, .community-scheduler-item-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.community-scheduler-tools { flex-shrink: 0; }
+.community-scheduler-notice { padding: 13px 16px; border-left: 3px solid var(--turf); background: var(--mist); font-size: .78rem; }
+.community-scheduler-notice p { margin-top: 4px; color: var(--admin-muted); }
+.community-scheduler-audience, .community-scheduler-help { font-size: .73rem; color: var(--admin-muted); line-height: 1.65; }
+.community-scheduler-feedback, .community-scheduler-error { padding: 14px; background: #fff4e5; color: #743e08; border: 1px solid #dfb47b; border-radius: 8px; font-size: .78rem; }
+.community-scheduler-feedback button { margin-top: 10px !important; }
+.community-scheduler-loading, .community-scheduler-success { display: flex; align-items: flex-start; gap: 8px; color: var(--turf-dark); font-size: .78rem; }
+.community-scheduler-success { padding: 12px 14px; border-radius: 8px; background: var(--mist); }
+.community-scheduler-success svg { flex-shrink: 0; }
+.community-scheduler-editor { display: grid; gap: 20px; padding: 20px; border: 1px solid var(--line); border-radius: 10px; background: white; min-width: 0; }
+.community-scheduler-editor h4 { font: 700 1.15rem/1.3 "Outfit",sans-serif; }
+.community-scheduler-editor h4:focus { outline: none; }
+.community-scheduler-editor form > fieldset { display: grid; gap: 16px; margin: 0; padding: 0; border: 0; min-width: 0; }
+.admin-view .community-scheduler label { display: grid; gap: 6px; font-size: .77rem; font-weight: 600; }
+.admin-view .community-scheduler :is(input:not([type=checkbox]),textarea,select) { width: 100%; min-width: 0; min-height: 46px; padding: 10px 12px; border: 1px solid var(--ink-soft); border-radius: 8px; background: var(--paper); color: var(--asphalt); font: 400 .82rem/1.5 "Poppins",sans-serif; }
+.community-scheduler small { color: var(--admin-muted); font-size: .71rem; font-weight: 400; line-height: 1.6; }
+.community-scheduler-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.admin-view .community-scheduler-weekdays { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 0 0; margin: 0; border: 0; }
+.community-scheduler-weekdays legend { font-size: .77rem; font-weight: 600; }
+.admin-view .community-scheduler-weekdays label { display: flex; align-items: center; gap: 7px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); min-height: 44px; }
+.community-scheduler-weekdays input { accent-color: var(--turf); width: 16px; height: 16px; margin: 0; }
+.community-scheduler-timing { padding: 12px 14px; background: var(--chalk); border-radius: 7px; font-size: .77rem; line-height: 1.6; }
+.community-scheduler-preview { padding: 20px; border: 1px solid var(--line); border-radius: 10px; background: var(--chalk); }
+.community-scheduler-preview h4 { margin: 10px 0; font-size: 1.1rem; }
+.community-scheduler-preview p { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .82rem; }
+.community-scheduler-preview footer { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 16px; font-size: .71rem; color: var(--admin-muted); }
+.community-scheduler-list-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; }
+.community-scheduler-list-heading h4 { font-size: .9rem; }
+.community-scheduler-list-heading h4 span, .community-scheduler-history-toggle span { margin-left: 5px; color: var(--admin-muted); font-weight: 400; }
+.admin-view .community-scheduler-list-heading label { display: flex; align-items: center; gap: 10px; }
+.admin-view .community-scheduler-list-heading select { width: auto; padding-block: 8px; }
+.community-scheduler-list { display: grid; gap: 10px; }
+.community-scheduler-item { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: start; gap: 16px; padding: 16px; border: 1px solid var(--line); border-radius: 9px; background: white; }
+.community-scheduler-item h4 { margin: 8px 0 5px; font-size: .87rem; overflow-wrap: anywhere; }
+.community-scheduler-item p { font-size: .74rem; color: var(--admin-muted); overflow-wrap: anywhere; }
+.community-scheduler-item-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.community-scheduler-state { display: inline-flex; justify-self: start; align-self: start; padding: 3px 8px; border-radius: 5px; background: #edf0ef; color: #4d5552; font-size: .65rem; font-weight: 600; text-transform: capitalize; }
+.community-scheduler-state-active, .community-scheduler-state-published { background: var(--mist); color: var(--turf-dark); }
+.community-scheduler-state-draft, .community-scheduler-state-skipped { background: #fff3db; color: #82500a; }
+.community-scheduler-state-failed { background: #fff0ed; color: #9b3423; }
+.community-scheduler-item .community-scheduler-next { margin-top: 8px; color: var(--turf-dark); }
+.community-scheduler-item-actions { max-width: 280px; justify-content: flex-end; }
+.community-scheduler-empty { padding: 20px 16px; border: 1px dashed var(--line); border-radius: 9px; color: var(--admin-muted); font-size: .77rem; text-align: center; }
+.community-scheduler-history { border-top: 1px solid var(--line); padding-top: 6px; }
+.admin-view .community-scheduler-history-toggle { display: flex; align-items: center; gap: 5px; width: 100%; padding: 12px 0; background: transparent; color: var(--turf-dark); text-align: left; }
+.community-scheduler-history ul { list-style: none; padding: 0; margin: 0 0 12px; }
+.community-scheduler-history li { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 5px 12px; padding: 14px 0; border-top: 1px solid var(--line); }
+.community-scheduler-history li strong { display: block; font-size: .77rem; }
+.community-scheduler-history li p { grid-column: 1 / -1; font-size: .73rem; color: var(--admin-muted); }
+@media (max-width: 900px) { .community-scheduler-heading { flex-direction: column; } .community-scheduler-tools { width: 100%; } .community-scheduler-item { grid-template-columns: minmax(0,1fr); } .community-scheduler-item-actions { max-width: none; justify-content: flex-start; } }
+@media (max-width: 560px) { .admin-view .community-scheduler { padding: 16px; } .community-scheduler-editor { padding: 15px; } .community-scheduler-grid { grid-template-columns: minmax(0,1fr); } .community-scheduler-tools .primary-button { flex: 1; } .community-scheduler-editor > header { flex-wrap: wrap; } .community-scheduler-actions > button { flex: 1 1 100%; min-height: 44px; justify-content: center; } }

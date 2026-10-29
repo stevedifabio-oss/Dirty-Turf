@@ -1,3 +1,4 @@
+import { validDeletedAuthorProof } from "./community-deleted-author.mjs";
 import { createHash } from "node:crypto";
 
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
@@ -7,7 +8,7 @@ const hash = value => createHash("sha256").update(JSON.stringify(canonical(value
 const alias = value => typeof value === "string" ? value.trim().replace(/^@/, "").toLowerCase() : "";
 // GHL channel slugs contain complete percent escapes, e.g. Chemistry-%26-Cleaners.
 // Keep their exact stored identity; never decode or match display names.
-const stableId = value => typeof value === "string" && value.length <= 200 && /^[a-zA-Z0-9](?:[a-zA-Z0-9._:-]|%[a-fA-F0-9]{2})*$/.test(value);
+const stableId = value => typeof value === "string" && value !== "undefined" && value.length <= 200 && /^[a-zA-Z0-9](?:[a-zA-Z0-9._:-]|%[a-fA-F0-9]{2})*$/.test(value);
 const text = (value, max, min = 1) => typeof value === "string" && [...value.trim()].length >= min && [...value].length <= max && !value.includes("\0");
 const scopeMatches = (left, right) => left?.locationId === right?.locationId && left?.groupId === right?.groupId;
 const snapshotHash = records => hash(records.map(({ entity, externalId, contentHash }) => ({ entity, externalId, contentHash })));
@@ -89,12 +90,17 @@ function previousRecords(previous, scope, errors) {
     const authorHeld = record?.authorComplete === false && Array.isArray(previous.held) && previous.held.some(entry =>
       entry?.entity === record?.entity && entry?.externalId === record?.externalId && entry?.reason === "unknown_author");
     const bodyHeld = record?.bodyComplete === false && recordHeld && Array.isArray(record?.unobservedFields) && record.unobservedFields.includes("body");
-    const required = [...(authorHeld ? [] : ["authorExternalId"]), ...(bodyHeld ? [] : ["body"]), ...(record?.entity === "post" ? ["title"] : ["postExternalId", "parentExternalId"])];
-    const allowed = new Set([...required, "authorExternalId", "body", "media", ...(record?.entity === "post" ? ["categoryExternalId", "pinned"] : [])]);
+    const deletedAuthor = record?.content?.authorDeleted === true
+      && !own(record.content, "authorExternalId")
+      && validDeletedAuthorProof(record.source?.authorDeletedProof, record.entity, record.externalId,
+        record.entity === "post" ? record.externalId : record.content.postExternalId);
+    const required = [...(authorHeld || deletedAuthor ? [] : ["authorExternalId"]), ...(bodyHeld ? [] : ["body"]), ...(record?.entity === "post" ? ["title"] : ["postExternalId", "parentExternalId"])];
+    const allowed = new Set([...required, "authorExternalId", "authorDeleted", "body", "media", ...(record?.entity === "post" ? ["categoryExternalId", "pinned"] : [])]);
     if (!["post", "comment"].includes(record?.entity) || !stableId(record.externalId) || !record.content || Array.isArray(record.content)
         || !Array.isArray(record.observedFields) || required.some(key => !own(record.content, key))
         || Object.keys(record.content).some(key => !allowed.has(key) || !record.observedFields.includes(key))
         || record.observedFields.some(key => !own(record.content, key)) || record.contentHash !== hash(record.content)
+        || (own(record.content, "authorDeleted") && !deletedAuthor)
         || (record.authorComplete !== undefined && typeof record.authorComplete !== "boolean")
         || (record.authorComplete === false && !authorHeld)
         || (record.bodyComplete !== undefined && typeof record.bodyComplete !== "boolean")
@@ -111,9 +117,17 @@ function previousRecords(previous, scope, errors) {
 
 function onlyEnrichesUnobservedFields(old, record) {
   const allowed = new Set(old.unobservedFields ?? []);
+  if (allowed.has("authorExternalId")) allowed.add("authorDeleted");
   const changed = [...new Set([...Object.keys(old.content), ...Object.keys(record.content)])]
     .filter(field => hash(old.content[field] ?? null) !== hash(record.content[field] ?? null) || own(old.content, field) !== own(record.content, field));
   return changed.length > 0 && changed.every(field => allowed.has(field));
+}
+
+function onlyChangesToDeletedAuthor(old, record) {
+  if (record.content.authorDeleted !== true || old.content.authorDeleted === true) return false;
+  const changed = [...new Set([...Object.keys(old.content), ...Object.keys(record.content)])]
+    .filter(field => hash(old.content[field] ?? null) !== hash(record.content[field] ?? null) || own(old.content, field) !== own(record.content, field));
+  return changed.length > 0 && changed.every(field => ["authorExternalId", "authorDeleted"].includes(field));
 }
 
 /** Planner only. No database/API writes, scheduler, inferred deletion or source version.
@@ -169,11 +183,17 @@ export function planCommunitySnapshot(previous, capture, config) {
       const key = `${entity}:${externalId}`, old = prior.get(key);
       if (current.has(key)) { fail("duplicate_source_id"); continue; }
       const content = {};
+      const deletedAuthor = validDeletedAuthorProof(input.authorDeletedProof, entity, externalId,
+        entity === "post" ? externalId : input.postExternalId);
+      if (own(input, "authorDeletedProof") && !deletedAuthor) fail("invalid_deleted_author_proof");
+      if (deletedAuthor && config.capabilities?.deletedAuthors !== true) fail("unsupported_deleted_authors");
+      if (deletedAuthor && (input.authorComplete !== true || own(input, "authorExternalId") || own(input, "authorHandle"))) fail("contradictory_deleted_author");
+      if (deletedAuthor) content.authorDeleted = true;
       if (input.authorComplete !== undefined && typeof input.authorComplete !== "boolean") fail("invalid_author_completeness");
       if (input.authorComplete === false && input.authorExternalId !== undefined) fail("contradictory_author_completeness");
       const unresolvedAuthor = sourceFieldHolds && input.authorComplete === false && input.authorExternalId === undefined;
       if (input.authorComplete === false && !sourceFieldHolds) fail("unsupported_source_field_holds");
-      const author = unresolvedAuthor ? (hold(entity, externalId, "unknown_author"), undefined)
+      const author = deletedAuthor ? undefined : unresolvedAuthor ? (hold(entity, externalId, "unknown_author"), undefined)
         : partialRecords && stableId(input.authorExternalId) && !authors.ids.has(input.authorExternalId) && !authors.lookup.has(alias(input.authorHandle))
         ? (hold(entity, externalId, "unknown_author"), input.authorExternalId)
         : resolveIdentity(input, "authorExternalId", "authorHandle", authors, fail);
@@ -226,7 +246,8 @@ export function planCommunitySnapshot(previous, capture, config) {
           if (input[`${field}Complete`] === false) review.push({ code: `new_${entity}_${field}_unobserved`, entity, externalId });
         }
       }
-      if (old?.content.authorExternalId !== undefined && !unresolvedAuthor && content.authorExternalId !== old.content.authorExternalId) fail("author_changed");
+      if (old?.content.authorExternalId !== undefined && !unresolvedAuthor && !deletedAuthor && content.authorExternalId !== old.content.authorExternalId) fail("author_changed");
+      if (old?.content.authorDeleted === true && !unresolvedAuthor && !deletedAuthor) fail("author_changed");
       if (entity === "comment" && old) {
         if (content.postExternalId !== old.content.postExternalId) fail("comment_post_changed");
         if (content.parentExternalId !== old.content.parentExternalId) fail("comment_parent_changed");
@@ -243,12 +264,16 @@ export function planCommunitySnapshot(previous, capture, config) {
       if (input.sourceUrl !== undefined) {
         if (!publicUrl(input.sourceUrl)) fail("invalid_source_url"); else source.sourceUrl = input.sourceUrl;
       }
+      if (deletedAuthor) source.authorDeletedProof = input.authorDeletedProof;
+      else if (author) delete source.authorDeletedProof;
       // Only verified fields from a prior accepted capture may fill unknown fields.
       const merged = { ...(old?.content ?? {}), ...content };
+      if (deletedAuthor) delete merged.authorExternalId;
+      else if (author) delete merged.authorDeleted;
       const record = { entity, externalId, content: merged, observedFields: Object.keys(merged).sort(), authorComplete: !unresolvedAuthor, bodyComplete: !unresolvedBody,
         unobservedFields: unobservedFields.sort(), source, contentHash: hash(merged) };
       if (old && input.sourceUpdatedAt !== undefined && timestamp(input.sourceUpdatedAt) === old.source?.sourceUpdatedAt
-          && record.contentHash !== old.contentHash && !onlyEnrichesUnobservedFields(old, record)) fail("same_source_version_changed");
+          && record.contentHash !== old.contentHash && !onlyEnrichesUnobservedFields(old, record) && !onlyChangesToDeletedAuthor(old, record)) fail("same_source_version_changed");
       current.set(key, record);
       if (entity === "comment" && merged.media?.length && config.capabilities?.commentMedia !== true) {
         hold(entity, externalId, "unsupported_comment_media");

@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useId, useMemo, useR
 import { ArrowRight, Award, BookOpen, BriefcaseBusiness, CalendarDays, Check, ChevronDown, ChevronRight, CircleAlert, FilePlus2, GraduationCap, LayoutDashboard, LoaderCircle, Megaphone, Pencil, Pin, Plus, RefreshCw, Search, ShieldCheck, Upload, Users, X } from "lucide-react";
 import { GrowthAdmin } from "./GrowthAdmin";
 import { AdminMemberSetup } from "./AdminMemberSetup";
+import { CommunityScheduler } from "./CommunityScheduler";
 import { emptyQuizQuestion, existingQuizBody, quizEditorState, quizOptionsFor, serializeQuizQuestion, updateQuizQuestion, type QuizQuestionDraft } from "../lib/adminContent";
 import { isLessonContentUrl, lessonContentBlocks, lessonContentBody, type LessonContentBlock } from "../lib/lessonContent";
 import { LessonContentEditor } from "./LessonContentEditor";
@@ -183,7 +184,7 @@ export function AdminStudio({ onToast, onContentChange, onExit, leaveGuardRef, r
     </section>}
 
     {tab === "courses" && <CoursesAdmin snapshot={snapshot} busy={busy} act={act} />}
-    {tab === "community" && <CommunityAdmin snapshot={snapshot} busy={busy} act={act} />}
+    {tab === "community" && <CommunityAdmin snapshot={snapshot} busy={busy} act={act} readOnly={readOnly} />}
     {tab === "events" && <EventsAdmin snapshot={snapshot} busy={busy} act={act} />}
     {tab === "members" && <MembersAdmin snapshot={snapshot} busy={busy} act={act} />}
     {tab === "certificates" && <CertificatesAdmin snapshot={snapshot} busy={busy} act={act} />}
@@ -426,10 +427,13 @@ function LessonRow({ lesson, courseId, busy, act }: { lesson: AdminLesson; cours
   </div>;
 }
 
-function CommunityAdmin({ snapshot, busy, act }: AdminSectionProps) {
+function CommunityAdmin({ snapshot, busy, act, readOnly }: AdminSectionProps & { readOnly?: boolean }) {
   const [categoryName, setCategoryName] = useState("");
+  const [scheduleDirty, setScheduleDirty] = useState(false);
+  useDraftGuard(scheduleDirty);
   return <section className="admin-panel">
     <SectionHeading icon={<Megaphone size={19} />} title="Community and moderation" detail="Control channels, announcements, pinned posts, and member reports." />
+    <CommunityScheduler communityId={snapshot.communityId} categories={snapshot.categories} members={snapshot.members} readOnly={readOnly} onDirtyChange={setScheduleDirty} onRun={(label, action, success) => act(label, action, success, false)} />
     <details className="admin-composer"><summary><Plus size={16} /> Add channel</summary><form onSubmit={(event) => { event.preventDefault(); if (!categoryName.trim()) return; void act("category", () => saveAdminCategory({ name: categoryName, sortOrder: snapshot.categories.length }), "Channel created.").then((saved) => { if (saved) setCategoryName(""); }); }}><label>Channel name<input value={categoryName} onChange={(event) => setCategoryName(event.target.value)} maxLength={40} required /></label><button className="secondary-button" disabled={busy === "category"}><Plus size={15} /> Add channel</button></form></details>
     <div className="admin-channel-list">{snapshot.categories.map((category) => <div key={category.id}><span><strong>{category.name}</strong><small>{category.memberCanPost ? "Members can post" : "Admins only"}</small></span><button disabled={busy === `category-${category.id}`} onClick={() => void act(`category-${category.id}`, () => saveAdminCategory({ ...category, memberCanPost: !category.memberCanPost }), category.memberCanPost ? `${category.name} is now admin-only.` : `Members can now post in ${category.name}.`)}>{category.memberCanPost ? "Restrict" : "Allow members"}</button></div>)}</div>
     <h3 className="admin-list-title">Reports</h3>
