@@ -234,6 +234,24 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .billing-plan .secondary-button { grid-column: 1/3; margin: 0; }
 
 /* Desktop workspace */
+.desktop-nav-toggle { display: inline-flex; width: 48px; min-height: 44px; flex-shrink: 0; align-items: center; justify-content: center; gap: 10px; margin: 8px auto 0; border-radius: 7px; background: transparent; color: var(--turf-dark); font: inherit; font-size: .72rem; font-weight: 700; }
+.desktop-nav-toggle:hover { background: var(--chalk); }
+.desktop-nav-toggle span { display: none; }
+@media (min-width: 961px) {
+  .app-shell.desktop-nav-expanded { grid-template-columns: 234px minmax(0,1fr); }
+  .desktop-nav-expanded .desktop-brand img { width: 128px; flex-basis: 128px; }
+  .desktop-nav-expanded .desktop-nav-toggle,
+  .desktop-nav-expanded .desktop-new-calculation,
+  .desktop-nav-expanded .desktop-settings { width: calc(100% - 24px); justify-content: flex-start; gap: 10px; padding: 0 12px; }
+  .desktop-nav-expanded .desktop-nav-toggle span,
+  .desktop-nav-expanded .desktop-new-calculation span,
+  .desktop-nav-expanded .desktop-settings span,
+  .desktop-nav-expanded .desktop-nav-item span { display: inline; font-size: .72rem; font-weight: 700; }
+  .desktop-nav-expanded .desktop-nav-item { width: 100%; grid-template-columns: 20px minmax(0,1fr); justify-items: start; gap: 10px; padding: 0 12px; text-align: left; }
+  .desktop-nav-expanded .desktop-nav-item svg { flex-shrink: 0; }
+  .desktop-nav-expanded .desktop-sidebar-footer { padding-right: 4px; padding-left: 4px; }
+}
+
 .desktop-sidebar { position: sticky; top: 16px; display: flex; height: calc(100dvh - 32px); min-height: 700px; flex-direction: column; overflow: hidden; border: 1px solid rgba(0,49,19,.14); border-top: 4px solid var(--lime); border-radius: 8px; background: var(--paper); box-shadow: 0 12px 38px rgba(31,42,43,.08); }
 .desktop-brand { display: flex; align-items: center; justify-content: center; padding: 18px 8px 16px; border-bottom: 1px solid var(--line); }
 .desktop-brand img { width: 48px; height: auto; flex: 0 0 48px; }

@@ -31,6 +31,7 @@ import {
   LockKeyhole,
   Map,
   MapPin,
+  Menu,
   Package,
   Plus,
   Ruler,
@@ -184,6 +185,7 @@ function CertificateVerificationPage({ code }: { code: string }) {
 }
 
 function App() {
+  const [desktopNavOpen, setDesktopNavOpen] = useState(true);
   const [termsConsent] = useState(() => { try { return createTermsConsent(window.localStorage); } catch { return createTermsConsent(); } });
   const [termsAccepted, setTermsAccepted] = useState(() => termsConsent.granted());
   const [termsUserId, setTermsUserId] = useState<string | null>(null);
@@ -991,13 +993,14 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell${desktopNavOpen ? " desktop-nav-expanded" : ""}`}>
       <aside className="desktop-sidebar" aria-label="Workspace navigation">
         <div className="desktop-brand">
           <img src="/dirty-turf-logo.png" alt="Dirty Turf" />
         </div>
+        <button className="desktop-nav-toggle" aria-label={desktopNavOpen ? "Collapse navigation" : "Expand navigation"} aria-expanded={desktopNavOpen} aria-controls="desktop-app-navigation" onClick={() => setDesktopNavOpen(open => !open)} title={desktopNavOpen ? "Collapse navigation" : "Expand navigation"}><Menu size={19} /><span>Collapse menu</span></button>
         <button className="desktop-new-calculation" onClick={() => openQuote("manual")} aria-label="New calculation" title="New calculation"><Plus size={18} /><span>New calculation</span></button>
-        <nav className="desktop-nav" aria-label="App sections">
+        <nav id="desktop-app-navigation" className="desktop-nav" aria-label="App sections">
           <DesktopNavItem icon={<Home size={19} />} label="Dashboard" active={activeView === "home"} onClick={() => changeView("home")} />
           <DesktopNavItem icon={<BookOpen size={19} />} label="Academy" active={["learn", "community", "events"].includes(activeView)} onClick={() => changeView("learn")} />
           {!Capacitor.isNativePlatform() && <DesktopNavItem icon={<TrendingUp size={19} />} label="Grow your business" active={activeView === "grow"} onClick={() => changeView("grow")} />}
