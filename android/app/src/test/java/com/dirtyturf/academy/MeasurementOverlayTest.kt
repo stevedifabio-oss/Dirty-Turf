@@ -90,4 +90,32 @@ class MeasurementOverlayTest {
         assertEquals(MeasurementOverlay(), projectMeasurementOverlay(points, floatArrayOf(), identity, 100f, 100f))
         assertEquals(MeasurementOverlay(), projectMeasurementOverlay(points, identity, identity.copyOf().apply { this[0] = Float.NaN }, 100f, 100f))
     }
+
+    @Test fun previewsTheNextEdgeWithoutCommittingAFlagOrClosingAPolygon() {
+        val saved = listOf(MeasurementPoint(-0.5f, 0f, 0f))
+        val result = projectMeasurementOverlay(saved, identity, identity, 200f, 100f,
+            previewPoint = MeasurementPoint(0.5f, 0f, 0f))
+        assertEquals(1, result.points.size)
+        assertTrue(result.segments.isEmpty())
+        assertEquals(50f, result.previewSegment!!.start.x, 0.001f)
+        assertEquals(150f, result.previewSegment!!.end.x, 0.001f)
+        assertEquals(1, saved.size)
+    }
+
+    @Test fun liveTargetMovesAndDisappearsWithoutLeavingAnOldEdge() {
+        val saved = listOf(MeasurementPoint(0f, 0f, 0f))
+        val first = projectMeasurementOverlay(saved, identity, identity, 200f, 100f, MeasurementPoint(0.2f, 0f, 0f))
+        val moved = projectMeasurementOverlay(saved, identity, identity, 200f, 100f, MeasurementPoint(0.8f, 0f, 0f))
+        assertTrue(moved.previewSegment!!.end.x > first.previewSegment!!.end.x)
+        assertEquals(null, projectMeasurementOverlay(saved, identity, identity, 200f, 100f).previewSegment)
+        assertEquals(null, projectMeasurementOverlay(emptyList(), identity, identity, 200f, 100f, MeasurementPoint(0f, 0f, 0f)).previewSegment)
+    }
+
+    @Test fun clipsTheLiveEdgeAndRejectsInvalidPreviewTargets() {
+        val saved = listOf(MeasurementPoint(0f, 0f, -2f))
+        val result = projectMeasurementOverlay(saved, identity, perspective, 200f, 100f, MeasurementPoint(0.5f, 0f, 0.5f))
+        assertTrue(result.previewSegment!!.end.x.isFinite())
+        assertTrue(result.previewSegment!!.end.x in 0f..200f)
+        assertEquals(null, projectMeasurementOverlay(saved, identity, perspective, 200f, 100f, MeasurementPoint(Float.NaN, 0f, 0f)).previewSegment)
+    }
 }

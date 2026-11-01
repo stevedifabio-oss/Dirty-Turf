@@ -41,9 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -53,6 +51,7 @@ import com.google.ar.core.Anchor
 import com.google.ar.core.Config
 import com.google.ar.core.DepthPoint
 import com.google.ar.core.Frame
+import com.google.ar.core.HitResult
 import com.google.ar.core.Plane
 import com.google.ar.core.Point
 import com.google.ar.core.TrackingState
@@ -132,7 +131,7 @@ private fun LiveMeasureScreen(
     val viewMatrix = remember { FloatArray(16) }
     val projectionMatrix = remember { FloatArray(16) }
     var status by remember {
-        mutableStateOf("Move slowly, aim the reticle at the first turf corner, then add a point.")
+        mutableStateOf("Move slowly, aim the reticle at the first turf corner, then add a flag.")
     }
 
     DisposableEffect(Unit) {
@@ -161,11 +160,11 @@ private fun LiveMeasureScreen(
 
     fun updateStatus() {
         status = when {
-            worldPoints.size < 3 -> "Point ${worldPoints.size} placed. Move to the next turf corner."
+            worldPoints.size < 3 -> "Flag ${worldPoints.size} placed. Move to the next turf corner."
             else -> {
                 val squareFeet = polygonAreaSquareMeters(worldPoints) * 10.7639104167
                 val feet = polygonPerimeterMeters(worldPoints) * 3.280839895
-                "${worldPoints.size} points · ${formatOneDecimal(squareFeet)} sq ft · ${formatOneDecimal(feet)} ft perimeter"
+                "${worldPoints.size} flags · ${formatOneDecimal(squareFeet)} sq ft · ${formatOneDecimal(feet)} ft perimeter"
             }
         }
     }
@@ -181,16 +180,7 @@ private fun LiveMeasureScreen(
         }
         val centerX = viewportSize.width / 2f
         val centerY = viewportSize.height / 2f
-        val hit = try {
-            frame.hitTest(centerX, centerY).firstOrNull { result ->
-                when (val trackable = result.trackable) {
-                    is Plane -> trackable.trackingState == TrackingState.TRACKING && trackable.isPoseInPolygon(result.hitPose)
-                    is DepthPoint -> true
-                    is Point -> true
-                    else -> false
-                }
-            }
-        } catch (_: Exception) { null }
+        val hit = findMeasurementHit(frame, centerX, centerY)
         if (hit == null) {
             status = "No turf surface found at the reticle. Aim at a textured area and try again."
             return
@@ -201,7 +191,7 @@ private fun LiveMeasureScreen(
         if (anchor == null) {
             latestFrame = null
             isTracking = false
-            status = "Tracking changed. Move the phone slowly, then try the point again."
+            status = "Tracking changed. Move the phone slowly, then try the flag again."
             return
         }
         anchors.add(anchor)
@@ -272,6 +262,8 @@ private fun LiveMeasureScreen(
                                 projectMeasurementOverlay(
                                     worldPoints.map { MeasurementPoint(it.x, it.y, it.z) },
                                     viewMatrix, projectionMatrix, viewportSize.width, viewportSize.height,
+                                    previewPoint = findMeasurementHit(frame, viewportSize.width / 2f, viewportSize.height / 2f)
+                                        ?.hitPose?.let { MeasurementPoint(it.tx(), it.ty(), it.tz()) },
                                 )
                             } else MeasurementOverlay()
                         } catch (failure: Exception) {
@@ -283,17 +275,7 @@ private fun LiveMeasureScreen(
         }
 
         Canvas(Modifier.fillMaxSize()) {
-            overlay.segments.forEach { segment ->
-                val start = Offset(segment.start.x, segment.start.y)
-                val end = Offset(segment.end.x, segment.end.y)
-                drawLine(Color.Black.copy(alpha = 0.65f), start, end, strokeWidth = 5.dp.toPx())
-                drawLine(Color.White, start, end, strokeWidth = 3.dp.toPx())
-            }
-            overlay.points.forEach { point ->
-                val center = Offset(point.x, point.y)
-                drawCircle(Color(0xFF78C12E), radius = 6.dp.toPx(), center = center)
-                drawCircle(Color.White, radius = 6.dp.toPx(), center = center, style = Stroke(2.dp.toPx()))
-            }
+            drawMeasurementBoundary(overlay)
         }
 
         Surface(
@@ -344,7 +326,7 @@ private fun LiveMeasureScreen(
                     worldPoints = emptyList()
                     cameraAttempt += 1
                     cameraFailed = false
-                    status = "Move slowly, aim the reticle at the first turf corner, then add a point."
+                    status = "Move slowly, aim the reticle at the first turf corner, then add a flag."
                 })
             }
             Button(
@@ -357,7 +339,7 @@ private fun LiveMeasureScreen(
                 ),
                 shape = RoundedCornerShape(8.dp),
             ) {
-                Text("Add point", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("Add flag", fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
             Spacer(modifier = Modifier.height(8.dp))
             Row(
@@ -389,6 +371,18 @@ private fun SecondaryAction(
 }
 
 private fun com.google.ar.core.Pose.toPosition() = Position(x = tx(), y = ty(), z = tz())
+
+/** Preview and placement must aim at the same surface, without creating preview anchors. */
+private fun findMeasurementHit(frame: Frame, x: Float, y: Float): HitResult? = try {
+    frame.hitTest(x, y).firstOrNull { result ->
+        when (val trackable = result.trackable) {
+            is Plane -> trackable.trackingState == TrackingState.TRACKING && trackable.isPoseInPolygon(result.hitPose)
+            is DepthPoint -> true
+            is Point -> true
+            else -> false
+        }
+    }
+} catch (_: Exception) { null }
 
 private fun detachMeasurementAnchor(anchor: Anchor) {
     try { anchor.detach() } catch (_: Exception) { /* The failed session may already be closed. */ }
