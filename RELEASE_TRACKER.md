@@ -2,6 +2,14 @@
 
 Maintained with each release. Canonical: https://github.com/stevedifabio-oss/Dirty-Turf.
 
+## Email/password sign-in and required signup profiles — November 1, 2026
+
+Prepared for canonical GitHub → Netlify publication. Sign-in defaults to email/password, with Forgot password, Create an account and the existing optional email link. Signup creates only an Auth login; email verification precedes required name, private phone, city/region/country, profile photo, short introduction and turf-cleaning experience (Just started / Under 2 years / Over 2 years). Password recovery uses the existing PKCE/native callback path and an authenticated new-password form. Existing accounts retain access; paid entitlements and roles are unchanged.
+
+Migration 20261101230938_member_signup_profiles.sql adds private own-account profile storage, upload ownership controls and later member-provisioning profile copying. It must be applied before the frontend release. No pending membership prices, payment activation, admin controls, course editing/imports or notification delivery are included. Native apps require a subsequent tested store build; the frozen Android 1.0.1/13 candidate is unchanged.
+
+Release verification and hosted migration state are recorded with the publishing PR. Local verification: 44 focused account/profile/workspace tests and 19 isolated PostgreSQL assertions over 57 migrations passed, plus type, schema, store metadata, secrets, build and PWA checks. Full Windows suite has existing POSIX permission/symlink/video-helper failures and one concurrent import timeout; the focused workspace rerun passes. Publication requires green canonical Linux CI. Dashboard read-back confirmed email signups and confirmation enabled, approved website/native redirects, custom SMTP enabled, and confirmation/reset templates using ConfirmationURL. No Auth configuration was changed. Disconnected development previews use ?auth-preview=1 and ?profile-preview=1 without Supabase configuration. Live account-email and photo acceptance require a signed-in test member; automated tests use isolated fixtures.
+
 ## Handoff batch — 29 October 2026
 
 The handoff branch `codex/steve-maintenance-handoff-20261029` was reconciled from canonical `67d819c7f8af6fc2a53bb08c8c91a364710a7996` (PR #40), then merged through [PR #41](https://github.com/stevedifabio-oss/Dirty-Turf/pull/41) as `ea9ff41e5e1c7490dcb879bc7c172ba0e56155dc`. Steve should open current canonical **`main`** for maintenance.

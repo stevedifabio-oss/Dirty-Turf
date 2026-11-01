@@ -1,5 +1,7 @@
 import { communityAvailable, featureAvailable, courseAvailable, type AccessState } from "./lib/academyAccess";
 import { AccessRequired, AvailableUpgrades } from "./components/AccessOffers";
+import { AccountEntry, AccountEntryExample, PasswordResetForm } from "./components/AccountEntry";
+import { MemberProfileBoundary, MemberProfileExample } from "./components/MemberProfileOnboarding";
 import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Capacitor } from "@capacitor/core";
@@ -104,7 +106,7 @@ import { createWorkspaceContinuity } from "./lib/workspaceContinuity";
 import { createWorkspaceSession } from "./lib/workspaceSession";
 import { createTermsConsent } from "./lib/termsConsent";
 import { clearNativePushForSignOut, refreshNativePush, resolveNativePushTarget, startNativePush } from "./lib/nativePush";
-import { CommunityTermsGate, TermsChoice } from "./components/TermsConsent";
+import { CommunityTermsGate } from "./components/TermsConsent";
 import { calculateQuote, INFILL_RATES } from "./lib/quote";
 import { useModalDialog } from "./lib/useModalDialog";
 import { AcademyView } from "./components/Academy";
@@ -189,6 +191,7 @@ function App() {
   const [termsConsent] = useState(() => { try { return createTermsConsent(window.localStorage); } catch { return createTermsConsent(); } });
   const [termsAccepted, setTermsAccepted] = useState(() => termsConsent.granted());
   const [termsUserId, setTermsUserId] = useState<string | null>(null);
+  const [recoveryUserId, setRecoveryUserId] = useState<string | null>(null);
   const [pendingPushId, setPendingPushId] = useState<string | null>(null);
   const [nativeConsentPending, setNativeConsentPending] = useState(false);
   const nativeConsentResumeRef = useRef<(() => Promise<void>) | undefined>(undefined);
@@ -583,7 +586,9 @@ function App() {
         signingOut = false;
         signOutRevision += 1;
       }
-      const action = session.authChanged(event, authSession?.user.id ?? null);
+      if (event === "SIGNED_OUT") setRecoveryUserId(null);
+      if (authSession?.user.id && (event === "PASSWORD_RECOVERY" || new URLSearchParams(window.location.search).get("auth") === "recovery")) setRecoveryUserId(authSession.user.id);
+      const action = session.authChanged(event === "PASSWORD_RECOVERY" ? "SIGNED_IN" : event, authSession?.user.id ?? null);
       if (event === "SIGNED_OUT") authUserId = null;
       if (action === "ignore") {
         // Same-user token confirmations may extend the token lifetime. An
@@ -894,6 +899,7 @@ function App() {
     setPendingPushId(null);
     setTermsAccepted(termsConsent.identify(null));
     setTermsUserId(null);
+    setRecoveryUserId(null);
     setNativeConsentPending(false);
     nativeConsentResumeRef.current = undefined;
     continuity.current.revoke();
@@ -980,8 +986,12 @@ function App() {
   if (!termsAccepted && (termsUserId || nativeConsentPending || workspaceAccess.status === "member" || workspaceAccess.status === "preview")) {
     return <CommunityTermsGate onAccept={() => changeTermsConsent(true)} onSignOut={handleSignOut} pendingLink={nativeConsentPending} />;
   }
+  if (recoveryUserId && termsUserId === recoveryUserId) return <PasswordResetForm key={recoveryUserId} userId={recoveryUserId} onSignOut={() => void handleSignOut()} onComplete={() => {
+    const url = new URL(window.location.href); url.searchParams.delete("auth"); window.history.replaceState(null, "", url.toString());
+    setRecoveryUserId(null); setToast("Password updated. Use your new password on all your devices."); refreshWorkspaceRef.current();
+  }} />;
   if (nativeConsentPending || workspaceAccess.status === "loading" || workspaceAccess.status === "signed_out" || workspaceAccess.status === "no_access" || workspaceAccess.status === "error") {
-    return <LaunchAccessGate
+    return <MemberProfileBoundary userId={termsAccepted ? termsUserId : null} onSignOut={() => void handleSignOut()}><LaunchAccessGate
       status={nativeConsentPending ? "loading" : workspaceAccess.status as "loading" | "signed_out" | "no_access" | "error"}
       onConsentChange={changeTermsConsent}
       authMessage={toast}
@@ -989,11 +999,11 @@ function App() {
       onPasswordSignIn={handlePasswordSignIn}
       onSignOut={handleSignOut}
       onRetry={() => { setWorkspaceAccess({ status: "loading" }); setWorkspaceRefreshToken((token) => token + 1); }}
-    />;
+    /></MemberProfileBoundary>;
   }
 
   return (
-    <main className={`app-shell${desktopNavOpen ? " desktop-nav-expanded" : ""}`}>
+    <MemberProfileBoundary userId={termsAccepted ? termsUserId : null} onSignOut={() => void handleSignOut()}><main className={`app-shell${desktopNavOpen ? " desktop-nav-expanded" : ""}`}>
       <aside className="desktop-sidebar" aria-label="Workspace navigation">
         <div className="desktop-brand">
           <img src="/dirty-turf-logo.png" alt="Dirty Turf" />
@@ -1056,7 +1066,7 @@ function App() {
         {hubSection && <Suspense fallback={<div className="sheet-loading" role="status">Loading workspace...</div>}><HubSheet readOnly={readOnly} section={hubSection} onClose={() => setHubSection(null)} onToast={setToast} onRequestMagicLink={sendMagicLink} onSignOut={handleSignOut} dataMode={dataMode} canManage={canManage} notifications={notifications} onOpenNotification={openNotification} onMarkAllNotificationsRead={markEveryNotificationRead} primaryNavigation={<PrimaryNavigation activeView={activeView} settingsOpen onNavigate={changeView} onOpenSettings={openSettings} />} /></Suspense>}
         {toast && <div className="toast" role="status"><CheckCircle2 size={18} />{toast}</div>}
       </section>
-    </main>
+    </main></MemberProfileBoundary>
   );
 }
 
@@ -1077,35 +1087,10 @@ function LaunchAccessGate({
   onRetry: () => void;
   onConsentChange: (accepted: boolean) => void;
 }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [passwordMode, setPasswordMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  const [agreed, setAgreed] = useState(false);
   const paymentLink = academyPaymentLink();
   const checkoutNotice = checkoutReturnNotice(window.location.search);
-
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (busy || !agreed || !email.trim() || (passwordMode && !password)) return;
-    setBusy(true);
-    setMessage("");
-    try {
-      if (passwordMode) {
-        await onPasswordSignIn(email.trim(), password);
-      } else {
-        await onRequestMagicLink(email.trim());
-        setMessage("If this email has Academy access, a secure sign-in link is on the way.");
-      }
-    } catch {
-      setMessage(passwordMode
-        ? "Those credentials could not be verified. Check them and try again."
-        : "The sign-in link could not be sent. Please try again.");
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const manageBilling = async () => {
     setBusy(true);
@@ -1135,19 +1120,8 @@ function LaunchAccessGate({
         <button className="secondary-button wide" onClick={() => void onSignOut()}>Use a different email</button>
       </> : status === "signed_out" ? <>
         <p className="kicker">Dirty Turf Academy</p>
-        <h1>Welcome back.</h1>
-        <p className="launch-copy">{passwordMode
-          ? "Sign in with the reusable credentials provided for review or support."
-          : "Enter the email connected to your Academy membership. No password is needed."}</p>
-        <form className="access-form" onSubmit={submit}>
-          <label>Email address<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="operator@company.com" autoComplete="email" inputMode="email" required /></label>
-          {passwordMode && <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required /></label>}
-          <TermsChoice checked={agreed} disabled={busy} onChange={accepted => { setAgreed(accepted); onConsentChange(accepted); }} />
-          <button className="primary-button wide" disabled={busy || !agreed || !email.trim() || (passwordMode && !password)}>{busy ? (passwordMode ? "Signing in..." : "Sending...") : (passwordMode ? "Sign in" : "Email me a sign-in link")}</button>
-        </form>
-        <button className="launch-auth-switch" type="button" disabled={busy} onClick={() => { setPasswordMode((current) => !current); setPassword(""); setMessage(""); }}>
-          {passwordMode ? "Email me a sign-in link instead" : "Use a password"}
-        </button>
+        <AccountEntry onPasswordSignIn={onPasswordSignIn} onRequestMagicLink={onRequestMagicLink} onConsentChange={onConsentChange} />
+        {Capacitor.isNativePlatform() && <p className="launch-copy">You’ll stay signed in on this phone. You can sign out in Settings.</p>}
         {paymentLink && <div className="launch-purchase"><span>Not a member yet?</span><a className="secondary-button wide" href={paymentLink}><CreditCard size={17} /> Join Academy on the web</a></div>}
       </> : <>
         <p className="kicker">Account found</p>
@@ -1342,7 +1316,7 @@ const appWindow = window as Window & { __dirtyTurfRoot?: ReturnType<typeof creat
 appWindow.__dirtyTurfRoot ??= createRoot(rootElement);
 const publicCertificateCode = new URLSearchParams(window.location.search).get("certificate");
 const membershipRoute = billingPageRoute(window.location.pathname, Capacitor.isNativePlatform());
-appWindow.__dirtyTurfRoot.render(<AppErrorBoundary>{membershipRoute
+appWindow.__dirtyTurfRoot.render(<AppErrorBoundary>{import.meta.env.DEV && !supabase && new URLSearchParams(window.location.search).has("auth-preview") ? <AccountEntryExample /> : import.meta.env.DEV && !supabase && new URLSearchParams(window.location.search).has("profile-preview") ? <MemberProfileExample /> : membershipRoute
   ? <Suspense fallback={<main className="launch-gate"><section className="launch-card" role="status"><p>Loading membership…</p></section></main>}><MembershipPages route={membershipRoute} /></Suspense>
   : publicCertificateCode ? <CertificateVerificationPage code={publicCertificateCode} /> : <App />}</AppErrorBoundary>);
 

@@ -128,7 +128,8 @@ describe("community terms entry consent", () => {
     await expect(gate.props.onRequestMagicLink("member@example.com")).rejects.toThrow("terms");
     await expect(gate.props.onPasswordSignIn("member@example.com", "fixture-password")).rejects.toThrow("terms");
     expect(mock.requestMagicLink).not.toHaveBeenCalled(); expect(mock.passwordSignIn).not.toHaveBeenCalled();
-    const draw = renderGate(gate); let tree = draw();
+    const draw = renderGate(component(renderGate(gate)(), "AccountEntry")!); let tree = draw();
+    elements(tree).find(e => e.type === "button" && e.props.children === "Email me a sign-in link instead")!.props.onClick(); tree = draw();
     expect(component(tree, "TermsChoice")!.props.checked).toBe(false);
     elements(tree).find(e => e.type === "input" && e.props.type === "email")!.props.onChange({ target: { value: "member@example.com" } });
     tree = draw(); expect(elements(tree).find(e => e.type === "button" && e.props.className === "primary-button wide")!.props.disabled).toBe(true);
@@ -427,5 +428,26 @@ describe("actual workspace resume and offline flow", () => {
     expect(component(searching, "GlobalSearch")).toBeDefined();
     expect(component(searching, "AcademyView")?.key).toBe(before.key);
     expect(elements(searching).some(e => e.type === "div" && e.props.hidden === true && component(e, "AcademyView"))).toBe(true);
+  });
+});
+
+describe("password recovery entry", () => {
+  it("opens password reset from a verified recovery event even without paid access", async () => {
+    mock.access.mockResolvedValue({ status: "no_access" });
+    render(); mock.auth!("PASSWORD_RECOVERY", { user: { id: "member-one" }, expires_at: Date.now() / 1000 + 3600 });
+    await vi.advanceTimersByTimeAsync(0); await flush();
+    expect(component(render(), "PasswordResetForm")?.props.userId).toBe("member-one");
+    expect(component(render(), "LaunchAccessGate")).toBeUndefined();
+    mock.auth!("SIGNED_OUT", null); await vi.advanceTimersByTimeAsync(0); await flush();
+    expect(component(render(), "PasswordResetForm")).toBeUndefined();
+  });
+  it("requires terms before presenting the recovery form", async () => {
+    consentStorage.clear(); render();
+    mock.auth!("PASSWORD_RECOVERY", { user: { id: "member-one" }, expires_at: Date.now() / 1000 + 3600 });
+    await vi.advanceTimersByTimeAsync(0); await flush();
+    expect(component(render(), "CommunityTermsGate")).toBeDefined();
+    expect(component(render(), "PasswordResetForm")).toBeUndefined();
+    await agreeForFixture();
+    expect(component(render(), "PasswordResetForm")?.props.userId).toBe("member-one");
   });
 });

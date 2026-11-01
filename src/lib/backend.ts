@@ -1010,7 +1010,7 @@ export async function loadMembers(seed: Member[]): Promise<Member[]> {
   const [membersResult, followsResult] = await Promise.all([
     supabase!
     .from("academy_members")
-    .select("id,display_name,avatar_url,company_name,location,role,level,points,last_seen_at")
+    .select("id,display_name,avatar_url,company_name,location,about,role,level,points,last_seen_at")
     .eq("academy_community_id", context.communityId)
     .eq("status", "active")
     .order("points", { ascending: false }),
@@ -1030,6 +1030,7 @@ export async function loadMembers(seed: Member[]): Promise<Member[]> {
     avatarUrl: row.avatar_url ?? undefined,
     company: row.company_name,
     location: row.location,
+    about: row.about || undefined,
     role: academyRole(row.role),
     level: Number(row.level),
     points: Number(row.points),

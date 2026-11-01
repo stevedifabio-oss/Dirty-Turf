@@ -167,6 +167,7 @@ export type Member = {
   points: number;
   following: boolean;
   isSelf?: boolean;
+  about?: string;
   online?: boolean;
   avatarUrl?: string;
 };
