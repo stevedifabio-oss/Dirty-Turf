@@ -2,6 +2,10 @@
 
 Maintained with each release. Canonical: https://github.com/stevedifabio-oss/Dirty-Turf.
 
+## Simple Sign in / Join entry — November 1, 2026
+
+Steve requested one sign-in and one join option. Removed the email-link alternative and the duplicate Join Academy purchase link from the signed-out page. The page now has email/password Sign in, Forgot password, and one Join button opening account creation. Recovery, signup profiles, Terms and existing access rules are preserved. Web publication follows canonical GitHub → Netlify; installed native frontends require the next store build.
+
 ## Email/password sign-in and required signup profiles — November 1, 2026
 
 Prepared for canonical GitHub → Netlify publication. Sign-in defaults to email/password, with Forgot password, Create an account and the existing optional email link. Signup creates only an Auth login; email verification precedes required name, private phone, city/region/country, profile photo, short introduction and turf-cleaning experience (Just started / Under 2 years / Over 2 years). Password recovery uses the existing PKCE/native callback path and an authenticated new-password form. Existing accounts retain access; paid entitlements and roles are unchanged.
