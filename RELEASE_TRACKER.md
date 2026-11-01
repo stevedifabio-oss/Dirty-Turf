@@ -56,3 +56,8 @@ Oct22 final candidates were iOS17/Android12. Earlier build15 rejection, build16 
 ## Turf Scanner web publication candidate — November 1, 2026
 
 Dashboard image, product wording and zero calculation defaults only. New membership billing, backend, course/notification and native work remain held.
+
+
+## Desktop navigation publication candidate — November 1, 2026
+
+Desktop menu opens expanded with labels and a keyboard-accessible collapse/reopen button. Verified in local desktop and phone previews. This release excludes pending membership, master-admin backend, course and native changes.
