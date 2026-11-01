@@ -6,6 +6,10 @@ const mocks = vi.hoisted(() => ({
   getLaunchUrl: vi.fn(),
   remove: vi.fn(),
   signOut: vi.fn(),
+  startAutoRefresh: vi.fn(),
+  stopAutoRefresh: vi.fn(),
+  getState: vi.fn(),
+  removeState: vi.fn(),
 }));
 vi.mock("@capacitor/core", () => ({ Capacitor: { isNativePlatform: () => true } }));
 vi.mock("@capacitor/app", () => ({ App: mocks }));
@@ -21,7 +25,11 @@ beforeAll(async () => {
 });
 beforeEach(() => {
   vi.resetAllMocks();
-  mocks.addListener.mockResolvedValue({ remove: mocks.remove });
+  mocks.addListener.mockImplementation(async (event: string) => ({ remove: event === "appUrlOpen" ? mocks.remove : mocks.removeState }));
+  mocks.getState.mockResolvedValue({ isActive: true });
+  mocks.startAutoRefresh.mockResolvedValue(undefined);
+  mocks.stopAutoRefresh.mockResolvedValue(undefined);
+  mocks.removeState.mockResolvedValue(undefined);
   mocks.getLaunchUrl.mockResolvedValue(undefined);
   mocks.exchangeCodeForSession.mockResolvedValue({ error: null });
   mocks.signOut.mockResolvedValue({ error: null });

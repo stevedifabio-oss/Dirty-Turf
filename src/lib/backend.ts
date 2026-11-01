@@ -11,6 +11,7 @@ import { isRemovedCommunityComment } from "./communitySafety";
 import { clampProgress, combinedCourseProgress } from "./courseProgress";
 import { propertyGeocodeResults, type PropertyGeocodeResult } from "./mapGeocode";
 import { memberMagicLinkOptions, normalizeLoginEmail, webMagicLinkReturnUrl } from "./memberAuth";
+import { watchNativeSessionRefresh } from "./nativeSessionRefresh";
 
 const JOBS_KEY = "dirty-turf-jobs-v3";
 const POSTS_KEY = "dirty-turf-posts-v1";
@@ -281,9 +282,17 @@ export async function initializeNativeAuth(onError: (message: string) => void = 
   };
 
   const listener = await App.addListener("appUrlOpen", ({ url }) => { void handleUrl(url); });
-  const launch = await App.getLaunchUrl();
-  await handleUrl(launch?.url);
-  return () => { disposed = true; deferredUrl = undefined; void listener.remove(); };
+  let disposeRefresh: () => void = () => undefined;
+  try {
+    disposeRefresh = await watchNativeSessionRefresh(supabase.auth, App, () => {
+      if (!disposed) onError("Your saved sign-in could not refresh. Check your connection and reopen the app.");
+    });
+    const launch = await App.getLaunchUrl();
+    await handleUrl(launch?.url);
+  } catch (error) {
+    disposed = true; void listener.remove(); disposeRefresh(); throw error;
+  }
+  return () => { disposed = true; deferredUrl = undefined; void listener.remove(); disposeRefresh(); };
 }
 
 export async function signOut() {
