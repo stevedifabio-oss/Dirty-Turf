@@ -3,9 +3,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 vi.mock("@capacitor/core", () => ({ Capacitor: { isNativePlatform: () => false } }));
 import { AccountEntry, PasswordResetForm } from "./AccountEntry";
 it("defaults to email and password with create account and recovery controls", () => {
-  const html = renderToStaticMarkup(<AccountEntry onPasswordSignIn={async () => undefined} onRequestMagicLink={async () => undefined} onConsentChange={() => undefined} />);
+  const html = renderToStaticMarkup(<AccountEntry onPasswordSignIn={async () => undefined} onConsentChange={() => undefined} />);
   expect(html).toContain('type="email"'); expect(html).toContain('autoComplete="username"'); expect(html).toContain('autoComplete="current-password"');
-  expect(html).toContain("Forgot password?"); expect(html).toContain("Create an account");
+  expect(html).toContain("Forgot password?"); expect(html).toContain(">Join</button>"); expect(html).not.toContain("Email me a sign-in link"); expect(html).not.toContain("Join Academy on the web");
   expect(html).not.toContain("How long have you been cleaning turf?");
 });
 it("uses new-password autofill and confirmation for recovery", () => {

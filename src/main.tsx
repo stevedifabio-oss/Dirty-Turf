@@ -1120,9 +1120,8 @@ function LaunchAccessGate({
         <button className="secondary-button wide" onClick={() => void onSignOut()}>Use a different email</button>
       </> : status === "signed_out" ? <>
         <p className="kicker">Dirty Turf Academy</p>
-        <AccountEntry onPasswordSignIn={onPasswordSignIn} onRequestMagicLink={onRequestMagicLink} onConsentChange={onConsentChange} />
+        <AccountEntry onPasswordSignIn={onPasswordSignIn} onConsentChange={onConsentChange} />
         {Capacitor.isNativePlatform() && <p className="launch-copy">You’ll stay signed in on this phone. You can sign out in Settings.</p>}
-        {paymentLink && <div className="launch-purchase"><span>Not a member yet?</span><a className="secondary-button wide" href={paymentLink}><CreditCard size={17} /> Join Academy on the web</a></div>}
       </> : <>
         <p className="kicker">Account found</p>
         <h1>Access is not active.</h1>

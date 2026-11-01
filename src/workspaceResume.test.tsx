@@ -129,17 +129,16 @@ describe("community terms entry consent", () => {
     await expect(gate.props.onPasswordSignIn("member@example.com", "fixture-password")).rejects.toThrow("terms");
     expect(mock.requestMagicLink).not.toHaveBeenCalled(); expect(mock.passwordSignIn).not.toHaveBeenCalled();
     const draw = renderGate(component(renderGate(gate)(), "AccountEntry")!); let tree = draw();
-    elements(tree).find(e => e.type === "button" && e.props.children === "Email me a sign-in link instead")!.props.onClick(); tree = draw();
     expect(component(tree, "TermsChoice")!.props.checked).toBe(false);
     elements(tree).find(e => e.type === "input" && e.props.type === "email")!.props.onChange({ target: { value: "member@example.com" } });
+    elements(tree).find(e => e.type === "input" && e.props.type === "password")!.props.onChange({ target: { value: "fixture-password" } });
     tree = draw(); expect(elements(tree).find(e => e.type === "button" && e.props.className === "primary-button wide")!.props.disabled).toBe(true);
     await elements(tree).find(e => e.type === "form")!.props.onSubmit({ preventDefault: vi.fn() });
     expect(mock.requestMagicLink).not.toHaveBeenCalled();
     component(tree, "TermsChoice")!.props.onChange(true); tree = draw();
     expect(elements(tree).find(e => e.type === "button" && e.props.className === "primary-button wide")!.props.disabled).toBe(false);
     await elements(tree).find(e => e.type === "form")!.props.onSubmit({ preventDefault: vi.fn() });
-    expect(mock.requestMagicLink).toHaveBeenCalledExactlyOnceWith("member@example.com");
-    await gate.props.onPasswordSignIn("member@example.com", "fixture-password");
+    expect(mock.requestMagicLink).not.toHaveBeenCalled();
     expect(mock.passwordSignIn).toHaveBeenCalledExactlyOnceWith("member@example.com", "fixture-password");
   });
   it("holds a returning member before protected reads until explicit current-version agreement", async () => {
