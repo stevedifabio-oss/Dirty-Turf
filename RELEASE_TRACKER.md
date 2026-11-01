@@ -52,3 +52,7 @@ Do not replay all local migrations against production. Existing hosted aliases i
 ## Historical evidence
 
 Oct22 final candidates were iOS17/Android12. Earlier build15 rejection, build16 testing, and Android10/11 preparation notes are superseded checkpoints. Older backend/runbook documents retain their original dates and do not establish today's publication, billing, recovery, or device-test state.
+
+## Turf Scanner web publication candidate — November 1, 2026
+
+Dashboard image, product wording and zero calculation defaults only. New membership billing, backend, course/notification and native work remain held.

@@ -141,12 +141,12 @@ const initialJobs: Job[] = [
 const defaultDraft: QuoteDraft = {
   address: "",
   mode: "camera",
-  length: 38,
-  width: 18,
-  cameraArea: 684,
-  mapArea: 684,
+  length: 0,
+  width: 0,
+  cameraArea: 0,
+  mapArea: 0,
   infillRate: 0.25,
-  serviceRate: 0.72,
+  serviceRate: 0,
 };
 
 const navTitles: Record<View, string> = {
@@ -795,7 +795,7 @@ function App() {
   const saveQuote = async () => {
     const accountGeneration = renderedCourseAccount;
     if (accountGeneration !== courseAccountGeneration.current) return;
-    if (draft.mode !== "manual" && !canMeasure) { setToast("Measuring tool access is required."); return; }
+    if (draft.mode !== "manual" && !canMeasure) { setToast("Turf Scanner access is required."); return; }
     if (quote.area <= 0) {
       setToast("Measure a turf area before saving.");
       return;
@@ -1178,8 +1178,8 @@ function HomeView({ jobs, openQuote, checks, setChecks, setToast, onGrow }: { jo
   return (
     <div className="view-content home-view">
       <section className="field-hero">
-        <div className="field-text"><p>Dirty Turf operator</p><h2>Measure it right. Quote the clean it actually needs.</h2><button className="hero-action" onClick={() => openQuote("camera")}><Camera size={17} /> Start measurement</button></div>
-        <div className="field-scanner" aria-hidden="true"><div className="scanner-grid" /><div className="scanner-chip">{latest ? `${formatNumber(latest.area)} sq ft` : "Ready to measure"}</div><div className="scanner-pin one" /><div className="scanner-pin two" /><div className="scanner-pin three" /></div>
+        <div className="field-text"><p>Turf Cleaning Operator</p><h2>Measure it right. Quote the clean it actually needs.</h2><button className="hero-action" onClick={() => openQuote("camera")}><Camera size={17} /> Start measurement</button></div>
+        <div className="field-scanner"><img src="/images/turf-scanner-yard-v1.png" alt="Turf cleaning operator measuring a yard with yellow boundary lines and a phone displaying 450 square feet" width="1536" height="1024" decoding="async" /></div>
       </section>
 
       <nav className="quick-actions" aria-label="Primary tools">
@@ -1259,13 +1259,13 @@ function QuoteSheet({ canMeasure, access, draft, setDraft, quote, photoUrl, setP
   return (
     <div className="sheet-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section ref={dialogRef} className="quote-sheet" role="dialog" aria-modal="true" aria-labelledby="quote-title">
-        <header className="sheet-header"><button className="bare-icon" aria-label="Close infill calculator" onClick={onClose} data-dialog-autofocus><ArrowLeft size={20} /></button><div><p>Measurement</p><h2 id="quote-title">Infill calculator</h2></div><button className="save-link" disabled={draft.mode !== "manual" && !canMeasure} onClick={onSave}>Save</button></header>
+        <header className="sheet-header"><button className="bare-icon" aria-label="Close infill calculator" onClick={onClose} data-dialog-autofocus><ArrowLeft size={20} /></button><div><p>Measure · Price · Infill</p><h2 id="quote-title">Turf Scanner</h2></div><button className="save-link" disabled={draft.mode !== "manual" && !canMeasure} onClick={onSave}>Save</button></header>
         <div className="sheet-body">
           <fieldset className="mode-fieldset"><legend>Measurement method</legend><div className="segmented-control"><ModeButton icon={<Camera size={17} />} label="Camera" active={draft.mode === "camera"} onClick={() => update("mode", "camera")} /><ModeButton icon={<Map size={17} />} label="Map" active={draft.mode === "map"} onClick={() => update("mode", "map")} /><ModeButton icon={<Ruler size={17} />} label="Manual" active={draft.mode === "manual"} onClick={() => update("mode", "manual")} /></div></fieldset>
           {draft.mode === "camera" && canMeasure && <LiveCameraMeasurement area={draft.cameraArea} onAreaChange={(value) => update("cameraArea", value)} photoUrl={photoUrl} changePhoto={changePhoto} />}
           {draft.mode === "manual" && <DimensionInputs draft={draft} update={update} />}
           {draft.mode === "map" && canMeasure && <Suspense fallback={<div className="map-loading" role="status">Loading property map...</div>}><MapMeasurement address={draft.address} area={draft.mapArea} onAddressChange={(value) => update("address", value)} onAreaChange={(value) => update("mapArea", value)} /></Suspense>}
-          {draft.mode !== "manual" && !canMeasure && <><AccessRequired title="Measuring tool access required">Camera and map measurements are not available with your current access. You can still enter dimensions manually.</AccessRequired><AvailableUpgrades access={access} kind="tool" feature="measuring_tool" /><button className="secondary-button wide" onClick={() => update("mode", "manual")}>Enter dimensions manually</button></>}
+          {draft.mode !== "manual" && !canMeasure && <><AccessRequired title="Turf Scanner access required">Camera and map measurements are not available with your current access. You can still enter dimensions manually.</AccessRequired><AvailableUpgrades access={access} kind="tool" feature="measuring_tool" /><button className="secondary-button wide" onClick={() => update("mode", "manual")}>Enter dimensions manually</button></>}
           {(draft.mode === "manual" || canMeasure) && <><section className="infill-controls"><label className="field-label">Infill rate<select value={draft.infillRate} onChange={(event) => update("infillRate", numberValue(event.target.value))}>{INFILL_RATES.map((rate) => <option key={rate} value={rate}>{rate.toFixed(2)} lb / sq ft</option>)}</select></label><NumberField label="What you charge" value={draft.serviceRate} prefix="$" suffix="/ sq ft" update={(value) => update("serviceRate", value)} /></section>
           <section className="infill-summary" aria-label="Infill calculation results"><div className="area-total"><span>Total turf area</span><strong>{formatNumber(quote.area)}</strong><small>square feet</small></div><div className="infill-result-grid"><div><span>Total infill</span><strong>{formatNumber(quote.infillPounds)} lb</strong></div><div><span>40-lb bags</span><strong>{quote.bags40}</strong></div><div><span>50-lb bags</span><strong>{quote.bags50}</strong></div></div><div className="customer-price"><span>Customer price</span><strong>{formatCurrency(quote.serviceTotal)}</strong></div></section></>}
         </div>
