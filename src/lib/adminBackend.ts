@@ -127,6 +127,7 @@ export type AdminCertificate = {
 };
 
 export type AdminSnapshot = {
+  canManageMembers?: boolean;
   communityId: string;
   organizationId: string;
   communityName: string;
@@ -149,6 +150,9 @@ type AdminContext = {
 
 export async function loadAdminSnapshot(): Promise<AdminSnapshot> {
   const context = await requireAdminContext();
+  const { data: memberPermission, error: memberPermissionError } = await supabase!.rpc("admin_can_manage_members", { p_community_id: context.communityId });
+  // Older backends fail closed until the owner-controls migration is deployed.
+  const canManageMembers = !memberPermissionError && memberPermission === true;
   const [courseResult, moduleResult, lessonResult, memberResult, inviteResult, enrollmentResult, progressResult, eventResult, rsvpResult, categoryResult, postResult, commentResult, reportResult, templateResult, certificateResult, quizResult] = await Promise.all([
     supabase!.from("courses").select("id,title,description,category,instructor_name,access_type,required_level,price_cents,sort_order,status").eq("academy_community_id", context.communityId).order("sort_order"),
     supabase!.from("course_modules").select("id,course_id,title,group_title,sort_order,drip_after_days,source_archived_at,source_visibility,sync_owner").order("sort_order"),
@@ -256,6 +260,7 @@ export async function loadAdminSnapshot(): Promise<AdminSnapshot> {
 
   return {
     communityId: context.communityId,
+    canManageMembers,
     organizationId: context.organizationId,
     communityName: context.communityName,
     courses,

@@ -2,6 +2,14 @@
 
 Maintained with each release. Canonical: https://github.com/stevedifabio-oss/Dirty-Turf.
 
+## Owner-only per-member complimentary access — November 1, 2026
+
+Web release candidate: Admin → Members shows free-access checkboxes inside each member record, with an optional expiration for new grants. Only the verified steve@dirtyturf.com master identity may manage members, invitations, course restrictions and complimentary grants; other managers retain their unrelated administration tools. Server authorization and invitation handling enforce the same rule as the interface.
+
+The owner-controls migration and separate owner_per_member_free_access migration add independent Community, Turf Scanner and course grants. Revoking a complimentary grant preserves other purchased/imported access and does not change billing. Complimentary Community access never implies course access; existing membership grants keep their current semantics. This release does not activate new Stripe prices, new checkout, separate-membership cutover, notifications or imports. Newly advertised add-on courses without content remain unavailable. Installed mobile frontends require a subsequent store build; server authorization changes apply immediately to older clients.
+
+The local example remains a disconnected development screen; live grants are managed from each member's Admin record. Verification and hosted migration/function/publication receipts are recorded in the publishing PR. Never replay the migrations directory: apply only the two reviewed owner migrations, accounting for the existing hosted aliases listed below and the profile migration alias 20261101233702.
+
 ## Simple Sign in / Join entry — November 1, 2026
 
 Steve requested one sign-in and one join option. Removed the email-link alternative and the duplicate Join Academy purchase link from the signed-out page. The page now has email/password Sign in, Forgot password, and one Join button opening account creation. Recovery, signup profiles, Terms and existing access rules are preserved. Web publication follows canonical GitHub → Netlify; installed native frontends require the next store build.
