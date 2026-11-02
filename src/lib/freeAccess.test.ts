@@ -20,8 +20,18 @@ describe("owner free access requests", () => {
     await expect(saveFreeAccess("member", "community", true, "2000-01-01")).rejects.toThrow("future");
     expect(rpc).not.toHaveBeenCalled();
     rpc.mockResolvedValue({ error: { message: "private detail" } });
-    await expect(saveFreeAccess("member", "community", true, null)).rejects.toThrow("owner permissions");
+    await expect(saveFreeAccess("member", "community", true, null)).rejects.toThrow("Reload free grants");
     await expect(loadFreeAccess("member")).rejects.not.toThrow("private detail");
+  });
+  it("explains an existing course restriction without blaming the owner's login", async () => {
+    rpc.mockResolvedValue({ error: { code: "P0001", message: "This course is blocked. Review its existing access restriction first." } });
+    await expect(saveFreeAccess("member", "course", true, null)).rejects.toThrow("Enable its checkbox under Course access restrictions below");
+  });
+  it("distinguishes authorization failures from service availability", async () => {
+    rpc.mockResolvedValue({ error: { code: "42501", message: "private detail" } });
+    await expect(saveFreeAccess("member", "community", true, null)).rejects.toThrow("steve@dirtyturf.com");
+    rpc.mockResolvedValue({ error: { code: "PGRST202", message: "private detail" } });
+    await expect(saveFreeAccess("member", "community", true, null)).rejects.toThrow("service is unavailable");
   });
   it("validates owner inventory rather than treating malformed responses as saved", async () => {
     rpc.mockResolvedValue({ data: [{ resource: "community", endsAt: null }], error: null });
