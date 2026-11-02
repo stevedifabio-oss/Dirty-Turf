@@ -294,6 +294,20 @@ describe("Admin Studio authoring interactions", () => {
     expect(backend.saveCourse).toHaveBeenCalledOnce();
     expect(backend.saveCourse.mock.calls[0][0]).toMatchObject({ title: "Additional specialist training", accessType: "purchase", priceCents: 14995, status: "draft" });
   });
+  it("publishes through the explicit action but refuses an empty formatted block", async () => {
+    const editor = await newLessonWorkspace();
+    editor.setTitle("Published instructions");
+    editor.setBlocks([{ id: "description", type: "legacy", html: "<p><br></p>" }]);
+    const publish = () => button(editor.render(), "Save & publish").props.onClick({ preventDefault: vi.fn(), currentTarget: { form: { reportValidity: () => true } } });
+    publish(); await flush();
+    expect(backend.saveLesson).not.toHaveBeenCalled();
+    expect(text(find(editor.render(), element => element.props.role === "alert"))).toContain("Add formatted text");
+    editor.setBlocks([{ id: "description", type: "legacy", html: "<h2>Inspect first</h2><p>Check the drainage.</p>" }]);
+    publish(); await flush();
+    expect(backend.saveLesson).toHaveBeenCalledOnce();
+    expect(backend.saveLesson.mock.calls[0][0]).toMatchObject({ title: "Published instructions", status: "published" });
+  });
+
   it("saves mixed text, video, photo and link blocks in their chosen order without uploading or storing preview URLs", async () => {
     const editor = await newLessonWorkspace();
     const blocks: LessonContentBlock[] = [

@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Eye, ImagePlus, Link2, Pencil, Plus, Trash2, Type, Undo2, Upload, Video } from "lucide-react";
 import { LessonContent } from "./LessonContent";
+import { LessonRichTextEditor } from "./LessonRichTextEditor";
+import { ReorderHandle } from "./ReorderHandle";
 import type { LessonContentBlock } from "../lib/lessonContent";
 import { ADMIN_LESSON_BLOCK_IMAGE_LIMIT_BYTES, ADMIN_LESSON_BLOCK_VIDEO_LIMIT_BYTES } from "../lib/lessonUploadLimits";
 
@@ -14,12 +16,14 @@ type Props = {
 };
 const kinds = [
   { type: "text", label: "Text", icon: Type, help: "Write instructions" },
+  { type: "legacy", label: "Formatted text", icon: Type, help: "Headings, lists and links" },
   { type: "video", label: "Video", icon: Video, help: "Upload or paste a link" },
   { type: "image", label: "Photo", icon: ImagePlus, help: "Upload or paste a link" },
   { type: "link", label: "Link", icon: Link2, help: "Add a useful resource" },
 ] as const;
 
 export function LessonContentEditor({ blocks, files, localMedia, disabled, onChange, onFileChange }: Props) {
+  const listId = useId();
   const [preview, setPreview] = useState(false);
   const [fileError, setFileError] = useState("");
   const [removed, setRemoved] = useState<{ block: LessonContentBlock; index: number; file?: File } | null>(null);
@@ -35,6 +39,7 @@ export function LessonContentEditor({ blocks, files, localMedia, disabled, onCha
   const add = (type: typeof kinds[number]["type"]) => {
     const id = crypto.randomUUID();
     const block: LessonContentBlock = type === "text" ? { id, type, text: "" }
+      : type === "legacy" ? { id, type, html: "" }
       : type === "image" ? { id, type, url: "", alt: "", caption: "" }
       : type === "video" ? { id, type, url: "", caption: "" } : { id, type, url: "", label: "" };
     focusBlock.current = id;
@@ -42,8 +47,18 @@ export function LessonContentEditor({ blocks, files, localMedia, disabled, onCha
     setPreview(false);
   };
   const move = (index: number, direction: -1 | 1) => {
+    if (disabled || index + direction < 0 || index + direction >= blocks.length) return;
     const next = [...blocks];
     [next[index], next[index + direction]] = [next[index + direction], next[index]];
+    onChange(next);
+  };
+  const moveTo = (id: string, targetId: string, before: boolean) => {
+    if (disabled || id === targetId) return;
+    const block = blocks.find(item => item.id === id);
+    const next = blocks.filter(item => item.id !== id);
+    const target = next.findIndex(item => item.id === targetId);
+    if (!block || target < 0) return;
+    next.splice(target + (before ? 0 : 1), 0, block);
     onChange(next);
   };
   const pickFile = (block: LessonContentBlock, file: File | undefined) => {
@@ -62,17 +77,17 @@ export function LessonContentEditor({ blocks, files, localMedia, disabled, onCha
     <header className="lesson-builder-heading"><div><h4>Lesson content</h4><p>Add the pieces you need, in the order members should see them.</p></div><div className="lesson-builder-mode" aria-label="Editor view"><button type="button" aria-pressed={!preview} disabled={disabled} onClick={() => setPreview(false)}><Pencil size={14} /> Edit</button><button type="button" aria-pressed={preview} disabled={disabled} onClick={() => setPreview(true)}><Eye size={15} /> Preview</button></div></header>
     {fileError && <p className="admin-form-error" role="alert">{fileError}</p>}
     {removed && <div className="lesson-builder-undo" role="status">Content removed.<button type="button" disabled={disabled} onClick={() => { const next = [...blocks]; next.splice(Math.min(removed.index, next.length), 0, removed.block); onChange(next); if (removed.file) onFileChange(removed.block.id, removed.file); setRemoved(null); }}><Undo2 size={15} /> Undo</button></div>}
-    {preview ? <div className="lesson-builder-preview"><p className="lesson-preview-label">Member preview · unsaved changes</p>{blocks.length ? <LessonContent blocks={blocks} localMedia={localMedia} /> : <p className="admin-muted">Your lesson will appear here. Switch to Edit to add content.</p>}</div> : <div className="lesson-builder-blocks">
+    {preview ? <div className="lesson-builder-preview"><p className="lesson-preview-label">Member preview · unsaved changes</p>{blocks.length ? <LessonContent blocks={blocks} localMedia={localMedia} /> : <p className="admin-muted">Your lesson will appear here. Switch to Edit to add content.</p>}</div> : <div className="lesson-builder-blocks" data-reorder-list={listId}>
       {blocks.map((block, index) => {
         const kind = kinds.find(item => item.type === block.type);
         const Icon = kind?.icon ?? Type;
-        const label = block.type === "legacy" ? "Imported content" : kind?.label ?? "Content";
+        const label = kind?.label ?? "Content";
         const inputId = `lesson-block-${block.id}`;
-        return <section className="lesson-builder-block" id={`lesson-content-block-${block.id}`} tabIndex={-1} key={block.id} aria-label={`${label} block ${index + 1}`}>
-          <header><span><Icon size={17} /><strong>{label}</strong><small>{index + 1}</small></span><div><button type="button" aria-label={`Move ${label.toLowerCase()} block ${index + 1} up`} disabled={disabled || index === 0} onClick={() => move(index, -1)}><ArrowUp size={16} /></button><button type="button" aria-label={`Move ${label.toLowerCase()} block ${index + 1} down`} disabled={disabled || index === blocks.length - 1} onClick={() => move(index, 1)}><ArrowDown size={16} /></button><button type="button" aria-label={`Remove ${label.toLowerCase()} block ${index + 1}`} disabled={disabled} onClick={() => { setRemoved({ block, index, file: files[block.id] }); onChange(blocks.filter(item => item.id !== block.id)); onFileChange(block.id, undefined); }}><Trash2 size={16} /></button></div></header>
+        return <section className="lesson-builder-block" id={`lesson-content-block-${block.id}`} data-reorder-item={block.id} tabIndex={-1} key={block.id} aria-label={`${label} block ${index + 1}`}>
+          <header><span><ReorderHandle name={`${label.toLowerCase()} block ${index + 1}`} disabled={disabled} onStep={direction => move(index, direction)} onMove={(targetId, before) => moveTo(block.id, targetId, before)} /><Icon size={17} /><strong>{label}</strong><small>{index + 1}</small></span><div><button type="button" aria-label={`Move ${label.toLowerCase()} block ${index + 1} up`} disabled={disabled || index === 0} onClick={() => move(index, -1)}><ArrowUp size={16} /></button><button type="button" aria-label={`Move ${label.toLowerCase()} block ${index + 1} down`} disabled={disabled || index === blocks.length - 1} onClick={() => move(index, 1)}><ArrowDown size={16} /></button><button type="button" aria-label={`Remove ${label.toLowerCase()} block ${index + 1}`} disabled={disabled} onClick={() => { setRemoved({ block, index, file: files[block.id] }); onChange(blocks.filter(item => item.id !== block.id)); onFileChange(block.id, undefined); }}><Trash2 size={16} /></button></div></header>
           <div className="lesson-builder-fields">
             {block.type === "text" && <label htmlFor={inputId}>Text<textarea id={inputId} aria-label={`Text ${index + 1}`} value={block.text} disabled={disabled} rows={5} onChange={event => update(block.id, { text: event.target.value })} placeholder="Explain the steps, share a tip, or introduce the next video…" required /></label>}
-            {block.type === "legacy" && <><p className="admin-form-note">Your imported formatting and media are kept. Add new content below, or remove this block to replace it.</p><div className="lesson-imported-preview"><LessonContent blocks={[block]} /></div></>}
+            {block.type === "legacy" && <LessonRichTextEditor html={block.html} label={`Formatted text ${index + 1}`} disabled={disabled} onChange={html => update(block.id, { html })} />}
             {(block.type === "video" || block.type === "image") && <>
               <div className="lesson-media-source"><label className="lesson-media-upload"><Upload size={18} /><span><strong>{files[block.id] ? "Change file" : `Upload ${block.type === "image" ? "photo" : "video"}`}</strong><small>{files[block.id]?.name ?? (block.type === "image" ? "JPG, PNG, WebP, GIF or AVIF · up to 20 MB" : "MP4, WebM or MOV · up to 50 MB; use a video link for larger videos")}</small></span><input type="file" aria-label={`Upload ${label.toLowerCase()} ${index + 1}`} accept={block.type === "image" ? "image/jpeg,image/png,image/webp,image/gif,image/avif" : "video/mp4,video/webm,video/quicktime"} disabled={disabled} onChange={event => { pickFile(block, event.target.files?.[0]); event.target.value = ""; }} /></label>{block.url.startsWith("academy-asset:") ? <div className="lesson-saved-media"><strong>{label} saved to this lesson</strong><button type="button" disabled={disabled} onClick={() => update(block.id, { url: "" })}>Replace with a link</button></div> : <><span className="lesson-source-or">or paste a link</span><label htmlFor={inputId}>{block.type === "video" ? "Video link" : "Photo link"}<input id={inputId} aria-label={`${label} link ${index + 1}`} type="url" value={block.url} disabled={disabled} onChange={event => { update(block.id, { url: event.target.value }); onFileChange(block.id, undefined); }} placeholder={block.type === "video" ? "https://youtube.com/watch?v=…" : "https://…/photo.jpg"} required={!files[block.id]} /></label></>}</div>
               {localMedia[block.id] && block.type === "image" && <img className="lesson-selected-photo" src={localMedia[block.id]} alt={block.alt || "Selected photo preview"} />}

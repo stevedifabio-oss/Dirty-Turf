@@ -7,28 +7,24 @@ import { CommunityScheduler } from "./CommunityScheduler";
 import { emptyQuizQuestion, existingQuizBody, quizEditorState, quizOptionsFor, serializeQuizQuestion, updateQuizQuestion, type QuizQuestionDraft } from "../lib/adminContent";
 import { isLessonContentUrl, lessonContentBlocks, lessonContentBody, type LessonContentBlock } from "../lib/lessonContent";
 import { LessonContentEditor } from "./LessonContentEditor";
+import { CourseAuthoringContext } from "./CourseAuthoringContext";
+import { CourseOutlineEditor } from "./CourseOutlineEditor";
 import { memberAccessPresentation } from "../lib/memberPresentation";
 import { useNativeNumberDrafts } from "../lib/useNativeNumberDrafts";
 import {
   createAdminMember,
   issueAdminCertificate,
   loadAdminSnapshot,
-  loadAdminLessonBlockMedia,
   moderateAdminPost,
   MemberInvitePartialFailure,
   removeAdminComment,
   revokeAdminCertificate,
   saveAdminCategory,
-  saveAdminCourse,
   saveAdminEvent,
-  saveAdminLesson,
-  saveAdminModule,
   saveCertificateTemplate,
   setAdminMemberCourseAccess,
   updateAdminMember,
   updateAdminReport,
-  uploadAdminLessonAsset,
-  uploadAdminLessonBlockAsset,
   type AdminCourse,
   type AdminEvent,
   type AdminLesson,
@@ -51,7 +47,7 @@ type Props = {
   readOnly?: boolean;
 };
 
-const DraftContext = createContext<React.MutableRefObject<Set<string>> | null>(null);
+export const DraftContext = createContext<React.MutableRefObject<Set<string>> | null>(null);
 
 function useDraftGuard(dirty: boolean) {
   const drafts = useContext(DraftContext);
@@ -200,8 +196,12 @@ function GrowthAdminBridge(props: { communityId: string; readOnly: boolean; onTo
   return <GrowthAdmin {...props} onDirtyChange={setDirty} />;
 }
 
-function CoursesAdmin({ snapshot, busy, act }: AdminSectionProps) {
+export function CoursesAdmin({ snapshot, busy, act }: AdminSectionProps) {
+  const { saveAdminCourse, saveAdminCourseOrder } = useContext(CourseAuthoringContext);
   const [editor, setEditor] = useState<string | null>(null);
+  const [arranging, setArranging] = useState(false);
+  const [orderDirty, setOrderDirty] = useState(false);
+  useDraftGuard(orderDirty);
   const [selectedId, setSelectedId] = useState(snapshot.courses[0]?.id ?? "");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<AdminStatus | "all">("all");
@@ -230,11 +230,13 @@ function CoursesAdmin({ snapshot, busy, act }: AdminSectionProps) {
       <div className="admin-course-detail" ref={detailRef}>
         {editor ? <CourseForm key={editor} course={editing} nextOrder={nextSortOrder(snapshot.courses)} busy={busy} onCancel={closeEditor} onSave={async (course) => { let savedId = ""; const saved = await act("course", async () => { savedId = await saveAdminCourse(course); }, course.id ? "Course updated." : "Draft course created. Add your first module."); if (saved) { setSelectedId(savedId); setEditor(null); setSearch(""); setStatusFilter("all"); } return saved; }} /> : selected ? <>
           <header className="admin-course-heading"><div className="admin-course-eyebrow"><StatusBadge status={selected.status} /><span>{selected.category}</span></div><h3>{selected.title}</h3>{selected.description && <p>{selected.description}</p>}<div className="admin-course-summary"><span><BookOpen size={15} /> {selected.modules.length} modules</span><span>{lessons.length} lessons</span><span>{publishedLessons} published lessons</span></div><div className="admin-inline-actions"><button className="secondary-button" disabled={Boolean(busy)} onClick={() => openEditor(selected.id)}><Pencil size={16} /> Course settings</button>{selected.status !== "published" && <button className="primary-button" disabled={Boolean(busy) || publishedLessons === 0} onClick={() => { if (confirmDiscard(drafts) && window.confirm(`Publish “${selected.title}”? Members with access will see its published lessons.`)) void act("publish-course", () => saveAdminCourse({ ...selected, status: "published" }), "Course published."); }}><Check size={16} /> Publish course</button>}{selected.status === "published" && <button className="admin-text-action" disabled={Boolean(busy)} onClick={() => { if (confirmDiscard(drafts) && window.confirm(`Archive “${selected.title}”? It will no longer be available to members. Progress is kept.`)) void act("archive-course", () => saveAdminCourse({ ...selected, status: "archived" }), "Course archived."); }}>Archive course</button>}</div>{selected.status !== "published" && publishedLessons === 0 && <p className="admin-form-note">Add and publish at least one lesson before publishing this course.</p>}</header>
-          <div className="admin-curriculum-heading"><div><h4>Course content</h4><p>Modules group your lessons. Each lesson can include videos, text, photos and links.</p></div></div>
+          <div className="admin-curriculum-heading"><div><h4>Course content</h4><p>Modules group your lessons. Each lesson can include videos, text, photos and links.</p></div><button type="button" className="secondary-button" disabled={Boolean(busy) || !selected.modules.length} onClick={() => { if (confirmDiscard(drafts)) { setArranging(!arranging); setOrderDirty(false); } }}>{arranging ? "Back to editing" : "Arrange modules & lessons"}</button></div>
+          {arranging ? <CourseOutlineEditor key={selected.id} course={selected} busy={Boolean(busy)} onDirtyChange={setOrderDirty} onClose={() => { setArranging(false); setOrderDirty(false); }} onSave={(original, next) => act("course-order", () => saveAdminCourseOrder(selected.id, original, next), "Course order saved. Lesson progress is kept.")} /> : <>
           <SearchField label="Find a module or lesson" value={lessonSearch} onChange={(value) => { if (confirmDiscard(drafts)) setLessonSearch(value); }} placeholder="Find a module or lesson…" />
           <ModuleComposer key={selected.id} courseId={selected.id} nextOrder={nextSortOrder(selected.modules)} busy={busy} act={act} />
           <div className="admin-module-list">{modules.map((module) => <ModuleEditor key={`${selected.id}-${module.id}`} module={module} courseId={selected.id} query={query} busy={busy} act={act} />)}</div>
           {!modules.length && <EmptyAdmin text={query ? "No matching modules or lessons. Try another search." : "No modules yet. Add your first module, then create its lessons."} />}
+          </>}
         </> : <div className="admin-course-empty"><BookOpen size={34} /><h3>Build your next course</h3><p>Create a draft, add modules and lessons, then publish it for members.</p><button className="primary-button" onClick={() => openEditor("new")}><Plus size={17} /> Create a course</button></div>}
       </div>
     </div>
@@ -293,6 +295,7 @@ function hiddenSourceModule(module: AdminModule) {
 }
 
 function ModuleComposer({ courseId, nextOrder, busy, act, module, onSaved }: { courseId: string; nextOrder: number; busy: string; act: ActionRunner; module?: AdminModule; onSaved?: () => void }) {
+  const { saveAdminModule } = useContext(CourseAuthoringContext);
   const [title, setTitle] = useState(module?.title ?? "");
   const [groupTitle, setGroupTitle] = useState(module?.groupTitle ?? "");
   useDraftGuard(title !== (module?.title ?? "") || groupTitle !== (module?.groupTitle ?? ""));
@@ -300,6 +303,7 @@ function ModuleComposer({ courseId, nextOrder, busy, act, module, onSaved }: { c
 }
 
 function LessonComposer({ courseId, moduleId, nextOrder, busy, act, lesson, onSaved, onCancel }: { courseId: string; moduleId: string; nextOrder: number; busy: string; act: ActionRunner; lesson?: AdminLesson; onSaved?: () => void; onCancel?: () => void }) {
+  const { saveAdminLesson, uploadAdminLessonBlockAsset, loadAdminLessonBlockMedia } = useContext(CourseAuthoringContext);
   const [title, setTitle] = useState(lesson?.title ?? "");
   const [lessonType, setLessonType] = useState<AdminLesson["lessonType"]>(lesson?.lessonType ?? "guide");
   const initialContent = useMemo(() => {
@@ -318,14 +322,16 @@ function LessonComposer({ courseId, moduleId, nextOrder, busy, act, lesson, onSa
   const uploaded = useRef(new Map<string, { file: File; path: string }>());
   const composerRef = useRef<HTMLDetailsElement>(null);
   const [videoUrl, setVideoUrl] = useState(lesson?.videoUrl ?? "");
+  const [transcript, setTranscript] = useState(lesson?.transcript ?? "");
   const [durationMinutes, setDurationMinutes] = useState(Math.round((lesson?.durationSeconds ?? 0) / 60));
   const [status, setStatus] = useState<AdminStatus>(lesson?.status ?? "draft");
 
   const initialQuiz = useMemo(() => quizEditorState(lesson?.body), [lesson?.body]);
   const [quizQuestions, setQuizQuestions] = useState<QuizQuestionDraft[]>(initialQuiz.questions);
   const [passingPercent, setPassingPercent] = useState(initialQuiz.passingPercent);
+  const [requiresPassing, setRequiresPassing] = useState(existingQuizBody(lesson?.body).requiresPassing !== false);
   const numberDraft = useNativeNumberDrafts();
-  useDraftGuard(title !== (lesson?.title ?? "") || JSON.stringify(blocks) !== JSON.stringify(initialBlocks) || Object.keys(files).length > 0 || videoUrl !== (lesson?.videoUrl ?? "") || lessonType !== (lesson?.lessonType ?? "guide") || durationMinutes !== Math.round((lesson?.durationSeconds ?? 0) / 60) || status !== (lesson?.status ?? "draft") || JSON.stringify(quizQuestions.map(serializeQuizQuestion)) !== JSON.stringify(initialQuiz.questions.map(serializeQuizQuestion)) || passingPercent !== initialQuiz.passingPercent);
+  useDraftGuard(transcript !== (lesson?.transcript ?? "") || requiresPassing !== (existingQuizBody(lesson?.body).requiresPassing !== false) || title !== (lesson?.title ?? "") || JSON.stringify(blocks) !== JSON.stringify(initialBlocks) || Object.keys(files).length > 0 || videoUrl !== (lesson?.videoUrl ?? "") || lessonType !== (lesson?.lessonType ?? "guide") || durationMinutes !== Math.round((lesson?.durationSeconds ?? 0) / 60) || status !== (lesson?.status ?? "draft") || JSON.stringify(quizQuestions.map(serializeQuizQuestion)) !== JSON.stringify(initialQuiz.questions.map(serializeQuizQuestion)) || passingPercent !== initialQuiz.passingPercent);
   useEffect(() => {
     const urls = Object.fromEntries(Object.entries(files).map(([id, file]) => [id, URL.createObjectURL(file)]));
     setLocalFiles(urls);
@@ -343,22 +349,25 @@ function LessonComposer({ courseId, moduleId, nextOrder, busy, act, lesson, onSa
   }));
   const changeFile = (id: string, file: File | undefined) => setFiles(current => { const next = { ...current }; if (file) next[id] = file; else delete next[id]; return next; });
   const quizIsValid = quizQuestions.length > 0 && quizQuestions.every((question) => question.prompt.trim() && quizOptionsFor(question).length >= 2 && Number.isInteger(question.correctOption) && question.correctOption >= 1 && question.correctOption <= quizOptionsFor(question).length);
-  const submit = async (event: React.FormEvent) => {
+  const submit = async (event: React.FormEvent, saveStatus = status) => {
     event.preventDefault();
     if (!title.trim() || busy || initialContent.error || (lessonType === "quiz" && !quizIsValid)) return;
     setFormError("");
     if (lessonType === "quiz" && (!Number.isInteger(passingPercent) || passingPercent < 1 || passingPercent > 100)) { setFormError("Choose a passing score from 1 to 100."); return; }
     for (const [index, block] of blocks.entries()) {
-      if (block.type === "legacy") continue;
+      if (block.type === "legacy") {
+        if (!block.html.replace(/<[^>]*>/g, "").replace(/&nbsp;/gi, " ").trim() && !/<(?:img|video|audio|iframe)\b[^>]*\bsrc=/i.test(block.html)) { setFormError(`Add formatted text to block ${index + 1}, or remove the empty block.`); return; }
+        continue;
+      }
       if (block.type === "text" && !block.text.trim()) { setFormError(`Add text to block ${index + 1}, or remove the empty block.`); return; }
       if ("url" in block && !files[block.id] && !isLessonContentUrl(block.url)) { setFormError(`Add a valid link or upload to block ${index + 1}.`); return; }
       if (block.type === "image" && !block.alt.trim()) { setFormError(`Describe the photo in block ${index + 1}.`); return; }
       if (block.type === "link" && !block.label.trim()) { setFormError(`Add link text to block ${index + 1}.`); return; }
     }
-    if (status === "published" && !blocks.length && !videoUrl && lessonType !== "quiz") { setFormError("Add some lesson content before publishing."); return; }
+    if (saveStatus === "published" && !blocks.length && !videoUrl && lessonType !== "quiz") { setFormError("Add some lesson content before publishing."); return; }
     if (videoUrl !== (lesson?.videoUrl ?? "") && videoUrl && !isLessonContentUrl(videoUrl)) { setFormError("Use a valid video link."); return; }
     const saved = await act("lesson", async () => {
-      const lessonValues = { moduleId, title, lessonType: lessonType === "quiz" ? "quiz" as const : blocks.some(block => block.type === "video") || videoUrl ? "video" as const : "guide" as const, transcript: lesson?.transcript ?? "", resources: lesson?.resources ?? [], durationSeconds: Math.max(0, durationMinutes * 60), sortOrder: lesson?.sortOrder ?? nextOrder };
+      const lessonValues = { moduleId, title, lessonType: lessonType === "quiz" ? "quiz" as const : blocks.some(block => block.type === "video") || videoUrl ? "video" as const : "guide" as const, transcript, resources: lesson?.resources ?? [], durationSeconds: Math.max(0, durationMinutes * 60), sortOrder: lesson?.sortOrder ?? nextOrder };
       const pendingFiles = Object.entries(files).filter(([id]) => blocks.some(block => block.id === id));
       // Persist a private draft first so uploads have a stable lesson owner.
       // Keep that ID and successful uploads on failure so retry cannot duplicate them.
@@ -376,14 +385,14 @@ function LessonComposer({ courseId, moduleId, nextOrder, busy, act, lesson, onSa
         resolved = resolved.map(block => block.id === id && "url" in block ? { ...block, url: `academy-asset:${asset.path}` } : block);
       }
       const body = lessonContentBody(lesson?.body, resolved);
-      if (lessonType === "quiz") body.quiz = { ...existingQuizBody(lesson?.body), name: title.trim(), requiresPassing: true, passingPercent, questions: quizQuestions.map(serializeQuizQuestion) };
+      if (lessonType === "quiz") body.quiz = { ...existingQuizBody(lesson?.body), name: title.trim(), requiresPassing, passingPercent, questions: quizQuestions.map(serializeQuizQuestion) };
       else delete body.quiz;
       setUploadStatus("Saving lesson…");
-      draftId.current = await saveAdminLesson({ ...lessonValues, id: draftId.current, body, videoUrl, status });
+      draftId.current = await saveAdminLesson({ ...lessonValues, id: draftId.current, body, videoUrl, status: saveStatus });
     }, lesson ? "Lesson updated." : "Lesson added.");
     setUploadStatus("");
     if (saved) {
-      if (!lesson) { setTitle(""); setBlocks([]); setFiles({}); setVideoUrl(""); setQuizQuestions(initialQuiz.questions); setPassingPercent(initialQuiz.passingPercent); setDurationMinutes(0); setStatus("draft"); setLessonType("guide"); draftId.current = undefined; uploaded.current.clear(); if (composerRef.current) composerRef.current.open = false; }
+      if (!lesson) { setTitle(""); setTranscript(""); setRequiresPassing(true); setBlocks([]); setFiles({}); setVideoUrl(""); setQuizQuestions(initialQuiz.questions); setPassingPercent(initialQuiz.passingPercent); setDurationMinutes(0); setStatus("draft"); setLessonType("guide"); draftId.current = undefined; uploaded.current.clear(); if (composerRef.current) composerRef.current.open = false; }
       onSaved?.();
     } else if (!lesson && draftId.current) setFormError("Your draft is kept. Save again to finish uploading and saving this lesson.");
   };
@@ -402,18 +411,19 @@ function LessonComposer({ courseId, moduleId, nextOrder, busy, act, lesson, onSa
         <div className="admin-form-grid"><label>Correct choice number<input type="number" min="1" max={Math.max(1, quizOptionsFor(question).length)} {...numberDraft(`choice-${question.id}`, question.correctOption, value => setQuizQuestions(current => updateQuizQuestion(current, question.id, { correctOption: value })))} required /></label><label>Answer explanation<input value={question.explanation} onChange={(event) => setQuizQuestions((current) => updateQuizQuestion(current, question.id, { explanation: event.target.value }))} placeholder="Shown after submitting" /></label></div>
       </div>)}
       <button type="button" className="secondary-button" onClick={() => setQuizQuestions((current) => [...current, emptyQuizQuestion()])}><Plus size={15} /> Add question</button>
-      <label>Passing score<input type="number" min="1" max="100" {...numberDraft("passing", passingPercent, setPassingPercent)} /></label>
+      <label className="admin-checkbox"><input type="checkbox" checked={requiresPassing} onChange={event => setRequiresPassing(event.target.checked)} />Require a passing grade</label><label>Passing score<input type="number" min="1" max="100" {...numberDraft("passing", passingPercent, setPassingPercent)} /></label>
       {!quizIsValid && <p className="admin-form-error">Every quiz needs a question, at least two choices, and a valid correct-choice number.</p>}
     </div>}
     <div className="admin-form-grid"><label>Minutes<input type="number" min="0" {...numberDraft("minutes", durationMinutes, setDurationMinutes)} /></label><label>Status<select value={status} onChange={(event) => setStatus(event.target.value as AdminStatus)}><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></select></label></div>
-    <p className="admin-form-note">Draft lessons stay private. Published lessons appear in a published course for members with access.</p>
+    <label>Transcript (optional)<textarea value={transcript} onChange={event => setTranscript(event.target.value)} rows={4} placeholder="Add a readable transcript or notes for this lesson" /></label><p className="admin-form-note">Edits here stay in Dirty Turf and are not sent back to GHL. Draft lessons stay private. Published lessons appear in a published course for members with access.</p>
     {formError && <p className="admin-form-error" role="alert">{formError}</p>}
     {uploadStatus && <p className="lesson-upload-status" role="status"><LoaderCircle className="spin" size={16} /> {uploadStatus}</p>}
-    <div className="admin-form-actions"><button className="primary-button" disabled={Boolean(busy) || !title.trim() || Boolean(initialContent.error) || (lessonType === "quiz" && !quizIsValid)}><Check size={16} /> {busy === "lesson" ? "Saving…" : "Save lesson"}</button>{onCancel && <button type="button" className="secondary-button" disabled={Boolean(busy)} onClick={onCancel}>Cancel edit</button>}</div>
+    <div className="admin-form-actions"><button className="primary-button" disabled={Boolean(busy) || !title.trim() || Boolean(initialContent.error) || (lessonType === "quiz" && !quizIsValid)}><Check size={16} /> {busy === "lesson" ? "Saving…" : "Save lesson"}</button>{status !== "published" && <button type="button" className="secondary-button" disabled={Boolean(busy) || !title.trim() || Boolean(initialContent.error) || (lessonType === "quiz" && !quizIsValid)} onClick={event => { if (event.currentTarget.form?.reportValidity()) void submit(event, "published"); }}>Save &amp; publish</button>}{onCancel && <button type="button" className="secondary-button" disabled={Boolean(busy)} onClick={onCancel}>Cancel edit</button>}</div>
   </form></details>;
 }
 
 function LessonRow({ lesson, courseId, busy, act }: { lesson: AdminLesson; courseId: string; busy: string; act: ActionRunner }) {
+  const { uploadAdminLessonAsset } = useContext(CourseAuthoringContext);
   const [editing, setEditing] = useState(false);
   const drafts = useContext(DraftContext);
   const upload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -518,7 +528,7 @@ function CertificateTemplateForm({ template, busy, onSave }: { template: Certifi
   return <details className="admin-composer" open={!template}><summary><Pencil size={16} /> {template ? "Edit certificate template" : "Create certificate template"}</summary><form onSubmit={(event) => { event.preventDefault(); void onSave({ id: template?.id, name, title, description, signatoryName, signatoryTitle, active: true }); }}><label>Internal name<input value={name} onChange={(event) => setName(event.target.value)} required /></label><label>Certificate heading<input value={title} onChange={(event) => setTitle(event.target.value)} required /></label><label>Completion statement<input value={description} onChange={(event) => setDescription(event.target.value)} /></label><div className="admin-form-grid"><label>Signed by<input value={signatoryName} onChange={(event) => setSignatoryName(event.target.value)} /></label><label>Title<input value={signatoryTitle} onChange={(event) => setSignatoryTitle(event.target.value)} /></label></div><button className="primary-button" disabled={busy === "template"}>Save certificate template</button></form></details>;
 }
 
-type ActionRunner = (label: string, action: () => Promise<unknown>, success: string, contentChanged?: boolean) => Promise<boolean>;
+export type ActionRunner = (label: string, action: () => Promise<unknown>, success: string, contentChanged?: boolean) => Promise<boolean>;
 type AdminSectionProps = { snapshot: AdminSnapshot; busy: string; act: ActionRunner };
 
 function SectionHeading({ icon, title, detail }: { icon: React.ReactNode; title: string; detail: string }) { return <div className="admin-section-heading"><span>{icon}</span><div><h3>{title}</h3><p>{detail}</p></div></div>; }
