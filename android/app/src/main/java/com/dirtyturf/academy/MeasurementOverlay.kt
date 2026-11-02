@@ -7,6 +7,7 @@ internal data class OverlaySegment(val start: OverlayPoint, val end: OverlayPoin
 internal data class MeasurementOverlay(
     val points: List<OverlayPoint> = emptyList(),
     val segments: List<OverlaySegment> = emptyList(),
+    val previewSegment: OverlaySegment? = null,
 )
 
 /** ARCore matrices are column-major OpenGL matrices, with clip depth in [-w, w]. */
@@ -16,6 +17,7 @@ internal fun projectMeasurementOverlay(
     projection: FloatArray,
     width: Float,
     height: Float,
+    previewPoint: MeasurementPoint? = null,
 ): MeasurementOverlay {
     if (width <= 0 || height <= 0 || !width.isFinite() || !height.isFinite()
         || view.size != 16 || projection.size != 16
@@ -24,11 +26,11 @@ internal fun projectMeasurementOverlay(
     fun transform(matrix: FloatArray, point: FloatArray) = FloatArray(4) { row ->
         (0..3).sumOf { column -> (matrix[column * 4 + row] * point[column]).toDouble() }.toFloat()
     }
-    val clipPoints = points.map { point ->
+    fun clip(point: MeasurementPoint): FloatArray? =
         if (!point.x.isFinite() || !point.y.isFinite() || !point.z.isFinite()) null
         else transform(projection, transform(view, floatArrayOf(point.x, point.y, point.z, 1f)))
             .takeIf { result -> result.all { it.isFinite() } }
-    }
+    val clipPoints = points.map(::clip)
     fun screen(point: FloatArray) = OverlayPoint(
         (point[0] / point[3] + 1f) * width / 2f,
         (1f - point[1] / point[3]) * height / 2f,
@@ -68,5 +70,8 @@ internal fun projectMeasurementOverlay(
     return MeasurementOverlay(
         points = clipPoints.filterNotNull().filter { distances(it).all { distance -> distance >= 0f } }.map(::screen),
         segments = segments,
+        previewSegment = previewPoint?.let(::clip)?.let { target ->
+            clipPoints.lastOrNull()?.let { last -> segment(last, target) }
+        },
     )
 }
