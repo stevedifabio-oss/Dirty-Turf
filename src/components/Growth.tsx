@@ -6,10 +6,16 @@ import { createGrowthRequest, loadGrowthCatalog, loadOwnGrowthRequests, type Gro
 import { beginServiceBillingPortal, beginServiceCheckout, loadOwnServiceOrders, loadOwnServiceQuotes, type ServiceOrder, type ServiceQuote } from "../lib/serviceCheckout";
 import { serviceName, serviceOrderHasPortal, serviceOrderStatus } from "../lib/serviceBillingPresentation";
 import { AvailableUpgrades } from "./AccessOffers";
+import { GrowthMarketing } from "./GrowthMarketing";
+import { GrowthServiceDetails } from "./GrowthServiceDetails";
 import "./growth.css";
 
 const serviceIcons = { website: Globe, ghl: MessageSquare, "seo-aeo": Search, "facebook-ads": Megaphone, "website-care": Globe, "ghl-subscription": MessageSquare };
 const requestLabels: Record<GrowthRequest["status"], string> = { new: "Request received", contacted: "In conversation", closed: "Closed" };
+function serviceFromLocation(): GrowthServiceKey | null {
+  const value = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("service");
+  return value && Object.hasOwn(serviceIcons, value) ? value as GrowthServiceKey : null;
+}
 
 /** Prices come from the configured catalog; the app never changes a Stripe price. */
 export function Growth({ access, readOnly = false, onToast }: { access: AccessState; readOnly?: boolean; onToast: (message: string) => void }) {
@@ -21,8 +27,9 @@ export function Growth({ access, readOnly = false, onToast }: { access: AccessSt
   const [requestsLoaded, setRequestsLoaded] = useState(false);
   const [requestsError, setRequestsError] = useState(false);
   const [retry, setRetry] = useState(0);
-  const [selected, setSelected] = useState<GrowthServiceKey | null>(null);
+  const [selected, setSelected] = useState<GrowthServiceKey | null>(serviceFromLocation);
   const [drafts, setDrafts] = useState<Partial<Record<GrowthServiceKey, string>>>({});
+  const [requestContexts, setRequestContexts] = useState<Partial<Record<GrowthServiceKey, string>>>({});
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [quotes, setQuotes] = useState<ServiceQuote[]>([]);
@@ -37,6 +44,7 @@ export function Growth({ access, readOnly = false, onToast }: { access: AccessSt
   const attempt = useRef<{ key: string; id: string } | null>(null);
   const mounted = useRef(true);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
   const writable = useRef(!readOnly && !native);
   writable.current = !readOnly && !native;
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -52,23 +60,39 @@ export function Growth({ access, readOnly = false, onToast }: { access: AccessSt
     }).catch(() => { if (active) setPaymentsError(true); });
     return () => { active = false; };
   }, [native, readOnly, retry]);
-  useEffect(() => { if (selected) headingRef.current?.focus(); }, [selected]);
+  useEffect(() => { if (selected) pageRef.current?.focus(); }, [selected]);
+  useEffect(() => {
+    const sync = () => setSelected(serviceFromLocation());
+    window.addEventListener?.("popstate", sync);
+    return () => window.removeEventListener?.("popstate", sync);
+  }, []);
+
+  const selectService = (key: GrowthServiceKey | null) => {
+    const params = new URLSearchParams(window.location.search);
+    params.set("view", "grow");
+    if (key) params.set("service", key); else params.delete("service");
+    window.history?.pushState(null, "", `?${params.toString()}`);
+    setSelected(key);
+  };
 
   if (native) return null;
   const chosen = catalog?.services.find(service => service.key === selected);
   const notes = selected ? drafts[selected] ?? "" : "";
+  const requestContext = selected ? requestContexts[selected] ?? "" : "";
+  const combinedNotes = [requestContext, notes.trim()].filter(Boolean).join("\n\n");
   const activeRequest = (key: GrowthServiceKey) => requests.find(request => request.serviceKey === key && request.status !== "closed");
   const returning = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("service_checkout") === "return";
   const locked = readOnly || busy;
   const beginRequest = (key: GrowthServiceKey) => {
     if (locked || !requestsLoaded || requestsError || activeRequest(key)) return;
-    setSelected(key); setSubmitError("");
+    selectService(key); setSubmitError("");
   };
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!chosen || !writable.current || pending.current || !requestsLoaded || requestsError || activeRequest(chosen.key)) return;
     const service = chosen;
-    const cleanNotes = notes.trim();
+    const cleanNotes = combinedNotes;
+    if (cleanNotes.length > 2000) { setSubmitError("Your request details and notes must total 2,000 characters or fewer. Shorten them before sending."); return; }
     const key = `${service.key}:${cleanNotes}`;
     if (attempt.current?.key !== key) attempt.current = { key, id: crypto.randomUUID() };
     pending.current = true; setBusy(true); setSubmitError("");
@@ -78,7 +102,8 @@ export function Growth({ access, readOnly = false, onToast }: { access: AccessSt
       // The server may return an existing open request; only its stored notes count.
       setRequests(current => [saved, ...current.filter(request => request.id !== saved.id)]);
       if (saved.notes.trim() === cleanNotes) {
-        setDrafts(current => ({ ...current, [service.key]: "" })); setSelected(null); attempt.current = null;
+        setDrafts(current => ({ ...current, [service.key]: "" })); selectService(null); attempt.current = null;
+        setRequestContexts(current => ({ ...current, [service.key]: "" }));
         onToast("Request saved. You can track it in Your requests.");
       } else {
         setSubmitError("An existing request was found. Your new notes were not sent. Your notes are still here to copy; the original request is shown below.");
@@ -121,20 +146,20 @@ export function Growth({ access, readOnly = false, onToast }: { access: AccessSt
     }
   };
 
-  return <div className="growth-view">
-    <header className="growth-intro"><div><h2>Grow your business.</h2><p>Get help with your website, follow-up, and marketing. Choose a service to start a conversation with the Dirty Turf team.</p></div><span className="growth-intro-mark" aria-hidden="true"><Globe size={28} /></span></header>
+  return <div className="growth-view" ref={pageRef} tabIndex={-1}>
+    {chosen ? <><button className="growth-text-button" type="button" disabled={busy} onClick={() => selectService(null)}>← Back to marketing services</button><GrowthServiceDetails service={chosen} requestId={`${formId}-request`} readOnly={readOnly} onPrepareRequest={summary => { if (locked || !writable.current || summary.length > 1600) return false; setRequestContexts(current => ({ ...current, [chosen.key]: summary })); return true; }} /></> : <><GrowthMarketing servicesId={`${formId}-services`} /><div className="growth-options-anchor" id={`${formId}-services`} tabIndex={-1} /></>}
     {readOnly && <p className="growth-notice" role="status">You’re offline or your connection could not be verified. Your notes stay here. Reconnect to send a request or review upgrades.</p>}
     {returning && <p className="growth-notice" role="status">Checking payment status. Returning from Stripe does not confirm payment; only the confirmed status below does.</p>}
     {catalogError ? <div className="growth-notice growth-error" role="alert"><h3>Business services could not load.</h3><p>These options may still be getting set up. Reload to check again.</p><button type="button" className="secondary-button" disabled={locked} onClick={() => setRetry(value => value + 1)}>Reload services</button></div>
       : !catalog ? <p className="growth-notice" role="status">{readOnly ? "Reconnect to load business services." : "Loading business services…"}</p>
       : <>
-        <section className="growth-services" aria-label="Business services">{catalog.services.map(service => {
+        {!chosen && <><section className="growth-services" aria-label="Business services">{catalog.services.map(service => {
           const Icon = serviceIcons[service.key];
           const existing = activeRequest(service.key);
-          return <article className={`growth-service${selected === service.key ? " selected" : ""}`} key={service.key}><span className="growth-service-icon"><Icon size={22} /></span><div className="growth-service-copy"><h3>{service.title}</h3><p>{service.summary}</p>{(service.key === "website-care" || service.key === "ghl-subscription") && <span className="growth-optional">Optional monthly add-on</span>}</div><div className="growth-service-price"><strong>{servicePrice(service)}</strong><span>{service.billingInterval === "month" ? "per month" : service.billingInterval === "one_time" ? "one-time" : "Billing confirmed in your proposal"}</span></div><button type="button" className="secondary-button" disabled={locked || !requestsLoaded || requestsError || Boolean(existing)} onClick={() => beginRequest(service.key)} aria-expanded={selected === service.key} aria-controls={selected === service.key ? `${formId}-request` : undefined}>{existing ? <><CheckCircle2 size={16} /> {requestLabels[existing.status]}</> : <>Request details <ArrowRight size={16} /></>}</button></article>;
+          return <article className={`growth-service${selected === service.key ? " selected" : ""}`} key={service.key}><span className="growth-service-icon"><Icon size={22} /></span><div className="growth-service-copy"><h3>{service.title}</h3><p>{service.summary}</p>{(service.key === "website-care" || service.key === "ghl-subscription") && <span className="growth-optional">Optional monthly add-on</span>}</div><div className="growth-service-price"><strong>{servicePrice(service)}</strong><span>{service.billingInterval === "month" ? "per month" : service.billingInterval === "one_time" ? "one-time" : "Billing confirmed in your proposal"}</span></div><button type="button" className="secondary-button" disabled={locked || !requestsLoaded || requestsError || Boolean(existing)} onClick={() => beginRequest(service.key)}>{existing ? <><CheckCircle2 size={16} /> {requestLabels[existing.status]}</> : <>Request details <ArrowRight size={16} /></>}</button></article>;
         })}</section>
-        <p className="growth-quote-note">Project scope and final price are confirmed before payment. Monthly add-ons are optional.</p>
-        {chosen && <section className="growth-request" id={`${formId}-request`} aria-labelledby={`${formId}-title`}><header><div><h3 ref={headingRef} tabIndex={-1} id={`${formId}-title`}>{chosen.title}: request details</h3><p>Tell us what you need. This saves a request for the team to follow up with your Academy account.</p></div><button className="icon-button" type="button" aria-label="Close service request" disabled={locked} onClick={() => setSelected(null)}><X size={18} /></button></header><form onSubmit={event => void submit(event)}><label htmlFor={`${formId}-notes`}>What would you like help with? <span>(optional)</span></label><textarea id={`${formId}-notes`} maxLength={2000} rows={4} disabled={locked} value={notes} onChange={event => { if (!locked) setDrafts(current => ({ ...current, [chosen.key]: event.target.value })); }} placeholder="Tell us about your business and what you want to improve." /><small>{notes.length}/2,000 characters. Never include passwords or payment details.</small>{submitError && <p className="growth-notice growth-error" role="alert">{submitError}</p>}<div className="growth-request-actions"><p>No payment is collected when you request details.</p><button className="primary-button" disabled={locked || requestsError || !requestsLoaded || Boolean(activeRequest(chosen.key))}>{busy ? "Saving request…" : activeRequest(chosen.key) ? "Open request already exists" : "Send request"}<ArrowRight size={16} /></button></div></form></section>}
+        <p className="growth-quote-note">Project scope and final price are confirmed before payment. Monthly add-ons are optional.</p></>}
+        {chosen && <section className="growth-request" id={`${formId}-request`} aria-labelledby={`${formId}-title`}><header><div><h3 ref={headingRef} tabIndex={-1} id={`${formId}-title`}>{chosen.title}: request details</h3><p>Tell us what you need. This saves a request for the team to follow up with your Academy account.</p></div><button className="icon-button" type="button" aria-label="Close service request" disabled={locked} onClick={() => selectService(null)}><X size={18} /></button></header><form onSubmit={event => void submit(event)}>{requestContext && <div className="growth-ghl-request-summary"><h4>Prepared request details</h4><p>{requestContext}</p><button type="button" className="growth-text-button" disabled={locked} onClick={() => setRequestContexts(current => ({ ...current, [chosen.key]: "" }))}>Remove prepared details</button></div>}<label htmlFor={`${formId}-notes`}>What would you like help with? <span>(optional)</span></label><textarea id={`${formId}-notes`} maxLength={2000} rows={4} disabled={locked} value={notes} onChange={event => { if (!locked) setDrafts(current => ({ ...current, [chosen.key]: event.target.value })); }} placeholder="Tell us about your business and what you want to improve." /><small>{combinedNotes.length}/2,000 characters including prepared details. Never include passwords or payment details.</small>{submitError && <p className="growth-notice growth-error" role="alert">{submitError}</p>}<div className="growth-request-actions"><p>No payment is collected when you request details.</p><button className="primary-button" disabled={locked || requestsError || !requestsLoaded || combinedNotes.length > 2000 || Boolean(activeRequest(chosen.key))}>{busy ? "Saving request…" : activeRequest(chosen.key) ? "Open request already exists" : "Send request"}<ArrowRight size={16} /></button></div></form></section>}
       </>}
     <section className="growth-your-requests" aria-labelledby={`${formId}-requests`}><header><h3 id={`${formId}-requests`}>Your requests</h3>{requestsLoaded && <button type="button" className="growth-text-button" disabled={locked} onClick={() => setRetry(value => value + 1)}>Refresh</button>}</header>{requestsError && <div className="growth-notice growth-error" role="alert"><p>Your request list could not refresh. Existing requests are still shown; new requests are paused until we can check your list.</p><button type="button" className="secondary-button" disabled={locked} onClick={() => setRetry(value => value + 1)}>Reload requests</button></div>}{!requestsLoaded && !requestsError ? <p className="growth-empty" role="status">{readOnly ? "Reconnect to load your requests." : "Checking your requests…"}</p> : requests.length ? <ul>{requests.map(request => <li key={request.id}><div><strong>{catalog?.services.find(service => service.key === request.serviceKey)?.title ?? serviceName(request.serviceKey)}</strong><span>{request.createdAt ? formatDate(request.createdAt) : "Date unavailable"}</span>{request.notes && <p>{request.notes}</p>}</div><span className={`growth-request-status status-${request.status}`}>{requestLabels[request.status]}</span></li>)}</ul> : requestsLoaded && <p className="growth-empty">No service requests yet. Choose a service above when you’re ready.</p>}</section>
     <section className="growth-payment-quotes" aria-labelledby={`${formId}-quotes`}><header><h3 id={`${formId}-quotes`}>Your service quotes</h3><button type="button" className="growth-text-button" disabled={locked} onClick={() => setRetry(value => value + 1)}>Refresh quotes</button></header><p>When the team confirms your scope and price, your exact quote appears here. Choose whether to continue to Stripe.</p>{paymentsError && <div className="growth-notice growth-error" role="alert"><p>Quotes and payments could not refresh. Checkout is paused until we can verify their status.</p><button type="button" className="secondary-button" disabled={locked} onClick={() => setRetry(value => value + 1)}>Reload quotes and payments</button></div>}{checkoutError && <p className="growth-notice growth-error" role="alert">{checkoutError}</p>}{!paymentsLoaded && !paymentsError ? <p className="growth-empty" role="status">{readOnly ? "Reconnect to load your quotes." : "Loading quotes and payments…"}</p> : quotes.length ? <ul>{quotes.map(quote => {
@@ -154,7 +179,8 @@ export function Growth({ access, readOnly = false, onToast }: { access: AccessSt
 
 function servicePrice(service: GrowthService) {
   const format = (cents: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(cents / 100);
-  return service.fromCents === service.toCents ? format(service.fromCents) : `${format(service.fromCents)}–${format(service.toCents)}`;
+  const price = service.fromCents === service.toCents ? format(service.fromCents) : `${format(service.fromCents)}–${format(service.toCents)}`;
+  return service.key === "website-care" ? `Starting at ${price}` : price;
 }
 function formatDate(value: string) { const date = new Date(value); return Number.isNaN(date.valueOf()) ? "Date unavailable" : new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(date); }
 function exactPrice(cents: number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(cents / 100); }
