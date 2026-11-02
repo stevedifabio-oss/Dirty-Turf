@@ -17,6 +17,15 @@ export type Job = {
   createdAt: string;
   photos: number;
   photoItems?: JobPhoto[];
+  inspection?: TurfInspection;
+};
+
+export type TurfInspection = {
+  condition?: "poor" | "fair" | "good" | "excellent";
+  seams?: "none" | "visible" | "separating";
+  debris?: "none" | "light" | "moderate" | "heavy";
+  infill?: "low" | "adequate" | "high" | "unsure";
+  notes?: string;
 };
 
 export type JobPhoto = {
