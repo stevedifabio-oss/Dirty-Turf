@@ -2,6 +2,10 @@
 
 Maintained with each release. Canonical: https://github.com/stevedifabio-oss/Dirty-Turf.
 
+## Current Android 1.0.1 candidate — November 1, 2026
+
+Steve requested all updates and supplied the original Android upload keystore/password locally. Prepared in a separate checkout from published main f1f1d7e, restoring the previously phone-tested Android live measuring line and native session-refresh changes. The candidate includes the latest shared web/app changes; code 13 is still unused in the refreshed Play inventory. Original certificate matches the historical Google Play upload key. The pending replacement reset remains scheduled for November 3 at 3:59 PM Arizona time; current upload acceptance is not inferred. Configured native sync/asset parity, TypeScript, 60 targeted tests, secrets and store metadata checks passed. Signed artifacts, native test/lint, internal Play upload and exact delivered-device acceptance remain in progress; see docs/android-update-20261101.md and release PR receipts. This preparation does not claim a public Android update or any iPhone upload.
+
 ## Turf Scanner property inspections — November 1, 2026
 
 Prepared locally on canonical main `1a3e7cd` in the isolated `codex/turf-property-inspections` branch. Optional condition (Poor/Fair/Good/Excellent), visible seams, debris, infill level and notes save with each measurement. Camera capture and multi-file uploads accept up to six JPEG/PNG/WebP/HEIC photos of at most 20 MB each. Recent Properties now opens the saved measurement, inspection and photo gallery. Photos that fail to attach can be retried without creating a duplicate calculation. Repeated save clicks are guarded; draft inspections/photos clear on sign-out, account switching or revoked access. Cloud writes capture the initiating account token for the entire measurement/photo operation. Disconnected previews keep photo blobs in local IndexedDB; configured signed-out apps never fall back to device saves.
