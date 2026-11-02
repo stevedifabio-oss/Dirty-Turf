@@ -1,3 +1,4 @@
+vi.mock("../lib/freeAccess", () => ({ loadFreeAccess: vi.fn(), saveFreeAccess: vi.fn() }));
 import type { ComponentProps, ReactElement, ReactNode } from "react";
 vi.mock("./GrowthAdmin", () => ({ GrowthAdmin: () => null }));
 vi.mock("./CommunityScheduler", () => ({ CommunityScheduler: () => null }));
@@ -100,7 +101,7 @@ function course(id = "original-course", title = "Existing training"): AdminCours
   return { id, title, description: "Current training", category: "Core", instructorName: "Steve DiFabio", accessType: "open", requiredLevel: null, priceCents: null, sortOrder: 0, status: "draft", modules: [] };
 }
 function snapshot(courses = [course()]): AdminSnapshot {
-  return { communityId: "community", organizationId: "organization", communityName: "Dirty Turf Academy", courses, members: [], events: [], categories: [], posts: [], reports: [], templates: [], certificates: [], quizAttemptCount: 0 };
+  return { communityId: "community", organizationId: "organization", communityName: "Dirty Turf Academy", canManageMembers: true, courses, members: [], events: [], categories: [], posts: [], reports: [], templates: [], certificates: [], quizAttemptCount: 0 };
 }
 async function workspace(overrides: Partial<ComponentProps<typeof AdminStudio>> = {}) {
   const props: ComponentProps<typeof AdminStudio> = { onToast: vi.fn(), onContentChange: vi.fn(), ...overrides };
@@ -173,6 +174,25 @@ beforeEach(() => {
 afterEach(() => { allHarnesses.splice(0).reverse().forEach(item => item.dispose()); hooks.contexts.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("Admin Studio authoring interactions", () => {
+  it.each([false, undefined])("hides member controls unless the server grants master access (%s)", async permission => {
+    backend.load.mockResolvedValue({ ...snapshot(), canManageMembers: permission });
+    const root = harness(() => AdminStudio({ onToast: vi.fn(), onContentChange: vi.fn() }));
+    root.render(); await flush();
+    const labels = elements(root.render()).filter(e => e.type === "button").map(e => text(e.props.children));
+    expect(labels).not.toContain("Members");
+    expect(labels.some(label => label.includes("Manage member access") || label.includes("Review members"))).toBe(false);
+  });
+
+  it("shows member controls only after the server grants master access", async () => {
+    backend.load.mockResolvedValue({ ...snapshot(), canManageMembers: true });
+    const root = harness(() => AdminStudio({ onToast: vi.fn(), onContentChange: vi.fn() }));
+    root.render(); await flush();
+    button(root.render(), "Members").props.onClick();
+    expect(component(root.render(), "MembersAdmin")).toBeDefined();
+    backend.load.mockResolvedValue({ ...snapshot(), canManageMembers: false });
+    button(root.render(), "Refresh").props.onClick(); await flush();
+    expect(elements(root.render()).some(e => typeof e.type === "function" && e.type.name === "MembersAdmin")).toBe(false);
+  });
   it("keeps a cleared course price empty while editing, then submits numeric cents", async () => {
     const studio = await workspace(), form = studio.openForm(); form.setTitle("Editable course price");
     const price = () => find(find(form.render(), e => e.type === "label" && text(e.props.children).startsWith("Price (USD)")), e => e.type === "input");

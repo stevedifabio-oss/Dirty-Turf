@@ -57,7 +57,7 @@ function harness(prepared = false) {
   }
   const client = {
     from: (table: string) => new Query(table),
-    rpc: async () => ({ data: "workspace-1", error: null }),
+    rpc: async (name: string) => ({ data: name === "admin_can_manage_members" ? state.isAdmin : "workspace-1", error: null }),
     auth: {
       getUser: async () => ({ data: { user: state.validSession ? { id: actorId } : null }, error: state.validSession ? null : new Error("Synthetic expired session") }),
       admin: {

@@ -115,10 +115,10 @@ Deno.serve(async (request) => {
     });
   }
   if (
-    !(await canManageAcademy(admin, userData.user.id, body.academyCommunityId))
+    !(await canManageAcademy(createClient(url, serviceRoleKey, { global: { headers: { Authorization: authorization } }, auth: { persistSession: false } }), body.academyCommunityId))
   ) {
     return jsonResponse(request, {
-      error: "Academy administrator access required",
+      error: "Master owner access required",
     }, { status: 403 });
   }
 
@@ -584,37 +584,9 @@ async function loadMemberIdentities(
   );
 }
 
-async function canManageAcademy(
-  admin: SupabaseClient,
-  userId: string,
-  communityId: string,
-) {
-  const { data: academyRole, error: academyError } = await admin.from(
-    "academy_members",
-  ).select("id")
-    .eq("academy_community_id", communityId).eq("user_id", userId).eq(
-      "status",
-      "active",
-    )
-    .in("role", ["owner", "admin"]).limit(1).maybeSingle();
-  if (academyError) throw academyError;
-  if (academyRole) return true;
-
-  const { data: community, error: communityError } = await admin.from(
-    "academy_communities",
-  )
-    .select("owner_organization_id").eq("id", communityId).single();
-  if (communityError || !community.owner_organization_id) return false;
-  const { data: organizationRole, error: organizationError } = await admin.from(
-    "organization_members",
-  ).select("user_id")
-    .eq("organization_id", community.owner_organization_id).eq(
-      "user_id",
-      userId,
-    )
-    .in("role", ["owner", "admin"]).limit(1).maybeSingle();
-  if (organizationError) throw organizationError;
-  return Boolean(organizationRole);
+async function canManageAcademy(client: SupabaseClient, communityId: string) {
+  const { data, error } = await client.rpc("admin_can_manage_members", { p_community_id: communityId });
+  return !error && data === true;
 }
 
 async function loadUsersByEmail(admin: SupabaseClient) {
