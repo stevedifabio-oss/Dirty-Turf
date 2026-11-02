@@ -5,6 +5,7 @@ import type { ServiceQuote } from "../lib/serviceCheckout";
 import type { AccessState } from "../lib/academyAccess";
 import { Growth } from "./Growth";
 import { GrowthAdmin } from "./GrowthAdmin";
+import { GrowthServiceDetails } from "./GrowthServiceDetails";
 
 // Exercise the real handlers and effect cleanup using the same persistent-hook
 // harness as the existing authoring, community, and resume interaction suites.
@@ -66,6 +67,44 @@ beforeEach(() => { vi.stubGlobal("window", { location: { search: "", assign: vi.
 afterEach(() => { views.splice(0).reverse().forEach(view => view.dispose()); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("member growth requests", () => {
+  it("carries prepared automation selections into the correct service request without replacing the member's notes", async () => {
+    window.location.search = "?view=grow&service=ghl";
+    const ui = await member();
+    const details = find(ui.render(), element => element.type === GrowthServiceDetails);
+    expect(details.props.onPrepareRequest("Services requested: CRM Setup, SMS Automation")).toBe(true);
+    notes(ui.render(), "Please keep our current calendar.");
+    submit(ui.render()); await flush();
+    expect(api.create).toHaveBeenCalledWith("ghl", "Services requested: CRM Setup, SMS Automation\n\nPlease keep our current calendar.", expect.any(String));
+    expect(payments.checkout).not.toHaveBeenCalled();
+  });
+  it("blocks overlong combined request details and rejects a stale preparation callback offline", async () => {
+    window.location.search = "?view=grow&service=ghl";
+    const ui = await member();
+    const details = find(ui.render(), element => element.type === GrowthServiceDetails);
+    expect(details.props.onPrepareRequest("a".repeat(1601))).toBe(false);
+    expect(details.props.onPrepareRequest("Services requested: CRM Setup")).toBe(true);
+    notes(ui.render(), "b".repeat(2000));
+    submit(ui.render()); await flush();
+    expect(api.create).not.toHaveBeenCalled();
+    expect(text(ui.render())).toContain("must total 2,000 characters or fewer");
+    ui.props.readOnly = true; ui.render();
+    expect(details.props.onPrepareRequest("Services requested: AI Voice")).toBe(false);
+  });
+  it("opens a service-specific URL and returns to the catalog without submitting or losing notes", async () => {
+    const pushState = vi.fn();
+    vi.stubGlobal("window", { location: { search: "?view=grow&service=website", assign: vi.fn() }, history: { pushState } });
+    const ui = await member();
+    expect(find(ui.render(), element => element.type === GrowthServiceDetails).props.service.key).toBe("website");
+    expect(elements(ui.render()).some(element => element.props.className === "growth-services")).toBe(false);
+    notes(ui.render(), "A new site for my business.");
+    button(ui.render(), "← Back to marketing services").props.onClick();
+    expect(pushState).toHaveBeenLastCalledWith(null, "", "?view=grow");
+    button(serviceCard(ui.render(), "Website"), "Request details").props.onClick();
+    expect(pushState).toHaveBeenLastCalledWith(null, "", "?view=grow&service=website");
+    expect(find(ui.render(), element => element.type === "textarea").props.value).toBe("A new site for my business.");
+    expect(api.create).not.toHaveBeenCalled();
+    expect(payments.checkout).not.toHaveBeenCalled();
+  });
   it("shows configured prices and optional add-ons without preselecting or buying anything", async () => {
     const ui = await member();
     const markup = text(ui.render());

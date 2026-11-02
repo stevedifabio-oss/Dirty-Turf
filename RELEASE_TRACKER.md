@@ -2,6 +2,14 @@
 
 Maintained with each release. Canonical: https://github.com/stevedifabio-oss/Dirty-Turf.
 
+## Grow Your Business service pages — November 1, 2026
+
+Steve authorized publishing the completed marketing-page batch. Prepared on canonical main `7e74e08`: his Grow Your Business introduction; dedicated Website, SEO/AEO, Website Care, GoHighLevel and Facebook/Instagram Ads pages; six unique website-design examples with accessible enlarged previews; and his four service overview graphics with illustrative-data captions. Existing app fonts, colors and navigation are retained. Website Care is advertised as starting at $97/month. Steve explicitly retained current GoHighLevel setup ($1,495–$2,495) and separate software ($197/month) prices; AI/management options request a quote. Facebook/Instagram management remains $495–$895/month, with ad spend separate.
+
+Service pages have query-addressable routes, native dropdowns, FAQs and request CTAs. GoHighLevel and advertising selections prepare a bounded summary for the existing per-member service request while preserving freeform notes, duplicate prevention, offline restrictions and explicit submission. CRM, conversations, charts, advertising concepts and budget planning are local demonstrations, not active integrations or customer performance. No GHL/Meta campaign, live messaging, customer import, payment catalog, subscription, hosted migration, function or native-store release is activated by this frontend batch. Preview output/qa files remain ignored and are not a production route.
+
+Publication is pending the canonical PR, complete Linux CI and the verified Netlify production commit; receipts will be recorded in the PR. Local verification includes TypeScript, focused growth/request and budget tests, production build and browser checks of routes, dropdowns, image previews, reporting switches, estimator assumptions and selection summaries. The installed phone app frontend remains queued for a subsequent store release.
+
 ## GHL course-workflow review and isolated editor preparation — November 1, 2026
 
 Published core editor through PR #51, main `634f5036d7ba7bcad63114c0297f36b8eee2cc3f`, Netlify `6ae7e944406d7d09c4a18db8` (Published). Source ordering migration `20261101180626_academy_course_order` is hosted as `20261102013602_academy_course_order`; do not replay it. Canonical Linux CI 41373315687 passed. The live owner opened the real Academy's Arrange modules & lessons control. Backend acceptance passed an owner no-op save and ordinary-member denial; module/lesson/progress row digests were unchanged.
