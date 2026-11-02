@@ -91,8 +91,9 @@ async function signIn() {
   render(); mock.auth!("INITIAL_SESSION", { user: { id: "member-one" }, expires_at: Date.now() / 1000 + 3600 });
   await vi.advanceTimersByTimeAsync(0); await flush(); return render();
 }
+function navigation() { return component(render(), "WebNavigation")!; }
 function openQuote() {
-  component(render(), "PrimaryNavigation")!.props.onNavigate("home");
+  navigation().props.onNavigate("home");
   component(render(), "HomeView")!.props.openQuote("manual");
   return component(render(), "QuoteSheet")!;
 }
@@ -106,7 +107,7 @@ function editPrivateQuote() {
   return { oldQuote: component(render(), "QuoteSheet")!, file };
 }
 function signOutFromSettings() {
-  component(render(), "PrimaryNavigation")!.props.onOpenSettings();
+  navigation().props.onOpenSettings();
   return elements(render()).find(e => typeof e.props.onSignOut === "function" && "notifications" in e.props)!.props.onSignOut() as Promise<void>;
 }
 async function agreeForFixture() {
@@ -250,7 +251,7 @@ describe("actual workspace resume and offline flow", () => {
       environment.dispatchEvent(new Event("focus"));
     } else if (boundary === "sign_out_button") {
       oldQuote.props.onClose();
-      component(render(), "PrimaryNavigation")!.props.onOpenSettings();
+      navigation().props.onOpenSettings();
       const settings = elements(render()).find(e => typeof e.props.onSignOut === "function" && "notifications" in e.props)!;
       await settings.props.onSignOut();
     } else mock.auth!("SIGNED_OUT", null);
@@ -327,7 +328,7 @@ describe("actual workspace resume and offline flow", () => {
     finishSignOut!(); await signingOut; await flush();
     mock.auth!("SIGNED_IN", { user: { id: "member-one" }, expires_at: Date.now() / 1000 + 7200 });
     await vi.advanceTimersByTimeAsync(0); await flush();
-    component(render(), "PrimaryNavigation")!.props.onNavigate("learn");
+    navigation().props.onNavigate("learn");
     expect(component(render(), "AcademyView")?.props.courses).toEqual([course]);
   });
   it("does not let completion of an older explicit sign-out overwrite a new account sign-in", async () => {
@@ -337,7 +338,7 @@ describe("actual workspace resume and offline flow", () => {
     mock.auth!("SIGNED_IN", { user: { id: "member-two" }, expires_at: Date.now() / 1000 + 3600 });
     await vi.advanceTimersByTimeAsync(0); await flush();
     await agreeForFixture();
-    component(render(), "PrimaryNavigation")!.props.onNavigate("learn");
+    navigation().props.onNavigate("learn");
     const active = component(render(), "AcademyView")!; expect(active.props.courses).toEqual([course]);
     finishSignOut!(); await signingOut; await flush();
     expect(component(render(), "AcademyView")?.key).toBe(active.key);

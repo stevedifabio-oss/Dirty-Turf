@@ -145,7 +145,21 @@ export async function searchPropertyAddress(query: string): Promise<PropertyGeoc
   const { data, error } = await supabase.functions.invoke("map-geocode", {
     body: { query },
   });
-  if (error) throw error;
+  if (error) {
+    const response = (error as { context?: unknown }).context;
+    if (response instanceof Response) {
+      const messages: Record<number, string> = {
+        401: "Sign in again to search for an address.",
+        403: "Turf Scanner access is required to search for properties.",
+        422: "Enter the full street number, street, city, state and ZIP code.",
+        429: "Address search is busy. Wait a moment, then search again.",
+        502: "The address service could not be reached. Try again or use your current location.",
+        503: "Address search is temporarily unavailable. Try again shortly.",
+      };
+      throw new Error(messages[response.status] ?? "Address search failed. Please try again.");
+    }
+    throw new Error("Address search could not connect. Check your internet connection and try again.");
+  }
   return propertyGeocodeResults(data);
 }
 

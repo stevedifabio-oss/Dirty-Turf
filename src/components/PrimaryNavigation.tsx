@@ -1,6 +1,6 @@
 import { BookOpen, Home, Settings2 } from "lucide-react";
 
-export type PrimaryNavigationView = "home" | "learn" | "community" | "events" | "admin" | "grow";
+export type PrimaryNavigationView = "home" | "learn" | "community" | "events" | "admin" | "grow" | "upgrades";
 
 type PrimaryNavigationProps = {
   activeView: PrimaryNavigationView;

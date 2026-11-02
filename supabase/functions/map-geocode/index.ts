@@ -12,6 +12,7 @@ type GeocodeResult = {
   formattedAddress: string;
   latitude: number;
   longitude: number;
+  approximate?: boolean;
 };
 
 Deno.serve(async (request) => {
@@ -109,6 +110,23 @@ Deno.serve(async (request) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
+    // Census supports U.S. structure addresses without a paid account or key.
+    // Its point is interpolated along a street range, not a surveyed yard corner.
+    // Keep the legacy cache namespace/provider truthful: Census results are not
+    // written into the Nominatim-only cache. The shared request ceiling still applies.
+    try {
+      const censusParams = new URLSearchParams({ address: query, benchmark: "Public_AR_Current", format: "json" });
+      const censusResponse = await fetch(`https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?${censusParams}`, {
+        headers: { Accept: "application/json", "User-Agent": APP_USER_AGENT }, signal: controller.signal,
+      });
+      if (censusResponse.ok) {
+        const censusResults = normalizeCensusResults(await censusResponse.json());
+        if (censusResults.length) return jsonResponse(request, responseBody(censusResults, false, "census"));
+      }
+    } catch {
+      // Preserve the existing search for addresses Census cannot resolve.
+      // Never log a member's address or the provider's response body.
+    }
     const params = new URLSearchParams({
       countrycodes: "us",
       email: "hello@dirtyturf.com",
@@ -158,6 +176,7 @@ function normalizeProviderResults(value: unknown): GeocodeResult[] {
   return value.flatMap((entry) => {
     if (!entry || typeof entry !== "object") return [];
     const item = entry as Record<string, unknown>;
+    if (!validCoordinate(item.lat, 90) || !validCoordinate(item.lon, 180)) return [];
     const latitude = Number(item.lat);
     const longitude = Number(item.lon);
     const formattedAddress = typeof item.display_name === "string"
@@ -166,6 +185,22 @@ function normalizeProviderResults(value: unknown): GeocodeResult[] {
     if (!formattedAddress || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return [];
     if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return [];
     return [{ formattedAddress, latitude, longitude }];
+  }).slice(0, 5);
+}
+
+function validCoordinate(value: unknown, limit: number) {
+  return (typeof value === "number" || (typeof value === "string" && value.trim() !== "")) && Number.isFinite(Number(value)) && Math.abs(Number(value)) <= limit;
+}
+
+function normalizeCensusResults(value: unknown): GeocodeResult[] {
+  if (!value || typeof value !== "object") return [];
+  const result = (value as { result?: { addressMatches?: unknown } }).result;
+  if (!result || !Array.isArray(result.addressMatches)) return [];
+  return result.addressMatches.flatMap((entry: unknown) => {
+    if (!entry || typeof entry !== "object") return [];
+    const item = entry as { matchedAddress?: unknown; coordinates?: { x?: unknown; y?: unknown } };
+    if (typeof item.matchedAddress !== "string" || !item.matchedAddress.trim() || !validCoordinate(item.coordinates?.y, 90) || !validCoordinate(item.coordinates?.x, 180)) return [];
+    return [{ formattedAddress: item.matchedAddress.trim().slice(0, 300), latitude: Number(item.coordinates!.y), longitude: Number(item.coordinates!.x), approximate: true }];
   }).slice(0, 5);
 }
 
@@ -178,8 +213,8 @@ function isGeocodeResults(value: unknown): value is GeocodeResult[] {
   );
 }
 
-function responseBody(results: GeocodeResult[], cached: boolean) {
-  return { results, cached, attribution: "© OpenStreetMap contributors" };
+function responseBody(results: GeocodeResult[], cached: boolean, provider = "nominatim") {
+  return { results, cached, provider, attribution: provider === "census" ? "U.S. Census Bureau — approximate address location" : "© OpenStreetMap contributors" };
 }
 
 async function sha256(value: string) {

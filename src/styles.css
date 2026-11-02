@@ -546,3 +546,26 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .community-media-preview .community-media-video-start { display: grid; height: auto; min-height: 120px; align-content: center; justify-items: center; gap: 6px; padding: 20px 12px; background: #e8eee7; color: var(--turf-dark); font: inherit; cursor: pointer; }.community-media-video-start strong { font-size: .76rem; }.community-media-video-start > span { max-width: 100%; overflow: hidden; color: var(--ink-soft); font-size: .65rem; text-overflow: ellipsis; white-space: nowrap; }.community-media-video[hidden] { display: none; }.community-video-preview video.community-media-video { height: auto; max-height: 70vh; background: var(--asphalt); object-fit: contain; }.community-video-preview .community-media-error > button { justify-self: start; min-height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: white; color: var(--turf-dark); font: inherit; font-size: .7rem; font-weight: 700; }
 
 .field-scanner:has(> img) { aspect-ratio: 3 / 2; min-height: 0; align-self: center; overflow: hidden; background: #123e27; }.field-scanner > img { display: block; width: 100%; height: auto; }
+.map-history-button { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px; margin: 10px 0; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); color: var(--turf-dark); font: inherit; font-size: .76rem; font-weight: 700; }
+.map-history-panel { margin-bottom: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); }
+.map-history-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: .78rem; }
+.map-history-heading button { min-height: 44px; padding: 8px 12px; border-radius: 7px; background: var(--turf); color: white; font: inherit; font-size: .7rem; font-weight: 600; }
+.map-history-panel .imagery-date-row { margin: 10px 0; padding-inline: 0; }
+.map-history-timeline { display: flex; align-items: center; gap: 10px; }
+.map-history-timeline button { display: grid; width: 44px; height: 44px; flex: 0 0 44px; place-items: center; border: 1px solid var(--line); border-radius: 7px; background: var(--chalk); color: var(--turf-dark); }
+.map-history-timeline input { width: 100%; min-width: 0; min-height: 44px; accent-color: var(--turf); }
+.map-history-endpoints { display: flex; justify-content: space-between; gap: 8px; color: var(--ink-soft); font-size: .6rem; }
+.map-history-panel p { margin: 10px 0; font-size: .72rem; line-height: 1.6; }
+.map-history-panel .map-history-help { margin-bottom: 0; color: var(--ink-soft); font-size: .64rem; }
+
+/* Address search and camera-style map boundaries. */
+.property-map-measure .map-source-row { grid-template-columns: minmax(0, 1fr); }
+.property-map-measure .map-source-row > span { max-width: none; white-space: normal; overflow: visible; text-align: left; line-height: 1.5; }
+.map-search-error { margin: 0; padding: 10px 12px; border: 1px solid #e2aaa4; border-radius: 8px; background: #fff1ef; color: #8c2822; font-size: .72rem; line-height: 1.6; }
+.map-address-matches, .map-location-confirm { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: white; font-size: .72rem; }
+.map-address-matches button { display: flex; align-items: center; gap: 9px; min-height: 44px; padding: 10px; border-radius: 6px; background: var(--mist); color: var(--turf-dark); text-align: left; font: inherit; }
+.map-address-matches svg, .map-selected-address svg { flex: 0 0 auto; }
+.map-location-confirm p { margin: 0; line-height: 1.6; }
+.map-location-confirm button { min-height: 44px; padding: 8px; border-radius: 6px; background: var(--mist); color: var(--turf-dark); font: inherit; font-weight: 700; }
+.map-selected-address { display: flex; align-items: flex-start; gap: 6px; margin: 0; color: var(--turf-dark); font-size: .68rem; line-height: 1.6; }
+.map-boundary-flag { background: transparent; border: 0; filter: drop-shadow(0 1px 2px rgba(0,0,0,.35)); }

@@ -48,6 +48,7 @@ export function HubSheet(props: HubProps) {
           <div><p>Dirty Turf field tools</p><h2>{title}</h2></div>
           <button className="bare-icon" onClick={onClose} aria-label="Close"><X size={19} /></button>
         </header>
+        {props.primaryNavigation}
         <div className="hub-body">
           {section === "settings"
             ? <SettingsPanel onToast={props.onToast} dataMode={props.dataMode} canManage={props.canManage} readOnly={props.readOnly} onSignOut={props.onSignOut} />
@@ -55,7 +56,6 @@ export function HubSheet(props: HubProps) {
               ? <NotificationsPanel notifications={props.notifications} onOpen={props.onOpenNotification} onMarkAll={props.onMarkAllNotificationsRead} readOnly={props.readOnly} />
               : <AccessPanel onRequestMagicLink={props.onRequestMagicLink} readOnly={props.readOnly} />}
         </div>
-        {props.primaryNavigation}
       </section>
     </div>
   );

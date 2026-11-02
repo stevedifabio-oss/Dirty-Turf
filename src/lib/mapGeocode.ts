@@ -2,6 +2,7 @@ export type PropertyGeocodeResult = {
   formattedAddress: string;
   latitude: number;
   longitude: number;
+  approximate?: boolean;
 };
 
 export function propertyGeocodeResults(value: unknown): PropertyGeocodeResult[] {
@@ -15,10 +16,11 @@ export function propertyGeocodeResults(value: unknown): PropertyGeocodeResult[] 
     const formattedAddress = typeof candidate.formattedAddress === "string"
       ? candidate.formattedAddress.trim()
       : "";
+    if (candidate.latitude === null || candidate.latitude === "" || typeof candidate.latitude === "boolean" || candidate.longitude === null || candidate.longitude === "" || typeof candidate.longitude === "boolean") return [];
     const latitude = Number(candidate.latitude);
     const longitude = Number(candidate.longitude);
     if (!formattedAddress || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return [];
     if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return [];
-    return [{ formattedAddress, latitude, longitude }];
+    return [{ formattedAddress, latitude, longitude, ...(candidate.approximate === true ? { approximate: true } : {}) }];
   });
 }

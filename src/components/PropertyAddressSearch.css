@@ -1,0 +1,9 @@
+.property-address-search { position: relative; min-width: 0; }
+.property-address-options { position: relative; z-index: 600; display: grid; max-height: 260px; overflow: auto; overscroll-behavior: contain; margin: 6px 0; padding: 4px; list-style: none; border: 1px solid #b9c8bd; border-radius: 9px; background: white; box-shadow: 0 8px 24px rgba(0,35,12,.15); }
+.property-address-options li { display: flex; min-height: 48px; align-items: center; gap: 9px; padding: 9px 10px; border-radius: 6px; color: var(--turf-dark); font-size: .72rem; line-height: 1.5; cursor: pointer; }
+.property-address-options li + li { border-top: 1px solid var(--line); }
+.property-address-options li:hover, .property-address-options li[aria-selected="true"] { background: var(--mist); box-shadow: inset 3px 0 var(--turf); }
+.property-address-options svg { flex: 0 0 auto; }
+.property-address-help { margin: 6px 2px; color: var(--ink-soft); font-size: .65rem; line-height: 1.5; }
+.property-address-search > .map-geocode-attribution { margin: 3px 2px; }
+.property-address-search a { color: var(--turf); }

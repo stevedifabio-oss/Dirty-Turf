@@ -118,7 +118,8 @@ import { AppErrorBoundary } from "./components/AppErrorBoundary";
 import { CommunityView } from "./components/Community";
 import { EventsView } from "./components/Events";
 import { NumberField } from "./components/NumberField";
-import { PrimaryNavigation, type PrimaryNavigationView } from "./components/PrimaryNavigation";
+import type { PrimaryNavigationView } from "./components/PrimaryNavigation";
+import { WebNavigation } from "./components/WebNavigation";
 import type { HubSection } from "./components/Network";
 import { courses as seedCourses, initialComments, initialEvents, initialMembers, initialNotifications, initialPosts } from "./appData";
 import "./styles.css";
@@ -134,6 +135,7 @@ const AdminStudio = lazy(() =>
 );
 const MembershipPages = lazy(() => import("./components/MembershipPages").then((module) => ({ default: module.MembershipPages })));
 const Growth = lazy(() => import("./components/Growth").then((module) => ({ default: module.Growth })));
+const Upgrades = lazy(() => import("./components/Upgrades").then((module) => ({ default: module.Upgrades })));
 
 type View = PrimaryNavigationView;
 
@@ -163,11 +165,12 @@ const navTitles: Record<View, string> = {
   events: "Academy",
   admin: "Admin Studio",
   grow: "Grow your business",
+  upgrades: "Memberships & Upgrades",
 };
 
 function initialViewFromUrl(): View {
   const requested = new URLSearchParams(window.location.search).get("view");
-  if (requested === "tools" || (requested === "grow" && Capacitor.isNativePlatform())) return "home";
+  if (requested === "tools" || (requested === "upgrades" && Capacitor.isNativePlatform())) return "home";
   return requested && Object.hasOwn(navTitles, requested) ? requested as View : "home";
 }
 
@@ -191,7 +194,6 @@ function CertificateVerificationPage({ code }: { code: string }) {
 }
 
 function App() {
-  const [desktopNavOpen, setDesktopNavOpen] = useState(true);
   const [termsConsent] = useState(() => { try { return createTermsConsent(window.localStorage); } catch { return createTermsConsent(); } });
   const [termsAccepted, setTermsAccepted] = useState(() => termsConsent.granted());
   const [termsUserId, setTermsUserId] = useState<string | null>(null);
@@ -921,6 +923,8 @@ function App() {
     setHubSection("settings");
   };
 
+  const topNavigation = (activeSection?: "scanner" | "settings") => <WebNavigation activeView={activeView} activeSection={activeSection} disabled={propertySaving} canManage={canManage} onNavigate={changeView} onMeasure={() => { if (changeView("home")) openQuote("camera"); }} onOpenSettings={() => { if (activeView !== "admin" || adminLeaveGuard.current?.() !== false) openSettings(); }} />;
+
   const sendMagicLink = async (email: string, notify = true) => {
     if (!termsConsent.granted()) throw new Error("Agree to the community terms before signing in.");
     try {
@@ -1041,26 +1045,8 @@ function App() {
   }
 
   return (
-    <MemberProfileBoundary userId={termsAccepted ? termsUserId : null} onSignOut={() => void handleSignOut()}><main className={`app-shell${desktopNavOpen ? " desktop-nav-expanded" : ""}`}>
-      <aside className="desktop-sidebar" aria-label="Workspace navigation">
-        <div className="desktop-brand">
-          <img src="/dirty-turf-logo.png" alt="Dirty Turf" />
-        </div>
-        <button className="desktop-nav-toggle" aria-label={desktopNavOpen ? "Collapse navigation" : "Expand navigation"} aria-expanded={desktopNavOpen} aria-controls="desktop-app-navigation" onClick={() => setDesktopNavOpen(open => !open)} title={desktopNavOpen ? "Collapse navigation" : "Expand navigation"}><Menu size={19} /><span>Collapse menu</span></button>
-        <button className="desktop-new-calculation" onClick={() => openQuote("manual")} aria-label="New calculation" title="New calculation"><Plus size={18} /><span>New calculation</span></button>
-        <nav id="desktop-app-navigation" className="desktop-nav" aria-label="App sections">
-          <DesktopNavItem icon={<Home size={19} />} label="Dashboard" active={activeView === "home"} onClick={() => changeView("home")} />
-          <DesktopNavItem icon={<BookOpen size={19} />} label="Academy" active={["learn", "community", "events"].includes(activeView)} onClick={() => changeView("learn")} />
-          {!Capacitor.isNativePlatform() && <DesktopNavItem icon={<TrendingUp size={19} />} label="Grow your business" active={activeView === "grow"} onClick={() => changeView("grow")} />}
-          {canManage && <DesktopNavItem icon={<ShieldCheck size={19} />} label="Admin Studio" active={activeView === "admin"} onClick={() => changeView("admin")} />}
-        </nav>
-        <div className="desktop-sidebar-footer">
-          <button className={`desktop-workspace-status ${dataMode}`} onClick={() => setHubSection(dataMode === "cloud" ? "settings" : "access")} aria-label={workspaceStatus} title={workspaceStatus}>
-            <span />
-          </button>
-          <button className="desktop-settings" onClick={() => setHubSection("settings")} aria-label="Workspace settings" title="Workspace settings"><Settings2 size={18} /><span>Workspace settings</span></button>
-        </div>
-      </aside>
+    <MemberProfileBoundary userId={termsAccepted ? termsUserId : null} onSignOut={() => void handleSignOut()}><main className="app-shell web-app-shell">
+
 
       <section className="phone-frame workspace-frame" aria-label="Dirty Turf Academy workspace">
         <header className="topbar">
@@ -1073,6 +1059,7 @@ function App() {
             <button className={searchOpen ? "icon-button active" : "icon-button"} aria-label={searchOpen ? "Close search" : "Search"} onClick={() => setSearchOpen((open) => !open)}>{searchOpen ? <X size={19} /> : <Search size={19} />}</button>
           </div>
         </header>
+        {topNavigation()}
 
         {readOnly && <div className="cloud-load-alert offline-alert" role="status"><span>{connection === "offline" ? "You’re offline." : "The connection could not be verified."} Loaded content and drafts are still here. Reconnect to save or load new content.</span><button type="button" onClick={() => refreshWorkspaceRef.current()}>Reconnect</button></div>}
         {cloudLoadError && <div className="cloud-load-alert" role="alert"><span>{cloudLoadError}</span><button type="button" onClick={() => setWorkspaceRefreshToken((token) => token + 1)}>Try again</button></div>}
@@ -1084,7 +1071,8 @@ function App() {
         {!waitingForWorkspace && <>
         {searchOpen && <GlobalSearch key={renderedCourseAccount} query={query} onQuery={setQuery} content={{ jobs, courses: dataMode === "cloud" ? visibleCourses : [], posts: hasCommunity ? posts : [], comments: hasCommunity ? comments : [], events: hasCommunity ? events : [], members: hasCommunity ? members : [] }} readOnly={readOnly} searchRemote={hasCommunity && supabase ? searchCommunityPosts : undefined} onOpen={openSearchResult} />}
         <div hidden={searchOpen}>
-        {activeView !== "home" && activeView !== "admin" && activeView !== "grow" && <AcademyTabs activeView={activeView} canManage={canManage} hasCommunity={hasCommunity} onNavigate={changeView} />}
+        {activeView !== "home" && activeView !== "admin" && activeView !== "grow" && activeView !== "upgrades" && <AcademyTabs activeView={activeView} canManage={canManage} hasCommunity={hasCommunity} onNavigate={changeView} />}
+        {activeView === "upgrades" && !Capacitor.isNativePlatform() && <Suspense fallback={<div className="sheet-loading" role="status">Loading memberships and upgrades…</div>}><Upgrades /></Suspense>}
         {activeView === "home" && <HomeView jobs={jobs} onOpenJob={job => { if (renderedCourseAccount === courseAccountGeneration.current) setSelectedJob(job); }} openQuote={openQuote} checks={arrivalChecks} setChecks={next => { if (renderedCourseAccount === courseAccountGeneration.current) setArrivalChecks(next); }} setToast={setToast} onGrow={() => changeView("grow")} />}
         {activeView === "grow" && <Suspense fallback={<div className="sheet-loading" role="status">Loading business services…</div>}><Growth key={renderedCourseAccount} access={workspaceAccess} readOnly={readOnly} onToast={setToast} /></Suspense>}
         {activeView === "learn" && <AcademyView key={renderedCourseAccount} readOnly={readOnly} requestedLessonId={requestedLessonId} onRenewLessonAssets={renewLessonAssets} requestedCourseCloudId={requestedCourseCloudId} onRequestedCourseOpened={() => { setRequestedCourseCloudId(undefined); setRequestedLessonId(undefined); }} courses={visibleCourses} certificates={certificates} dataMode={dataMode} refreshError={courseRefreshError} onRefresh={() => refreshCoursesRef.current()} onCoursesChange={changeCourses} onLessonCompletion={(id, completed) => writeCourseProgress(() => saveLessonCompletion(id, completed))} onQuizAttempt={(id, score, answers) => writeCourseProgress(() => recordAcademyQuizAttempt(id, score, answers))} onRequestCertificate={async (courseId) => { await writeCourseProgress(() => requestAcademyCertificate(courseId)); const next = await loadAcademyCertificates(); if (renderedCourseAccount === courseAccountGeneration.current) setCertificates(next); }} onToast={setToast} onDiscuss={() => changeView("community")} />}
@@ -1097,11 +1085,11 @@ function App() {
         </div>
         </>}
 
-        {!quoteOpen && !hubSection && <PrimaryNavigation activeView={activeView} settingsOpen={false} onNavigate={changeView} onOpenSettings={openSettings} />}
 
-        {quoteOpen && <QuoteSheet canMeasure={canMeasure} access={workspaceAccess} draft={draft} setDraft={next => { if (renderedCourseAccount === courseAccountGeneration.current) setDraft(next); }} quote={quote} inspection={inspection} setInspection={value => { if (renderedCourseAccount === courseAccountGeneration.current) setInspection(value); }} photos={propertyPhotos} setPhotos={photos => { if (renderedCourseAccount === courseAccountGeneration.current) setPropertyPhotos(photos); else for (const photo of photos) URL.revokeObjectURL(photo.url); }} saving={propertySaving} onClose={() => setQuoteOpen(false)} onSave={saveQuote} onError={setToast} primaryNavigation={<PrimaryNavigation activeView={activeView} settingsOpen={false} onNavigate={changeView} onOpenSettings={openSettings} />} />}
+
+        {quoteOpen && <QuoteSheet canMeasure={canMeasure} access={workspaceAccess} draft={draft} setDraft={next => { if (renderedCourseAccount === courseAccountGeneration.current) setDraft(next); }} quote={quote} inspection={inspection} setInspection={value => { if (renderedCourseAccount === courseAccountGeneration.current) setInspection(value); }} photos={propertyPhotos} setPhotos={photos => { if (renderedCourseAccount === courseAccountGeneration.current) setPropertyPhotos(photos); else for (const photo of photos) URL.revokeObjectURL(photo.url); }} saving={propertySaving} onClose={() => setQuoteOpen(false)} onSave={saveQuote} onError={setToast} primaryNavigation={topNavigation("scanner")} />}
         {selectedJob && <SavedJobSheet job={selectedJob} failedPhotos={photoRetry?.jobId === selectedJob.id ? photoRetry.files.length : 0} saving={propertySaving} onRetry={() => void retryPropertyPhotos()} onClose={() => setSelectedJob(null)} />}
-        {hubSection && <Suspense fallback={<div className="sheet-loading" role="status">Loading workspace...</div>}><HubSheet readOnly={readOnly} section={hubSection} onClose={() => setHubSection(null)} onToast={setToast} onRequestMagicLink={sendMagicLink} onSignOut={handleSignOut} dataMode={dataMode} canManage={canManage} notifications={notifications} onOpenNotification={openNotification} onMarkAllNotificationsRead={markEveryNotificationRead} primaryNavigation={<PrimaryNavigation activeView={activeView} settingsOpen onNavigate={changeView} onOpenSettings={openSettings} />} /></Suspense>}
+        {hubSection && <Suspense fallback={<div className="sheet-loading" role="status">Loading workspace...</div>}><HubSheet readOnly={readOnly} section={hubSection} onClose={() => setHubSection(null)} onToast={setToast} onRequestMagicLink={sendMagicLink} onSignOut={handleSignOut} dataMode={dataMode} canManage={canManage} notifications={notifications} onOpenNotification={openNotification} onMarkAllNotificationsRead={markEveryNotificationRead} primaryNavigation={topNavigation("settings")} /></Suspense>}
         {toast && <div className="toast" role="status"><CheckCircle2 size={18} />{toast}</div>}
       </section>
     </main></MemberProfileBoundary>
@@ -1297,6 +1285,7 @@ function QuoteSheet({ canMeasure, access, draft, setDraft, quote, inspection, se
     <div className="sheet-layer" role="presentation" onMouseDown={(event) => !saving && event.target === event.currentTarget && onClose()}>
       <section ref={dialogRef} className="quote-sheet" role="dialog" aria-modal="true" aria-labelledby="quote-title">
         <header className="sheet-header"><button className="bare-icon" aria-label="Close infill calculator" disabled={saving} onClick={onClose} data-dialog-autofocus><ArrowLeft size={20} /></button><div><p>Measure · Price · Infill</p><h2 id="quote-title">Turf Scanner</h2></div><button className="save-link" disabled={saving || (draft.mode !== "manual" && !canMeasure)} onClick={onSave}>{saving ? "Saving…" : "Save"}</button></header>
+        {primaryNavigation}
         <div className="sheet-body"><fieldset className="quote-edit-fields" disabled={saving}>
           <fieldset className="mode-fieldset"><legend>Measurement method</legend><div className="segmented-control"><ModeButton icon={<Camera size={17} />} label="Camera" active={draft.mode === "camera"} onClick={() => update("mode", "camera")} /><ModeButton icon={<Map size={17} />} label="Map" active={draft.mode === "map"} onClick={() => update("mode", "map")} /><ModeButton icon={<Ruler size={17} />} label="Manual" active={draft.mode === "manual"} onClick={() => update("mode", "manual")} /></div></fieldset>
           {draft.mode === "camera" && canMeasure && <LiveCameraMeasurement area={draft.cameraArea} onAreaChange={(value) => update("cameraArea", value)} />}
@@ -1308,7 +1297,7 @@ function QuoteSheet({ canMeasure, access, draft, setDraft, quote, inspection, se
           {(draft.mode === "manual" || canMeasure) && <><label className="property-name-input">Property name or address<input maxLength={200} value={draft.address} onChange={event => update("address", event.target.value)} placeholder="e.g. Smith backyard" /></label><PropertyInspection value={inspection} onChange={setInspection} photos={photos} onPhotosChange={setPhotos} onError={onError} /></>}
         </fieldset></div>
         <div className="sheet-footer"><button className="primary-button wide" disabled={saving || (draft.mode !== "manual" && !canMeasure)} onClick={onSave}><CheckCircle2 size={18} /> {saving ? "Saving property…" : "Save property"}</button></div>
-        {primaryNavigation}
+
       </section>
     </div>
   );
@@ -1364,7 +1353,6 @@ function JobRow({ job, onOpen }: { job: Job; onOpen: () => void }) {
   return <button type="button" className="job-row" onClick={onOpen} aria-label={`Open property ${job.address}`}><div className="job-method">{job.method === "map" ? <Map size={17} /> : job.method === "camera" ? <Camera size={17} /> : <Ruler size={17} />}</div><div><h4>{job.address}</h4><p>{formatNumber(job.area)} sq ft · {job.infill} 40-lb bags · {formatCurrency(job.quote)}</p></div><span>{job.inspection?.condition ?? job.status} <ChevronRight size={15} /></span></button>;
 }
 
-function DesktopNavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) { return <button className={active ? "desktop-nav-item active" : "desktop-nav-item"} onClick={onClick} aria-current={active ? "page" : undefined} aria-label={label} title={label}>{icon}<span>{label}</span></button>; }
 function numberValue(value: string) { const parsed = Number(value); return Number.isFinite(parsed) ? parsed : 0; }
 function formatNumber(value: number) { return new Intl.NumberFormat("en-US").format(value); }
 function formatCurrency(value: number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(value); }
