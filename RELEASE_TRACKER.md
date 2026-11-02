@@ -4,11 +4,13 @@ Maintained with each release. Canonical: https://github.com/stevedifabio-oss/Dir
 
 ## Owner-only per-member complimentary access — November 1, 2026
 
-Web release candidate: Admin → Members shows free-access checkboxes inside each member record, with an optional expiration for new grants. Only the verified steve@dirtyturf.com master identity may manage members, invitations, course restrictions and complimentary grants; other managers retain their unrelated administration tools. Server authorization and invitation handling enforce the same rule as the interface.
+Published through PR #48 (main `726adb59b66f2dcea65e1cf72f33faa4c7be9f11`, Netlify `6ae7de28a8a01fd081b0e2d9`): Admin → Members shows free-access checkboxes inside each member record, with an optional expiration for new grants. Only the verified steve@dirtyturf.com master identity may manage members, invitations, course restrictions and complimentary grants; other managers retain their unrelated administration tools. Server authorization and invitation handling enforce the same rule as the interface. A layout follow-up separates the expiration field from the checkbox grid and adds normal panel spacing.
 
 The owner-controls migration and separate owner_per_member_free_access migration add independent Community, Turf Scanner and course grants. Revoking a complimentary grant preserves other purchased/imported access and does not change billing. Complimentary Community access never implies course access; existing membership grants keep their current semantics. This release does not activate new Stripe prices, new checkout, separate-membership cutover, notifications or imports. Newly advertised add-on courses without content remain unavailable. Installed mobile frontends require a subsequent store build; server authorization changes apply immediately to older clients.
 
 The local example remains a disconnected development screen; live grants are managed from each member's Admin record. Verification and hosted migration/function/publication receipts are recorded in the publishing PR. Never replay the migrations directory: apply only the two reviewed owner migrations, accounting for the existing hosted aliases listed below and the profile migration alias 20261101233702.
+
+Hosted aliases: source `20261101205918_master_member_controls` → `20261102004904_master_member_controls`; source `20261102004247_owner_per_member_free_access` → `20261102004908_owner_per_member_free_access`. Invitation function is ACTIVE version 13 with JWT verification retained. Existing member/access/feature rows and digests were unchanged; verified-owner allow and ordinary-member denial passed read-only checks. Full canonical Linux CI passed. Future separate-membership work must reconcile its pending duplicate owner RPC definitions against this release.
 
 ## Simple Sign in / Join entry — November 1, 2026
 
