@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import L from "leaflet";
 import {
   Check,
+  ChevronLeft,
+  ChevronRight,
   History,
+  MapPin,
   Layers3,
-  LocateFixed,
   RotateCcw,
-  Search,
   Trash2,
   Undo2,
 } from "lucide-react";
@@ -24,6 +25,9 @@ import {
   type WaybackRelease,
 } from "../lib/mapMeasurement";
 import { searchPropertyAddress } from "../lib/backend";
+import type { PropertyGeocodeResult } from "../lib/mapGeocode";
+import { drawMapBoundary } from "../lib/mapBoundaryArtwork";
+import { PropertyAddressSearch } from "./PropertyAddressSearch";
 
 type MapMeasurementProps = {
   address: string;
@@ -58,21 +62,36 @@ export function MapMeasurement({ address, area, onAddressChange, onAreaChange }:
   const finishedLayerRef = useRef<L.LayerGroup | null>(null);
   const onAreaChangeRef = useRef(onAreaChange);
   const touchedRef = useRef(false);
+  const imageryRequestRef = useRef(0);
+  const searchRequestRef = useRef(0);
+  const locationLayerRef = useRef<L.LayerGroup | null>(null);
+  const hasBoundaryRef = useRef(false);
 
   const [query, setQuery] = useState(address);
   const [searching, setSearching] = useState(false);
+  const [matches, setMatches] = useState<PropertyGeocodeResult[]>([]);
+  const [selectedLocation, setSelectedLocation] = useState<PropertyGeocodeResult | null>(null);
+  const [pendingLocation, setPendingLocation] = useState<PropertyGeocodeResult | null>(null);
+  const [searchError, setSearchError] = useState("");
+  const [imageryError, setImageryError] = useState(false);
   const [status, setStatus] = useState("Ready to trace");
   const [currentPoints, setCurrentPoints] = useState<GeoPoint[]>([]);
   const [finishedAreas, setFinishedAreas] = useState<FinishedArea[]>([]);
   const [imageryMode, setImageryMode] = useState<ImageryMode>("esri");
   const [waybackReleases, setWaybackReleases] = useState<WaybackRelease[]>([]);
   const [waybackIndex, setWaybackIndex] = useState(0);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState(false);
   const [naipCaptures, setNaipCaptures] = useState<NaipCapture[]>([]);
   const [naipIndex, setNaipIndex] = useState(0);
+  hasBoundaryRef.current = currentPoints.length > 0 || finishedAreas.length > 0;
 
   onAreaChangeRef.current = onAreaChange;
 
   useEffect(() => {
+    searchRequestRef.current += 1;
+    setSearching(false);
+    setMatches([]);
     setQuery(address);
   }, [address]);
 
@@ -83,6 +102,8 @@ export function MapMeasurement({ address, area, onAddressChange, onAreaChange }:
     layer.addTo(map);
     if ("bringToBack" in layer && typeof layer.bringToBack === "function") layer.bringToBack();
     baseLayerRef.current = layer;
+    setImageryError(false);
+    layer.on("tileerror", () => { if (baseLayerRef.current === layer) setImageryError(true); });
   }, []);
 
   useEffect(() => {
@@ -100,9 +121,11 @@ export function MapMeasurement({ address, area, onAddressChange, onAreaChange }:
     mapRef.current = map;
     draftLayerRef.current = L.layerGroup().addTo(map);
     finishedLayerRef.current = L.layerGroup().addTo(map);
+    locationLayerRef.current = L.layerGroup().addTo(map);
     const initialLayer = esriLayer();
     initialLayer.addTo(map);
     baseLayerRef.current = initialLayer;
+    initialLayer.on("tileerror", () => { if (baseLayerRef.current === initialLayer) setImageryError(true); });
 
     const handleMapClick = (event: L.LeafletMouseEvent) => {
       touchedRef.current = true;
@@ -111,7 +134,12 @@ export function MapMeasurement({ address, area, onAddressChange, onAreaChange }:
     map.on("click", handleMapClick);
 
     const resizeTimer = window.setTimeout(() => map.invalidateSize(), 80);
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => map.invalidateSize());
+    observer?.observe(containerRef.current);
     return () => {
+      imageryRequestRef.current += 1;
+      searchRequestRef.current += 1;
+      observer?.disconnect();
       window.clearTimeout(resizeTimer);
       map.off("click", handleMapClick);
       map.remove();
@@ -119,6 +147,7 @@ export function MapMeasurement({ address, area, onAddressChange, onAreaChange }:
       baseLayerRef.current = null;
       draftLayerRef.current = null;
       finishedLayerRef.current = null;
+      locationLayerRef.current = null;
     };
   }, []);
 
@@ -127,24 +156,7 @@ export function MapMeasurement({ address, area, onAddressChange, onAreaChange }:
     if (!group) return;
     group.clearLayers();
 
-    for (const point of currentPoints) {
-      L.circleMarker(point, {
-        color: "#ffffff",
-        fillColor: "#78c12e",
-        fillOpacity: 1,
-        radius: 6,
-        weight: 3,
-      }).addTo(group);
-    }
-
-    if (currentPoints.length >= 2) {
-      L.polygon(currentPoints, {
-        color: "#78c12e",
-        fillColor: "#047631",
-        fillOpacity: 0.28,
-        weight: 3,
-      }).addTo(group);
-    }
+    drawMapBoundary(group, currentPoints);
   }, [currentPoints]);
 
   useEffect(() => {
@@ -153,12 +165,7 @@ export function MapMeasurement({ address, area, onAddressChange, onAreaChange }:
     group.clearLayers();
 
     for (const [index, finishedArea] of finishedAreas.entries()) {
-      L.polygon(finishedArea.points, {
-        color: "#047631",
-        fillColor: "#78c12e",
-        fillOpacity: 0.2,
-        weight: 3,
-      }).bindTooltip(`Area ${index + 1}: ${formatNumber(finishedArea.squareFeet)} sq ft`).addTo(group);
+      drawMapBoundary(group, finishedArea.points, `Area ${index + 1}: ${formatNumber(finishedArea.squareFeet)} sq ft`);
     }
   }, [finishedAreas]);
 
@@ -171,32 +178,56 @@ export function MapMeasurement({ address, area, onAddressChange, onAreaChange }:
 
   const searchAddress = async () => {
     const trimmedQuery = query.trim();
-    if (!trimmedQuery || searching) return;
+    if (trimmedQuery.length < 3 || trimmedQuery.length > 180) { setSearchError("Enter a street number, street, city and state (3–180 characters)."); return; }
+    const request = ++searchRequestRef.current;
     setSearching(true);
+    setSearchError("");
+    setMatches([]);
+    setPendingLocation(null);
     setStatus("Searching...");
 
     try {
       const results = await searchPropertyAddress(trimmedQuery);
+      if (request !== searchRequestRef.current) return;
       const match = results[0];
       if (!match) {
         setStatus("Address not found");
+        setSearchError("No matching address was found. Include the street number, city, state and ZIP code, or use your current location.");
         return;
       }
-
-      mapRef.current?.setView([match.latitude, match.longitude], 21);
-      setQuery(match.formattedAddress);
-      onAddressChange(match.formattedAddress);
-      setStatus("Property centered");
+      if (results.length === 1) chooseLocation(match);
+      else { setMatches(results); setStatus("Choose the matching property below"); }
     } catch (error) {
-      setStatus(error instanceof Error && error.message === "Sign in to search for an address."
-        ? error.message
-        : "Search unavailable");
+      if (request !== searchRequestRef.current) return;
+      setStatus("Address search failed");
+      setSearchError(error instanceof Error ? error.message : "Address search is unavailable. Please try again.");
     } finally {
-      setSearching(false);
+      if (request === searchRequestRef.current) setSearching(false);
     }
   };
 
+  const showLocation = (match: PropertyGeocodeResult) => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.invalidateSize();
+    map.setView([match.latitude, match.longitude], 20);
+    locationLayerRef.current?.clearLayers();
+    if (locationLayerRef.current) L.circleMarker([match.latitude, match.longitude], { color: "#fff", fillColor: "#157ee8", fillOpacity: 1, radius: 8, weight: 3, interactive: false }).addTo(locationLayerRef.current);
+    setSelectedLocation(match);
+    setMatches([]);
+    setPendingLocation(null);
+    setQuery(match.formattedAddress);
+    onAddressChange(match.formattedAddress);
+    setStatus("Address located · verify the yard before tracing");
+  };
+  const chooseLocation = (match: PropertyGeocodeResult) => {
+    if (hasBoundaryRef.current) { setPendingLocation(match); setMatches([]); setStatus("Confirm changing property below"); }
+    else showLocation(match);
+  };
+
   const locateProperty = () => {
+    const request = ++searchRequestRef.current;
+    setSearching(false); setMatches([]); setSearchError(""); setPendingLocation(null);
     if (!navigator.geolocation) {
       setStatus("Location unavailable");
       return;
@@ -205,10 +236,10 @@ export function MapMeasurement({ address, area, onAddressChange, onAreaChange }:
     setStatus("Locating...");
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
-        mapRef.current?.setView([coords.latitude, coords.longitude], 21);
-        setStatus("Location centered");
+        if (request !== searchRequestRef.current) return;
+        chooseLocation({ latitude: coords.latitude, longitude: coords.longitude, formattedAddress: `Current location (${coords.latitude.toFixed(5)}, ${coords.longitude.toFixed(5)})`, approximate: true });
       },
-      () => setStatus("Location permission unavailable"),
+      () => { if (request === searchRequestRef.current) setSearchError("Location permission is unavailable. Search for the full property address instead."); },
       { enableHighAccuracy: true, maximumAge: 10_000, timeout: 10_000 },
     );
   };
@@ -216,16 +247,21 @@ export function MapMeasurement({ address, area, onAddressChange, onAreaChange }:
   const loadWayback = async (force = false) => {
     if (!force && waybackReleases.length) return waybackReleases;
     setStatus("Loading imagery history...");
-    const response = await fetch(WAYBACK_CAPABILITIES, { cache: "no-store" });
+    const response = await fetch(WAYBACK_CAPABILITIES, { cache: "no-store", signal: AbortSignal.timeout(20_000) });
     if (!response.ok) throw new Error("Imagery history unavailable.");
     const releases = parseWaybackCapabilities(await response.text());
+    if (!releases.length) throw new Error("No imagery archive dates were returned.");
     setWaybackReleases(releases);
     return releases;
   };
 
   const showWayback = async (index = waybackIndex, force = false) => {
+    const request = ++imageryRequestRef.current;
+    setHistoryLoading(true);
+    setHistoryError(false);
     try {
       const releases = await loadWayback(force);
+      if (request !== imageryRequestRef.current) return;
       const release = releases[index];
       if (!release) throw new Error("Imagery history unavailable.");
       setWaybackIndex(index);
@@ -235,9 +271,13 @@ export function MapMeasurement({ address, area, onAddressChange, onAreaChange }:
         maxNativeZoom: 19,
         maxZoom: 22,
       }));
-      setStatus(`Wayback ${release.date}`);
+      setStatus(`Esri archive: ${release.date}`);
     } catch {
+      if (request !== imageryRequestRef.current) return;
+      setHistoryError(true);
       setStatus("Imagery history unavailable");
+    } finally {
+      if (request === imageryRequestRef.current) setHistoryLoading(false);
     }
   };
 
@@ -285,6 +325,8 @@ export function MapMeasurement({ address, area, onAddressChange, onAreaChange }:
   };
 
   const changeImagery = (mode: ImageryMode) => {
+    imageryRequestRef.current += 1;
+    setHistoryLoading(false);
     setImageryMode(mode);
     if (mode === "esri") {
       replaceBaseLayer(esriLayer());
@@ -325,20 +367,15 @@ export function MapMeasurement({ address, area, onAddressChange, onAreaChange }:
   const liveArea = Math.round(sphericalAreaSquareFeet(currentPoints));
 
   return <section className="property-map-measure">
-    <div className="map-search-row">
-      <label>
-        <span className="sr-only">Property address</span>
-        <input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          onKeyDown={(event) => event.key === "Enter" && searchAddress()}
-          placeholder="Search property address"
-        />
-      </label>
-      <button type="button" onClick={searchAddress} aria-label="Search address" disabled={searching}><Search size={17} /></button>
-      <button type="button" onClick={locateProperty} aria-label="Use current location"><LocateFixed size={17} /></button>
-    </div>
-    <small className="map-geocode-attribution">Address search © OpenStreetMap contributors</small>
+    <PropertyAddressSearch value={query} searching={searching}
+      onChange={value => { searchRequestRef.current += 1; setSearching(false); setMatches([]); setSearchError(""); setPendingLocation(null); setQuery(value); }}
+      onSelect={match => { searchRequestRef.current += 1; setSearching(false); setSearchError(""); chooseLocation(match); }}
+      onSearch={() => void searchAddress()} onLocate={locateProperty} />
+    <small className="map-geocode-attribution">Address search: U.S. Census Bureau / © OpenStreetMap contributors. Address pins can be approximate; confirm the turf in the image.</small>
+    {searchError && <p className="map-search-error" role="alert">{searchError}</p>}
+    {matches.length > 0 && <section className="map-address-matches" aria-label="Matching addresses"><strong>Choose your property</strong>{matches.map(match => <button type="button" key={`${match.latitude}:${match.longitude}:${match.formattedAddress}`} onClick={() => chooseLocation(match)}><MapPin size={17} /><span>{match.formattedAddress}</span></button>)}</section>}
+    {pendingLocation && <section className="map-location-confirm" aria-label="Change property"><p>Start measuring <strong>{pendingLocation.formattedAddress}</strong>? This clears the areas currently traced on this map.</p><button type="button" onClick={() => { clearBoundary(); showLocation(pendingLocation); }}>Clear areas and show property</button><button type="button" onClick={() => { setPendingLocation(null); setStatus("Current measurement kept"); }}>Keep current measurement</button></section>}
+    {selectedLocation && <p className="map-selected-address"><MapPin size={15} />{selectedLocation.formattedAddress}</p>}
 
     <div className="map-source-row">
       <label>
@@ -347,17 +384,23 @@ export function MapMeasurement({ address, area, onAddressChange, onAreaChange }:
         <select value={imageryMode} onChange={(event) => changeImagery(event.target.value as ImageryMode)}>
           <option value="esri">Current imagery</option>
           <option value="naip">USGS NAIP</option>
-          <option value="wayback">Historical imagery</option>
+          <option value="wayback">Historical imagery · choose a date</option>
           <option value="street">Street map</option>
         </select>
       </label>
-      <span>{status}</span>
+      <span role="status" aria-live="polite">{status}</span>
     </div>
 
-    {imageryMode === "wayback" && <div className="imagery-date-row">
+    <button type="button" className="map-history-button" aria-expanded={imageryMode === "wayback"} onClick={() => changeImagery(imageryMode === "wayback" ? "esri" : "wayback")}><History size={17} /> {imageryMode === "wayback" ? "Back to current imagery" : "Historical imagery & latest archive"}</button>
+    {imageryMode === "wayback" && <section className="map-history-panel" aria-label="Historical imagery dates" aria-busy={historyLoading}>
+    <div className="map-history-heading"><strong>Choose an imagery date</strong><button type="button" disabled={historyLoading} onClick={() => showWayback(0, true)}>Latest available</button></div>
+    {historyLoading && <p role="status">Loading imagery dates…</p>}
+    {historyError && <p role="alert">The imagery archive could not load. Select Latest available to retry, or choose another imagery source.</p>}
+    {waybackReleases.length > 0 && <><div className="imagery-date-row">
       <History size={15} />
       <select
         aria-label="Historical imagery release"
+        disabled={historyLoading}
         value={waybackIndex}
         onChange={(event) => showWayback(Number(event.target.value))}
       >
@@ -365,8 +408,12 @@ export function MapMeasurement({ address, area, onAddressChange, onAreaChange }:
           ? waybackReleases.map((release, index) => <option value={index} key={release.date}>{release.date}</option>)
           : <option value={0}>Loading releases...</option>}
       </select>
-      <button type="button" onClick={() => showWayback(0, true)} aria-label="Refresh imagery history"><RotateCcw size={15} /></button>
-    </div>}
+      <button type="button" disabled={historyLoading} onClick={() => showWayback(0, true)} aria-label="Refresh imagery history"><RotateCcw size={15} /></button>
+    </div>
+    <div className="map-history-timeline"><button type="button" aria-label="Older imagery" disabled={historyLoading || waybackIndex >= waybackReleases.length - 1} onClick={() => showWayback(waybackIndex + 1)}><ChevronLeft size={19} /></button><input type="range" min={0} max={waybackReleases.length - 1} value={waybackReleases.length - 1 - waybackIndex} disabled={historyLoading} aria-label="Imagery date timeline" aria-valuetext={waybackReleases[waybackIndex]?.date} onChange={event => showWayback(waybackReleases.length - 1 - Number(event.target.value))} /><button type="button" aria-label="Newer imagery" disabled={historyLoading || waybackIndex === 0} onClick={() => showWayback(waybackIndex - 1)}><ChevronRight size={19} /></button></div>
+    <div className="map-history-endpoints"><span>Older · {waybackReleases.at(-1)?.date}</span><span>Newest · {waybackReleases[0]?.date}</span></div></>}
+    <p className="map-history-help">Move right for newer archive releases. Esri images and dates can differ from Google Earth. A release date is when imagery was published, not necessarily when the photo was taken; nearby dates may show the same photo.</p>
+    </section>}
 
     {imageryMode === "naip" && naipCaptures.length > 0 && <div className="imagery-date-row">
       <History size={15} />
@@ -390,8 +437,10 @@ export function MapMeasurement({ address, area, onAddressChange, onAreaChange }:
         <strong>{formatNumber(area)}</strong>
         <span>sq ft</span>
       </div>
-      <div className="map-point-count">{currentPoints.length} points{liveArea > 0 ? ` · ${formatNumber(liveArea)} sq ft` : ""}</div>
+      <div className="map-point-count">{currentPoints.length} flags{liveArea > 0 ? ` · ${formatNumber(liveArea)} sq ft` : ""}</div>
     </div>
+    {imageryError && <p className="map-search-error" role="alert">Some map images could not load. Try Current imagery, another archive date, or Street map.</p>}
+    <small className="map-geocode-attribution">Tap each turf corner to place a red flag. The foot of each flag marks the corner; yellow ruler lines connect the flags. Ruler ticks are decorative.</small>
 
     <div className="map-command-row">
       <button type="button" onClick={() => setCurrentPoints((points) => points.slice(0, -1))} disabled={!currentPoints.length}><Undo2 size={16} /> Undo</button>

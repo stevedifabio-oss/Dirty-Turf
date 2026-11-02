@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import { ArrowRight, CheckCircle2, Globe, Megaphone, MessageSquare, Search, X } from "lucide-react";
 import type { AccessState } from "../lib/academyAccess";
-import { createGrowthRequest, loadGrowthCatalog, loadOwnGrowthRequests, type GrowthCatalog, type GrowthRequest, type GrowthService, type GrowthServiceKey } from "../lib/growth";
+import { createGrowthRequest, growthServices, loadGrowthCatalog, loadOwnGrowthRequests, type GrowthCatalog, type GrowthRequest, type GrowthService, type GrowthServiceKey } from "../lib/growth";
 import { beginServiceBillingPortal, beginServiceCheckout, loadOwnServiceOrders, loadOwnServiceQuotes, type ServiceOrder, type ServiceQuote } from "../lib/serviceCheckout";
 import { serviceName, serviceOrderHasPortal, serviceOrderStatus } from "../lib/serviceBillingPresentation";
 import { AvailableUpgrades } from "./AccessOffers";
@@ -75,7 +75,20 @@ export function Growth({ access, readOnly = false, onToast }: { access: AccessSt
     setSelected(key);
   };
 
-  if (native) return null;
+  // Native members can browse the shared service pages without starting web
+  // checkout, enrollment, service requests or billing reads.
+  if (native) {
+    const service = growthServices.find(item => item.key === selected);
+    return <div className="growth-view" ref={pageRef} tabIndex={-1}>
+      {service ? <><button className="growth-text-button" type="button" onClick={() => selectService(null)}>← Back to marketing services</button><GrowthServiceDetails service={service} requestId={`${formId}-request`} readOnly browseOnly /></> : <>
+        <GrowthMarketing servicesId={`${formId}-services`} />
+        <section className="growth-services" id={`${formId}-services`} aria-label="Business services">{growthServices.map(item => {
+          const Icon = serviceIcons[item.key];
+          return <article className="growth-service" key={item.key}><span className="growth-service-icon"><Icon size={22} /></span><div className="growth-service-copy"><h3>{item.title}</h3><p>{item.summary}</p></div><button type="button" className="secondary-button" onClick={() => selectService(item.key)}>Explore {item.title}<ArrowRight size={16} /></button></article>;
+        })}</section>
+      </>}
+    </div>;
+  }
   const chosen = catalog?.services.find(service => service.key === selected);
   const notes = selected ? drafts[selected] ?? "" : "";
   const requestContext = selected ? requestContexts[selected] ?? "" : "";

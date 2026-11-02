@@ -14,8 +14,9 @@ const hooks = vi.hoisted(() => ({ active: null as HookState | null, nextId: 0 })
 const payments = vi.hoisted(() => ({ ownQuotes: vi.fn(), orders: vi.fn(), adminQuotes: vi.fn(), quote: vi.fn(), checkout: vi.fn(), portal: vi.fn(), withdraw: vi.fn() }));
 const platform = vi.hoisted(() => ({ native: false }));
 const api = vi.hoisted(() => ({ catalog: vi.fn(), own: vi.fn(), create: vi.fn(), admin: vi.fn(), save: vi.fn(), status: vi.fn() }));
+vi.mock("../lib/backend", () => ({ supabase: null }));
 vi.mock("@capacitor/core", () => ({ Capacitor: { isNativePlatform: () => platform.native } }));
-vi.mock("../lib/growth", () => ({ loadGrowthCatalog: api.catalog, loadOwnGrowthRequests: api.own, createGrowthRequest: api.create, loadAdminGrowthRequests: api.admin, saveGrowthSettings: api.save, updateGrowthRequestStatus: api.status }));
+vi.mock("../lib/growth", async original => ({ ...(await original<typeof import("../lib/growth")>()), loadGrowthCatalog: api.catalog, loadOwnGrowthRequests: api.own, createGrowthRequest: api.create, loadAdminGrowthRequests: api.admin, saveGrowthSettings: api.save, updateGrowthRequestStatus: api.status }));
 vi.mock("../lib/serviceCheckout", () => ({ loadOwnServiceQuotes: payments.ownQuotes, loadOwnServiceOrders: payments.orders, loadAdminServiceQuotes: payments.adminQuotes, createServiceQuote: payments.quote, beginServiceCheckout: payments.checkout, beginServiceBillingPortal: payments.portal, withdrawServiceQuote: payments.withdraw }));
 vi.mock("./AccessOffers", () => ({ AvailableUpgrades: () => null }));
 vi.mock("react", async original => {
@@ -230,10 +231,21 @@ describe("member growth requests", () => {
     expect(text(ui.render())).not.toContain("Payment confirmed");
     expect(payments.checkout).not.toHaveBeenCalled();
   });
-  it("renders no native checkout or service steering and makes no native reads", async () => {
+  it("shows native service browsing without checkout or native reads", async () => {
     platform.native = true;
     const ui = await member();
-    expect(ui.render()).toBeNull(); expect(api.catalog).not.toHaveBeenCalled(); expect(api.own).not.toHaveBeenCalled();
+    expect(text(ui.render())).toContain("Explore Website");
+    expect(elements(ui.render()).some(element => element.type === "form")).toBe(false); expect(api.catalog).not.toHaveBeenCalled(); expect(api.own).not.toHaveBeenCalled();
+    expect(payments.ownQuotes).not.toHaveBeenCalled();
+    expect(payments.orders).not.toHaveBeenCalled();
+    button(ui.render(), "Explore Website").props.onClick();
+    const details = find(ui.render(), element => element.type === GrowthServiceDetails);
+    expect(details.props.service.key).toBe("website");
+    expect(details.props.browseOnly).toBe(true);
+    expect(details.props.readOnly).toBe(true);
+    expect(api.create).not.toHaveBeenCalled();
+    expect(payments.checkout).not.toHaveBeenCalled();
+    expect(payments.portal).not.toHaveBeenCalled();
   });
 });
 
