@@ -27,19 +27,19 @@ export function AdminFreeAccess({ memberId, courses, disabled, onChange }: {
   };
   return <details className="admin-composer" onToggle={event => {
     if (event.currentTarget.open && grants === null && !lock.current) void run();
-  }}><summary>Free access · owner controls</summary>
+  }}><summary>Free access · owner controls</summary><div className="admin-record-body">
     <p>These choices apply only to this member. Check an item to grant free access; uncheck it to remove only your free grant. Existing and paid access are preserved.</p>
     <p>Only the verified steve@dirtyturf.com master account can change these grants.</p>
     <button type="button" className="secondary-button" disabled={disabled || pending} onClick={() => void run()}>Reload free grants</button>
-    {grants && <fieldset disabled={disabled || pending} className="admin-course-access"><legend>Free access for this member</legend>
-      <label>New grant expiration (leave blank for permanent)<input type="datetime-local" value={expires} onChange={event => setExpires(event.target.value)} /></label>
+    {grants && <><div className="admin-form-grid"><label>New grant expiration (leave blank for permanent)<input type="datetime-local" disabled={disabled || pending} value={expires} onChange={event => setExpires(event.target.value)} /></label></div>
+    <fieldset disabled={disabled || pending} className="admin-course-access"><legend>Free access for this member</legend>
       {options.map(option => {
         const grant = grants.find(item => item.resource === option.id);
         return <label key={option.id}><input type="checkbox" checked={Boolean(grant)} onChange={event => void run(option.id, event.target.checked)} />
           <span>{option.title}{grant && <small> · {grant.endsAt ? `until ${new Date(grant.endsAt).toLocaleString()}` : "Permanent free access"}</small>}</span>
         </label>;
       })}
-    </fieldset>}
+    </fieldset></>}
     {pending && <p role="status">Checking free access…</p>}{message && <p role="status">{message}</p>}
-  </details>;
+  </div></details>;
 }
