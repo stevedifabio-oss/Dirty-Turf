@@ -100,7 +100,8 @@ function editPrivateQuote() {
   const quote = openQuote();
   const file = new File(["private photo"], "visit.jpg", { type: "image/jpeg" });
   quote.props.setDraft((current: any) => ({ ...current, address: "Private member-one property", length: 79, width: 31 }));
-  quote.props.setPhotoFile(file); quote.props.setPhotoUrl("blob:member-one-photo");
+  quote.props.setPhotos([{ id: "private-photo", file, url: "blob:member-one-photo" }]);
+  quote.props.setInspection({ condition: "poor", seams: "separating", notes: "Private inspection" });
   component(render(), "HomeView")!.props.setChecks([true, false, true, false]);
   return { oldQuote: component(render(), "QuoteSheet")!, file };
 }
@@ -262,20 +263,23 @@ describe("actual workspace resume and offline flow", () => {
     expect(component(render(), "QuoteSheet")).toBeUndefined();
     let freshQuote = openQuote();
     expect(freshQuote.props.draft).toMatchObject({ address: "", length: 0, width: 0, cameraArea: 0, mapArea: 0, infillRate: 0.25, serviceRate: 0 });
-    expect(freshQuote.props.photoUrl).toBe("");
+    expect(freshQuote.props.photos).toEqual([]);
+    expect(freshQuote.props.inspection).toEqual({});
     oldQuote.props.setDraft((current: any) => ({ ...current, address: "Late private address" }));
-    oldQuote.props.setPhotoFile(file); oldQuote.props.setPhotoUrl("blob:late-private-photo");
+    oldQuote.props.setPhotos([{ id: "late-photo", file, url: "blob:late-private-photo" }]);
+    oldQuote.props.setInspection({ notes: "Late private inspection" });
     await oldQuote.props.onSave(); await flush();
     expect(mock.saveJob).not.toHaveBeenCalled();
     freshQuote = component(render(), "QuoteSheet")!;
     expect(freshQuote.props.draft).toMatchObject({ address: "", length: 0, width: 0, cameraArea: 0, mapArea: 0, infillRate: 0.25, serviceRate: 0 });
-    expect(freshQuote.props.photoUrl).toBe("");
+    expect(freshQuote.props.photos).toEqual([]);
+    expect(freshQuote.props.inspection).toEqual({});
     expect(component(render(), "HomeView")!.props.checks).toEqual([false, false, false, false]);
     freshQuote.props.setDraft((current: any) => ({ ...current, length: 10, width: 10 }));
     freshQuote = component(render(), "QuoteSheet")!;
     await freshQuote.props.onSave(); await flush();
     expect(mock.saveJob).toHaveBeenCalledOnce();
-    expect(mock.saveJob.mock.calls[0][1]).toBeUndefined();
+    expect(mock.saveJob.mock.calls[0][1]).toEqual([]);
     expect(mock.saveJob.mock.calls[0][0].address).not.toContain("Private");
   });
   it("preserves the same member's quote and photo through a transient failed resume and recovery", async () => {
@@ -283,16 +287,17 @@ describe("actual workspace resume and offline flow", () => {
     mock.access.mockRejectedValueOnce(new Error("Temporary resume failure"));
     environment.dispatchEvent(new Event("focus")); await flush();
     expect(component(render(), "QuoteSheet")?.props.draft.address).toBe("Private member-one property");
-    expect(component(render(), "QuoteSheet")?.props.photoUrl).toBe("blob:member-one-photo");
+    expect(component(render(), "QuoteSheet")?.props.photos[0]?.url).toBe("blob:member-one-photo");
     mock.auth!("SIGNED_IN", { user: { id: "member-one" }, expires_at: Date.now() / 1000 + 3600 });
     mock.auth!("TOKEN_REFRESHED", { user: { id: "member-one" }, expires_at: Date.now() / 1000 + 7200 });
     environment.dispatchEvent(new Event("focus")); await flush();
     const retainedQuote = component(render(), "QuoteSheet")!;
     expect(retainedQuote.props.draft).toMatchObject({ address: "Private member-one property", length: 79, width: 31 });
-    expect(retainedQuote.props.photoUrl).toBe("blob:member-one-photo");
+    expect(retainedQuote.props.photos[0]?.url).toBe("blob:member-one-photo");
     expect(component(render(), "HomeView")!.props.checks).toEqual([true, false, true, false]);
     await retainedQuote.props.onSave(); await flush();
-    expect(mock.saveJob.mock.calls[0][1]?.name).toBe("visit.jpg");
+    expect(mock.saveJob.mock.calls[0][1]?.[0]?.name).toBe("visit.jpg");
+    expect(mock.saveJob.mock.calls[0][0].inspection).toMatchObject({ condition: "poor", seams: "separating", notes: "Private inspection" });
   });
   it.each(["access", "content"] as const)("invalidates delayed %s results immediately when explicit sign-out starts", async pendingStage => {
     await signIn();
@@ -448,5 +453,37 @@ describe("password recovery entry", () => {
     expect(component(render(), "PasswordResetForm")).toBeUndefined();
     await agreeForFixture();
     expect(component(render(), "PasswordResetForm")?.props.userId).toBe("member-one");
+  });
+});
+
+
+describe("property inspection saves", () => {
+  it("prevents duplicate saves while keeping the submitted inspection and photos together", async () => {
+    await signIn(); const { oldQuote, file } = editPrivateQuote();
+    let finish: ((value: any) => void) | undefined;
+    mock.saveJob.mockImplementationOnce(job => new Promise(resolve => { finish = () => resolve(job); }));
+    const saving = oldQuote.props.onSave();
+    await flush();
+    expect(component(render(), "QuoteSheet")?.props.saving).toBe(true);
+    await oldQuote.props.onSave();
+    expect(mock.saveJob).toHaveBeenCalledOnce();
+    expect(mock.saveJob.mock.calls[0][1]).toEqual([file]);
+    finish!({}); await saving; await flush();
+    const saved = component(render(), "SavedJobSheet")!;
+    expect(saved.props.job.inspection).toMatchObject({ condition: "poor", seams: "separating" });
+    expect(component(render(), "QuoteSheet")).toBeUndefined();
+    saved.props.onClose();
+    const home = component(render(), "HomeView")!;
+    home.props.onOpenJob(home.props.jobs[0]);
+    expect(component(render(), "SavedJobSheet")?.props.job.inspection.notes).toBe("Private inspection");
+  });
+  it("keeps entries after a rejected save", async () => {
+    await signIn(); editPrivateQuote();
+    mock.saveJob.mockRejectedValueOnce(new Error("Network"));
+    await component(render(), "QuoteSheet")!.props.onSave(); await flush();
+    const retained = component(render(), "QuoteSheet")!;
+    expect(retained.props.inspection.notes).toBe("Private inspection");
+    expect(retained.props.photos).toHaveLength(1);
+    expect(retained.props.saving).toBe(false);
   });
 });

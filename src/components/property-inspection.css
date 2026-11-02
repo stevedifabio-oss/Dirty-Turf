@@ -1,0 +1,39 @@
+.property-inspection { margin-top: 22px; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: white; }
+.property-inspection h3 { margin: 0; font: 700 1.1rem/1.3 "Outfit", sans-serif; }
+.inspection-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
+.inspection-heading p { margin: 0 0 4px; color: var(--turf); font-size: .72rem; font-weight: 700; }
+.inspection-heading > span, .inspection-help { color: var(--ink-soft); font-size: .75rem; line-height: 1.6; }
+.inspection-choice { min-width: 0; margin: 18px 0; padding: 0; border: 0; }
+.inspection-choice legend { margin-bottom: 8px; font-size: .82rem; font-weight: 700; }
+.inspection-choice > div { display: flex; flex-wrap: wrap; gap: 7px; }
+.inspection-choice label { display: flex; min-height: 44px; align-items: center; gap: 6px; padding: 8px 11px; border: 1px solid var(--line); border-radius: 8px; font-size: .78rem; cursor: pointer; }
+.inspection-choice label.selected { border-color: var(--turf); background: var(--chalk); color: var(--turf); }
+.inspection-choice input { margin: 0; accent-color: var(--turf); }
+.inspection-clear { min-height: 44px; padding: 8px; background: transparent; color: var(--ink-soft); font-size: .72rem; text-decoration: underline; }
+.inspection-notes { display: grid; gap: 7px; margin-bottom: 20px; font-size: .82rem; font-weight: 700; }
+.inspection-notes textarea, .property-name-input input { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--chalk); color: var(--asphalt); font-size: 1rem; resize: vertical; }
+.inspection-notes small { color: var(--ink-soft); font-size: .68rem; font-weight: 400; text-align: right; }
+.inspection-photo-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.inspection-photo-actions label { position: relative; display: inline-flex; min-height: 44px; align-items: center; justify-content: center; gap: 8px; padding: 10px 12px; cursor: pointer; }
+.inspection-photo-actions label:focus-within { outline: 3px solid var(--clay); outline-offset: 2px; }
+.inspection-photo-actions label:has(input:disabled) { opacity: .5; cursor: not-allowed; }
+.inspection-photo-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 9px; padding: 0; list-style: none; }
+.inspection-photo-grid li { position: relative; min-width: 0; }
+.inspection-photo-grid img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; background: var(--chalk); }
+.inspection-photo-grid button { position: absolute; top: 3px; right: 3px; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: #003113; color: white; }
+.inspection-photo-grid span { display: block; overflow: hidden; font-size: .65rem; text-overflow: ellipsis; white-space: nowrap; }
+.saved-inspection { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin-bottom: 0; }
+.saved-inspection > div { padding: 12px; border-radius: 8px; background: var(--chalk); }
+.saved-inspection dt { color: var(--ink-soft); font-size: .73rem; }
+.saved-inspection dd { margin: 4px 0 0; font-size: .9rem; font-weight: 700; }
+.saved-inspection-notes h4 { margin-bottom: 6px; font-size: .82rem; }
+.saved-inspection-notes p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .82rem; line-height: 1.7; }
+.property-name-input { display: grid; gap: 8px; margin-top: 20px; font-size: .82rem; font-weight: 700; }
+.quote-edit-fields { min-width: 0; margin: 0; padding: 0; border: 0; }
+.inspection-save-warning { margin: 16px; padding: 14px; border: 1px solid #ce9c56; border-radius: 9px; background: #fff7e8; font-size: .8rem; line-height: 1.6; }
+.inspection-save-warning button { display: block; margin-top: 10px; }
+button.job-row { width: 100%; background: transparent; color: inherit; font: inherit; text-align: left; }
+button.job-row:hover { background: rgba(0,49,19,.035); }
+button.job-row h4 { overflow-wrap: anywhere; }
+@media(max-width: 390px) { .property-inspection { padding: 13px; }.inspection-photo-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+.scanner-inspection-preview { max-width: 1100px; margin: auto; font-family: "Poppins", sans-serif; }.scanner-preview-message { position: fixed; z-index: 99; bottom: 12px; left: 50%; transform: translateX(-50%); width: min(90%,500px); padding: 12px; border-radius: 8px; background: var(--asphalt); color: white; font-size: .8rem; }

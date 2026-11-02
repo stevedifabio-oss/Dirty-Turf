@@ -1,3 +1,6 @@
+import { PropertyInspection, SavedInspection, type PendingPropertyPhoto } from "./components/PropertyInspection";
+import { normalizeInspection } from "./lib/turfInspection";
+import type { TurfInspection } from "./domain";
 import { communityAvailable, featureAvailable, courseAvailable, type AccessState } from "./lib/academyAccess";
 import { AccessRequired, AvailableUpgrades } from "./components/AccessOffers";
 import { AccountEntry, AccountEntryExample, PasswordResetForm } from "./components/AccountEntry";
@@ -74,6 +77,7 @@ import {
   openAcademyBillingPortal,
   saveComment,
   saveJob,
+  retryJobPhotos,
   saveLessonCompletion,
   savePost,
   signInWithPassword,
@@ -206,8 +210,12 @@ function App() {
   const [toast, setToast] = useState("");
   const [cloudLoadError, setCloudLoadError] = useState("");
   const [draft, setDraft] = useState<QuoteDraft>(defaultDraft);
-  const [photoUrl, setPhotoUrl] = useState("");
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [propertyPhotos, setPropertyPhotos] = useState<PendingPropertyPhoto[]>([]);
+  const [inspection, setInspection] = useState<TurfInspection>({});
+  const [propertySaving, setPropertySaving] = useState(false);
+  const propertySaveInFlight = useRef(false);
+  const [photoRetry, setPhotoRetry] = useState<{ jobId: number; files: File[] } | null>(null);
+  const retainedPhotoUrls = useRef(new Set<string>());
   const [jobs, setJobs] = useState<Job[]>(supabase ? [] : initialJobs);
   const [courses, setCourses] = useState<Course[]>(supabase ? [] : seedCourses);
   const [posts, setPosts] = useState<CommunityPost[]>(supabase ? [] : initialPosts);
@@ -308,9 +316,11 @@ function App() {
 
   const clearQuoteDraft = () => {
     setDraft({ ...defaultDraft });
-    setPhotoFile(null);
-    // The existing photo effect releases the previous object URL.
-    setPhotoUrl("");
+    setPropertyPhotos([]);
+    setInspection({});
+    setPhotoRetry(null);
+    propertySaveInFlight.current = false;
+    setPropertySaving(false);
     setQuoteOpen(false);
     setSelectedJob(null);
     setArrivalChecks([false, false, false, false]);
@@ -781,9 +791,12 @@ function App() {
     window.history.replaceState(window.history.state, "", url);
   }, [activeView]);
 
-  useEffect(() => () => {
-    if (photoUrl) URL.revokeObjectURL(photoUrl);
-  }, [photoUrl]);
+  useEffect(() => {
+    const next = new Set(propertyPhotos.map(photo => photo.url));
+    for (const url of retainedPhotoUrls.current) if (!next.has(url)) URL.revokeObjectURL(url);
+    retainedPhotoUrls.current = next;
+  }, [propertyPhotos]);
+  useEffect(() => () => { for (const url of retainedPhotoUrls.current) URL.revokeObjectURL(url); }, []);
 
   useEffect(() => {
     if (activeView === "admin" && workspaceAccess.status !== "loading" && !canManage) setActiveView("learn");
@@ -801,7 +814,7 @@ function App() {
 
   const saveQuote = async () => {
     const accountGeneration = renderedCourseAccount;
-    if (accountGeneration !== courseAccountGeneration.current) return;
+    if (accountGeneration !== courseAccountGeneration.current || propertySaveInFlight.current) return;
     if (draft.mode !== "manual" && !canMeasure) { setToast("Turf Scanner access is required."); return; }
     if (quote.area <= 0) {
       setToast("Measure a turf area before saving.");
@@ -822,25 +835,50 @@ function App() {
       status: "Calculated",
       method: draft.mode,
       createdAt: "Just now",
-      photos: photoUrl ? 1 : 0,
+      photos: 0,
+      inspection: normalizeInspection(inspection),
     };
     try {
       requireConnection();
-      const savedJob = await saveJob(job, photoFile ?? undefined);
+      propertySaveInFlight.current = true;
+      setPropertySaving(true);
+      const savedJob = await saveJob(job, propertyPhotos.map(photo => photo.file));
       if (accountGeneration !== courseAccountGeneration.current) return;
       setJobs((current) => [savedJob, ...current.filter((item) => item.id !== savedJob.id)]);
-      setPhotoFile(null);
-      setPhotoUrl("");
+      setPropertyPhotos([]);
+      setInspection({});
+      setDraft({ ...defaultDraft });
+      setPhotoRetry(savedJob.failedPhotoFiles?.length ? { jobId: savedJob.id, files: savedJob.failedPhotoFiles } : null);
+      setSelectedJob(savedJob);
       setQuoteOpen(false);
       setActiveView("home");
       setToast(savedJob.photoUploadFailed
-        ? "Calculation saved, but the visit photo could not be attached."
+        ? "Property saved. Some photos need another try—use Retry photos in this record."
         : savedJob.photoPreviewUnavailable
-          ? "Calculation and photo saved. The photo preview is temporarily unavailable."
-          : dataMode === "cloud" ? "Calculation synced to the company workspace." : "Calculation saved on this device.");
+          ? "Property and photos saved. Some photo previews are temporarily unavailable."
+          : dataMode === "cloud" ? "Property synced to the company workspace." : "Property saved on this device.");
     } catch {
-      if (accountGeneration === courseAccountGeneration.current) setToast("Calculation could not be saved. Check the connection and try again.");
+      if (accountGeneration === courseAccountGeneration.current) setToast("Property could not be saved. Your entries are kept—check the connection and try again.");
+    } finally {
+      if (accountGeneration === courseAccountGeneration.current) { propertySaveInFlight.current = false; setPropertySaving(false); }
     }
+  };
+
+  const retryPropertyPhotos = async () => {
+    const accountGeneration = renderedCourseAccount;
+    const job = jobs.find(item => item.id === photoRetry?.jobId);
+    if (!job || !photoRetry || propertySaveInFlight.current || accountGeneration !== courseAccountGeneration.current) return;
+    try {
+      requireConnection();
+      propertySaveInFlight.current = true; setPropertySaving(true);
+      const saved = await retryJobPhotos(job, photoRetry.files);
+      if (accountGeneration !== courseAccountGeneration.current) return;
+      setJobs(current => current.map(item => item.id === saved.id ? saved : item));
+      setSelectedJob(saved);
+      setPhotoRetry(saved.failedPhotoFiles?.length ? { jobId: saved.id, files: saved.failedPhotoFiles } : null);
+      setToast(saved.photoUploadFailed ? "Some photos still could not upload. You can retry again." : "Property photos saved.");
+    } catch { if (accountGeneration === courseAccountGeneration.current) setToast("Photos could not upload. Check the connection and retry."); }
+    finally { if (accountGeneration === courseAccountGeneration.current) { propertySaveInFlight.current = false; setPropertySaving(false); } }
   };
 
   const changeView = (view: View) => {
@@ -1047,7 +1085,7 @@ function App() {
         {searchOpen && <GlobalSearch key={renderedCourseAccount} query={query} onQuery={setQuery} content={{ jobs, courses: dataMode === "cloud" ? visibleCourses : [], posts: hasCommunity ? posts : [], comments: hasCommunity ? comments : [], events: hasCommunity ? events : [], members: hasCommunity ? members : [] }} readOnly={readOnly} searchRemote={hasCommunity && supabase ? searchCommunityPosts : undefined} onOpen={openSearchResult} />}
         <div hidden={searchOpen}>
         {activeView !== "home" && activeView !== "admin" && activeView !== "grow" && <AcademyTabs activeView={activeView} canManage={canManage} hasCommunity={hasCommunity} onNavigate={changeView} />}
-        {activeView === "home" && <HomeView jobs={jobs} openQuote={openQuote} checks={arrivalChecks} setChecks={next => { if (renderedCourseAccount === courseAccountGeneration.current) setArrivalChecks(next); }} setToast={setToast} onGrow={() => changeView("grow")} />}
+        {activeView === "home" && <HomeView jobs={jobs} onOpenJob={job => { if (renderedCourseAccount === courseAccountGeneration.current) setSelectedJob(job); }} openQuote={openQuote} checks={arrivalChecks} setChecks={next => { if (renderedCourseAccount === courseAccountGeneration.current) setArrivalChecks(next); }} setToast={setToast} onGrow={() => changeView("grow")} />}
         {activeView === "grow" && <Suspense fallback={<div className="sheet-loading" role="status">Loading business services…</div>}><Growth key={renderedCourseAccount} access={workspaceAccess} readOnly={readOnly} onToast={setToast} /></Suspense>}
         {activeView === "learn" && <AcademyView key={renderedCourseAccount} readOnly={readOnly} requestedLessonId={requestedLessonId} onRenewLessonAssets={renewLessonAssets} requestedCourseCloudId={requestedCourseCloudId} onRequestedCourseOpened={() => { setRequestedCourseCloudId(undefined); setRequestedLessonId(undefined); }} courses={visibleCourses} certificates={certificates} dataMode={dataMode} refreshError={courseRefreshError} onRefresh={() => refreshCoursesRef.current()} onCoursesChange={changeCourses} onLessonCompletion={(id, completed) => writeCourseProgress(() => saveLessonCompletion(id, completed))} onQuizAttempt={(id, score, answers) => writeCourseProgress(() => recordAcademyQuizAttempt(id, score, answers))} onRequestCertificate={async (courseId) => { await writeCourseProgress(() => requestAcademyCertificate(courseId)); const next = await loadAcademyCertificates(); if (renderedCourseAccount === courseAccountGeneration.current) setCertificates(next); }} onToast={setToast} onDiscuss={() => changeView("community")} />}
         {activeView === "community" && hasCommunity && <CommunityView key={renderedCourseAccount} readOnly={readOnly} accessScopeKey={renderedCourseAccount} onLoadRequestedPost={loadRequestedPost} requestedCommentCloudId={requestedCommentCloudId} onRequestedCommentOpened={() => setRequestedCommentCloudId(undefined)} requestedMemberCloudId={requestedMemberCloudId} onRequestedMemberOpened={() => setRequestedMemberCloudId(undefined)} posts={posts} comments={comments} members={members} events={events} requestedPostCloudId={requestedPostCloudId} onRequestedPostOpened={() => setRequestedPostCloudId(undefined)} onPostsChange={next => changeCommunity(setPosts, next)} onCommentsChange={next => changeCommunity(setComments, next)} onMembersChange={next => changeCommunity(setMembers, next)} onToggleFollow={(member, following) => writeCommunity(() => member.cloudId ? setAcademyMemberFollow(member.cloudId, following) : Promise.resolve(following))} onLoadMorePosts={loadMoreCommunityPosts} hasMorePosts={hasMorePosts} loadingMorePosts={loadingMorePosts} onCreatePost={post => writeCommunity(() => savePost(post))} onCreatePhotoPost={(post, photos, requestId) => writeCommunity(() => createCommunityPhotoPost(post, photos, requestId))} onCreateComment={(comment, postCloudId) => writeCommunity(() => saveComment(comment, postCloudId))} onToggleLike={(post) => writeCommunity(() => post.cloudId ? togglePostReaction(post.cloudId) : Promise.resolve(null))} onToggleCommentLike={(comment) => writeCommunity(() => comment.cloudId ? toggleCommentReaction(comment.cloudId) : Promise.resolve(null))} onToggleBookmark={(post) => writeCommunity(() => post.cloudId ? togglePostBookmark(post.cloudId) : Promise.resolve(null))} onReport={(contentType, contentId, reason) => writeCommunity(() => reportAcademyContent(contentType, contentId, reason)).then(() => undefined)} onBlockMember={memberId => writeCommunity(() => toggleAcademyMemberBlock(memberId))} onLoadBlockedMembers={loadBlockedAcademyMemberIds} onRefreshCommunity={() => refreshCommunityRef.current()} onNavigate={changeView} onToast={setToast} />}
@@ -1061,8 +1099,8 @@ function App() {
 
         {!quoteOpen && !hubSection && <PrimaryNavigation activeView={activeView} settingsOpen={false} onNavigate={changeView} onOpenSettings={openSettings} />}
 
-        {quoteOpen && <QuoteSheet canMeasure={canMeasure} access={workspaceAccess} draft={draft} setDraft={next => { if (renderedCourseAccount === courseAccountGeneration.current) setDraft(next); }} quote={quote} photoUrl={photoUrl} setPhotoUrl={url => { if (renderedCourseAccount === courseAccountGeneration.current) setPhotoUrl(url); }} setPhotoFile={file => { if (renderedCourseAccount === courseAccountGeneration.current) setPhotoFile(file); }} onClose={() => setQuoteOpen(false)} onSave={saveQuote} onError={setToast} primaryNavigation={<PrimaryNavigation activeView={activeView} settingsOpen={false} onNavigate={changeView} onOpenSettings={openSettings} />} />}
-        {selectedJob && <SavedJobSheet job={selectedJob} onClose={() => setSelectedJob(null)} />}
+        {quoteOpen && <QuoteSheet canMeasure={canMeasure} access={workspaceAccess} draft={draft} setDraft={next => { if (renderedCourseAccount === courseAccountGeneration.current) setDraft(next); }} quote={quote} inspection={inspection} setInspection={value => { if (renderedCourseAccount === courseAccountGeneration.current) setInspection(value); }} photos={propertyPhotos} setPhotos={photos => { if (renderedCourseAccount === courseAccountGeneration.current) setPropertyPhotos(photos); else for (const photo of photos) URL.revokeObjectURL(photo.url); }} saving={propertySaving} onClose={() => setQuoteOpen(false)} onSave={saveQuote} onError={setToast} primaryNavigation={<PrimaryNavigation activeView={activeView} settingsOpen={false} onNavigate={changeView} onOpenSettings={openSettings} />} />}
+        {selectedJob && <SavedJobSheet job={selectedJob} failedPhotos={photoRetry?.jobId === selectedJob.id ? photoRetry.files.length : 0} saving={propertySaving} onRetry={() => void retryPropertyPhotos()} onClose={() => setSelectedJob(null)} />}
         {hubSection && <Suspense fallback={<div className="sheet-loading" role="status">Loading workspace...</div>}><HubSheet readOnly={readOnly} section={hubSection} onClose={() => setHubSection(null)} onToast={setToast} onRequestMagicLink={sendMagicLink} onSignOut={handleSignOut} dataMode={dataMode} canManage={canManage} notifications={notifications} onOpenNotification={openNotification} onMarkAllNotificationsRead={markEveryNotificationRead} primaryNavigation={<PrimaryNavigation activeView={activeView} settingsOpen onNavigate={changeView} onOpenSettings={openSettings} />} /></Suspense>}
         {toast && <div className="toast" role="status"><CheckCircle2 size={18} />{toast}</div>}
       </section>
@@ -1147,7 +1185,7 @@ function AcademyTabs({ activeView, canManage, hasCommunity, onNavigate }: { acti
   </nav>;
 }
 
-function HomeView({ jobs, openQuote, checks, setChecks, setToast, onGrow }: { jobs: Job[]; openQuote: (mode: MeasurementMode) => void; checks: boolean[]; setChecks: React.Dispatch<React.SetStateAction<boolean[]>>; setToast: (message: string) => void; onGrow: () => void }) {
+function HomeView({ jobs, onOpenJob, openQuote, checks, setChecks, setToast, onGrow }: { jobs: Job[]; onOpenJob: (job: Job) => void; openQuote: (mode: MeasurementMode) => void; checks: boolean[]; setChecks: React.Dispatch<React.SetStateAction<boolean[]>>; setToast: (message: string) => void; onGrow: () => void }) {
   const latest = jobs[0];
   const historyPhotos = jobs.flatMap((job) => (job.photoItems ?? []).map((photo) => ({ ...photo, label: job.address }))).slice(0, 6);
   const checklist = ["Photograph problem areas", "Check seams and edges", "Confirm water access", "Log infill condition"];
@@ -1190,68 +1228,92 @@ function HomeView({ jobs, openQuote, checks, setChecks, setToast, onGrow }: { jo
         <div className="photo-row" aria-label="Past turf photos">{historyPhotos.map((photo, index) => <a className="photo-tile real-photo" href={photo.url} target="_blank" rel="noreferrer" key={`${photo.url}-${index}`}><img src={photo.url} alt={`${photo.label} visit`} /><span>{formatPhotoDate(photo.capturedAt)}</span><small>{photo.label}</small></a>)}</div>
       </section>}
 
-      <section className="jobs"><div className="section-heading"><div><p>Pipeline</p><h3>Recent properties</h3></div><ClipboardList size={18} /></div>{jobs.slice(0, 4).map((job) => <JobRow job={job} key={job.id} />)}</section>
+      <section className="jobs"><div className="section-heading"><div><p>Pipeline</p><h3>Recent properties</h3></div><ClipboardList size={18} /></div>{jobs.slice(0, 4).map((job) => <JobRow job={job} onOpen={() => onOpenJob(job)} key={job.id} />)}</section>
     </div>
   );
 }
 
-function SavedJobSheet({ job, onClose }: { job: Job; onClose: () => void }) {
+function SavedJobSheet({ job, onClose, failedPhotos = 0, saving = false, onRetry }: { job: Job; onClose: () => void; failedPhotos?: number; saving?: boolean; onRetry?: () => void }) {
   const dialogRef = useRef<HTMLElement>(null);
   useModalDialog(dialogRef, onClose);
   const pounds = job.infillPounds ?? job.area * (job.infillRate ?? 0.25);
   const photos = job.photoItems ?? [];
   return <div className="sheet-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
     <section ref={dialogRef} className="quote-sheet saved-job-sheet" role="dialog" aria-modal="true" aria-labelledby="saved-job-title">
-      <header className="sheet-header"><button className="bare-icon" aria-label="Close saved calculation" onClick={onClose} data-dialog-autofocus><ArrowLeft size={20} /></button><div><p>Saved calculation</p><h2 id="saved-job-title">{job.address}</h2></div></header>
+      <header className="sheet-header"><button className="bare-icon" aria-label="Close saved calculation" onClick={onClose} data-dialog-autofocus><ArrowLeft size={20} /></button><div><p>Saved property</p><h2 id="saved-job-title">{job.address}</h2></div></header>
       <div className="sheet-body">
         <p className="saved-job-method">{measurementLabel(job.method)} · {job.createdAt}</p>
         <section className="infill-summary" aria-label="Saved calculation results"><div className="area-total"><span>Total turf area</span><strong>{formatNumber(job.area)}</strong><small>square feet</small></div><div className="infill-result-grid"><div><span>Total infill</span><strong>{formatNumber(pounds)} lb</strong></div><div><span>40-lb bags</span><strong>{job.infill}</strong></div><div><span>50-lb bags</span><strong>{job.bags50 ?? Math.ceil(pounds / 50)}</strong></div></div><div className="customer-price"><span>Customer price</span><strong>{formatCurrency(job.quote)}</strong></div></section>
+        <SavedInspection inspection={job.inspection} />
+        {failedPhotos > 0 && <div className="inspection-save-warning" role="status">The measurement and inspection are saved. {failedPhotos} {failedPhotos === 1 ? "photo needs" : "photos need"} another try. Keep this page open to retry.<button className="secondary-button" disabled={saving} onClick={onRetry}>{saving ? "Uploading…" : "Retry photos"}</button></div>}
+        {job.photos > photos.length && <p className="inspection-help" role="status">{job.photos} photos saved. Some previews are temporarily unavailable; reopen after refreshing.</p>}
         {photos.length > 0 && <section className="saved-job-photos"><h3>Visit photos</h3><div className="photo-row">{photos.map((photo, index) => <a className="photo-tile real-photo" key={`${photo.url}-${index}`} href={photo.url} target="_blank" rel="noreferrer"><img src={photo.url} alt={`${job.address} visit photo ${index + 1}`} /><span>{formatPhotoDate(photo.capturedAt)}</span></a>)}</div></section>}
       </div>
     </section>
   </div>;
 }
 
-function QuoteSheet({ canMeasure, access, draft, setDraft, quote, photoUrl, setPhotoUrl, setPhotoFile, onClose, onSave, onError, primaryNavigation }: { canMeasure: boolean; access: AccessState;  draft: QuoteDraft; setDraft: React.Dispatch<React.SetStateAction<QuoteDraft>>; quote: QuoteTotals; photoUrl: string; setPhotoUrl: (url: string) => void; setPhotoFile: (file: File | null) => void; onClose: () => void; onSave: () => void | Promise<void>; onError: (message: string) => void; primaryNavigation: React.ReactNode }) {
-  const dialogRef = useRef<HTMLElement>(null);
-  useModalDialog(dialogRef, onClose);
-  const update = <K extends keyof QuoteDraft>(key: K, value: QuoteDraft[K]) => setDraft((current) => ({ ...current, [key]: value }));
-  const changePhoto = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      onError("Choose a photo in JPEG, PNG, WebP, or HEIC format.");
-      event.target.value = "";
-      return;
-    }
-    if (file.size > 20 * 1024 * 1024) {
-      onError("Visit photos must be smaller than 20 MB.");
-      event.target.value = "";
-      return;
-    }
-    setPhotoFile(file);
-    setPhotoUrl(URL.createObjectURL(file));
+function ScannerInspectionPreview() {
+  const [draft, setDraft] = useState<QuoteDraft>({ ...defaultDraft, mode: "manual" });
+  const [inspection, setInspection] = useState<TurfInspection>({});
+  const [photos, setPhotos] = useState<PendingPropertyPhoto[]>([]);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [selected, setSelected] = useState<Job | null>(null);
+  const [open, setOpen] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const urls = useRef(new Set<string>());
+  const [message, setMessage] = useState("");
+  const [failed, setFailed] = useState<File[]>([]);
+  const quote = calculateQuote(draft);
+  useEffect(() => { void loadJobs([]).then(setJobs).catch(() => setMessage("Local property history could not load.")); }, []);
+  useEffect(() => { const next = new Set(photos.map(photo => photo.url)); for (const url of urls.current) if (!next.has(url)) URL.revokeObjectURL(url); urls.current = next; }, [photos]);
+  useEffect(() => () => { for (const url of urls.current) URL.revokeObjectURL(url); }, []);
+  const save = async () => {
+    if (busyRef.current) return;
+    if (quote.area <= 0) { setMessage("Enter a measurement before saving."); return; }
+    busyRef.current = true; setBusy(true);
+    try {
+      const saved = await saveJob({ id: Date.now(), address: draft.address.trim() || "Example property", area: quote.area, preciseArea: quote.preciseArea, infill: quote.bags40, bags50: quote.bags50, infillPounds: quote.infillPounds, infillRate: draft.infillRate, serviceRate: draft.serviceRate, quote: quote.total, status: "Calculated", method: draft.mode, createdAt: "Just now", photos: 0, inspection }, photos.map(photo => photo.file));
+      setJobs(current => [saved, ...current]); setSelected(saved); setFailed(saved.failedPhotoFiles ?? []); setOpen(false); setPhotos([]); setInspection({}); setDraft({ ...defaultDraft, mode: "manual" }); setMessage("Example property saved on this computer only.");
+    } catch { setMessage("Could not save this example. Your entries are kept."); }
+    finally { busyRef.current = false; setBusy(false); }
   };
+  const retry = async () => {
+    if (!selected || busyRef.current) return;
+    busyRef.current = true; setBusy(true);
+    try { const saved = await retryJobPhotos(selected, failed); setJobs(current => current.map(job => job.id === saved.id ? saved : job)); setSelected(saved); setFailed(saved.failedPhotoFiles ?? []); }
+    catch { setMessage("Photos could not be saved. Try again."); }
+    finally { busyRef.current = false; setBusy(false); }
+  };
+  return <main className="scanner-inspection-preview"><p className="inspection-save-warning">Turf Scanner preview · Examples save on this computer only. {message}</p><HomeView jobs={jobs} onOpenJob={job => { setSelected(job); setFailed([]); }} openQuote={mode => { setDraft(current => ({ ...current, mode })); setOpen(true); }} checks={[false,false,false,false]} setChecks={() => undefined} setToast={setMessage} onGrow={() => undefined} />{open && <QuoteSheet canMeasure access={{ status: "preview" }} draft={draft} setDraft={setDraft} quote={quote} inspection={inspection} setInspection={setInspection} photos={photos} setPhotos={setPhotos} saving={busy} onClose={() => setOpen(false)} onSave={save} onError={setMessage} primaryNavigation={null} />}{!open && selected && <SavedJobSheet job={selected} failedPhotos={failed.length} saving={busy} onRetry={() => void retry()} onClose={() => setSelected(null)} />}{message && open && <p className="scanner-preview-message" role="status">{message}</p>}</main>;
+}
+
+function QuoteSheet({ canMeasure, access, draft, setDraft, quote, inspection, setInspection, photos, setPhotos, saving, onClose, onSave, onError, primaryNavigation }: { canMeasure: boolean; access: AccessState; draft: QuoteDraft; setDraft: React.Dispatch<React.SetStateAction<QuoteDraft>>; quote: QuoteTotals; inspection: TurfInspection; setInspection: (value: TurfInspection) => void; photos: PendingPropertyPhoto[]; setPhotos: (photos: PendingPropertyPhoto[]) => void; saving: boolean; onClose: () => void; onSave: () => void | Promise<void>; onError: (message: string) => void; primaryNavigation: React.ReactNode }) {
+  const dialogRef = useRef<HTMLElement>(null);
+  useModalDialog(dialogRef, saving ? () => undefined : onClose);
+  const update = <K extends keyof QuoteDraft>(key: K, value: QuoteDraft[K]) => setDraft((current) => ({ ...current, [key]: value }));
   return (
-    <div className="sheet-layer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <div className="sheet-layer" role="presentation" onMouseDown={(event) => !saving && event.target === event.currentTarget && onClose()}>
       <section ref={dialogRef} className="quote-sheet" role="dialog" aria-modal="true" aria-labelledby="quote-title">
-        <header className="sheet-header"><button className="bare-icon" aria-label="Close infill calculator" onClick={onClose} data-dialog-autofocus><ArrowLeft size={20} /></button><div><p>Measure · Price · Infill</p><h2 id="quote-title">Turf Scanner</h2></div><button className="save-link" disabled={draft.mode !== "manual" && !canMeasure} onClick={onSave}>Save</button></header>
-        <div className="sheet-body">
+        <header className="sheet-header"><button className="bare-icon" aria-label="Close infill calculator" disabled={saving} onClick={onClose} data-dialog-autofocus><ArrowLeft size={20} /></button><div><p>Measure · Price · Infill</p><h2 id="quote-title">Turf Scanner</h2></div><button className="save-link" disabled={saving || (draft.mode !== "manual" && !canMeasure)} onClick={onSave}>{saving ? "Saving…" : "Save"}</button></header>
+        <div className="sheet-body"><fieldset className="quote-edit-fields" disabled={saving}>
           <fieldset className="mode-fieldset"><legend>Measurement method</legend><div className="segmented-control"><ModeButton icon={<Camera size={17} />} label="Camera" active={draft.mode === "camera"} onClick={() => update("mode", "camera")} /><ModeButton icon={<Map size={17} />} label="Map" active={draft.mode === "map"} onClick={() => update("mode", "map")} /><ModeButton icon={<Ruler size={17} />} label="Manual" active={draft.mode === "manual"} onClick={() => update("mode", "manual")} /></div></fieldset>
-          {draft.mode === "camera" && canMeasure && <LiveCameraMeasurement area={draft.cameraArea} onAreaChange={(value) => update("cameraArea", value)} photoUrl={photoUrl} changePhoto={changePhoto} />}
+          {draft.mode === "camera" && canMeasure && <LiveCameraMeasurement area={draft.cameraArea} onAreaChange={(value) => update("cameraArea", value)} />}
           {draft.mode === "manual" && <DimensionInputs draft={draft} update={update} />}
           {draft.mode === "map" && canMeasure && <Suspense fallback={<div className="map-loading" role="status">Loading property map...</div>}><MapMeasurement address={draft.address} area={draft.mapArea} onAddressChange={(value) => update("address", value)} onAreaChange={(value) => update("mapArea", value)} /></Suspense>}
           {draft.mode !== "manual" && !canMeasure && <><AccessRequired title="Turf Scanner access required">Camera and map measurements are not available with your current access. You can still enter dimensions manually.</AccessRequired><AvailableUpgrades access={access} kind="tool" feature="measuring_tool" /><button className="secondary-button wide" onClick={() => update("mode", "manual")}>Enter dimensions manually</button></>}
           {(draft.mode === "manual" || canMeasure) && <><section className="infill-controls"><label className="field-label">Infill rate<select value={draft.infillRate} onChange={(event) => update("infillRate", numberValue(event.target.value))}>{INFILL_RATES.map((rate) => <option key={rate} value={rate}>{rate.toFixed(2)} lb / sq ft</option>)}</select></label><NumberField label="What you charge" value={draft.serviceRate} prefix="$" suffix="/ sq ft" update={(value) => update("serviceRate", value)} /></section>
           <section className="infill-summary" aria-label="Infill calculation results"><div className="area-total"><span>Total turf area</span><strong>{formatNumber(quote.area)}</strong><small>square feet</small></div><div className="infill-result-grid"><div><span>Total infill</span><strong>{formatNumber(quote.infillPounds)} lb</strong></div><div><span>40-lb bags</span><strong>{quote.bags40}</strong></div><div><span>50-lb bags</span><strong>{quote.bags50}</strong></div></div><div className="customer-price"><span>Customer price</span><strong>{formatCurrency(quote.serviceTotal)}</strong></div></section></>}
-        </div>
-        <div className="sheet-footer"><button className="primary-button wide" disabled={draft.mode !== "manual" && !canMeasure} onClick={onSave}><CheckCircle2 size={18} /> Save calculation</button></div>
+          {(draft.mode === "manual" || canMeasure) && <><label className="property-name-input">Property name or address<input maxLength={200} value={draft.address} onChange={event => update("address", event.target.value)} placeholder="e.g. Smith backyard" /></label><PropertyInspection value={inspection} onChange={setInspection} photos={photos} onPhotosChange={setPhotos} onError={onError} /></>}
+        </fieldset></div>
+        <div className="sheet-footer"><button className="primary-button wide" disabled={saving || (draft.mode !== "manual" && !canMeasure)} onClick={onSave}><CheckCircle2 size={18} /> {saving ? "Saving property…" : "Save property"}</button></div>
         {primaryNavigation}
       </section>
     </div>
   );
 }
-function LiveCameraMeasurement({ area, onAreaChange, photoUrl, changePhoto }: { area: number; onAreaChange: (value: number) => void; photoUrl: string; changePhoto: (event: React.ChangeEvent<HTMLInputElement>) => void }) {
+function LiveCameraMeasurement({ area, onAreaChange }: { area: number; onAreaChange: (value: number) => void }) {
   const [nativeAvailable, setNativeAvailable] = useState<boolean | null>(null);
   const [message, setMessage] = useState("");
   const [measuring, setMeasuring] = useState(false);
@@ -1286,7 +1348,6 @@ function LiveCameraMeasurement({ area, onAreaChange, photoUrl, changePhoto }: { 
       {message && <p className="measure-message" role="status">{message}</p>}
     </section>
     <NumberField label="AR measured area" value={area} suffix="sq ft" update={onAreaChange} />
-    <label className={photoUrl ? "capture-box compact has-photo" : "capture-box compact"} style={photoUrl ? { backgroundImage: `linear-gradient(rgba(22, 70, 53, .18), rgba(22, 70, 53, .45)), url(${photoUrl})` } : undefined}><input type="file" accept="image/*" capture="environment" onChange={changePhoto} /><ImagePlus size={20} /><strong>{photoUrl ? "Replace visit photo" : "Add visit photo"}</strong></label>
   </div>;
 }
 
@@ -1299,8 +1360,8 @@ function Action({ icon, label, onClick }: { icon: React.ReactNode; label: string
 function Metric({ label, value, suffix }: { label: string; value: string; suffix: string }) { return <div className="metric"><span>{label}</span><strong>{value}</strong><small>{suffix}</small></div>; }
 function ToolRow({ icon, title, detail, onClick }: { icon: React.ReactNode; title: string; detail: string; onClick: () => void }) { return <button className="tool-row" onClick={onClick}><span>{icon}</span><span><strong>{title}</strong><small>{detail}</small></span><ChevronRight size={18} /></button>; }
 
-function JobRow({ job }: { job: Job }) {
-  return <article className="job-row"><div className="job-method">{job.method === "map" ? <Map size={17} /> : job.method === "camera" ? <Camera size={17} /> : <Ruler size={17} />}</div><div><h4>{job.address}</h4><p>{formatNumber(job.area)} sq ft · {job.infill} 40-lb bags · {formatCurrency(job.quote)}</p></div><span>{job.status}</span></article>;
+function JobRow({ job, onOpen }: { job: Job; onOpen: () => void }) {
+  return <button type="button" className="job-row" onClick={onOpen} aria-label={`Open property ${job.address}`}><div className="job-method">{job.method === "map" ? <Map size={17} /> : job.method === "camera" ? <Camera size={17} /> : <Ruler size={17} />}</div><div><h4>{job.address}</h4><p>{formatNumber(job.area)} sq ft · {job.infill} 40-lb bags · {formatCurrency(job.quote)}</p></div><span>{job.inspection?.condition ?? job.status} <ChevronRight size={15} /></span></button>;
 }
 
 function DesktopNavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) { return <button className={active ? "desktop-nav-item active" : "desktop-nav-item"} onClick={onClick} aria-current={active ? "page" : undefined} aria-label={label} title={label}>{icon}<span>{label}</span></button>; }
@@ -1316,7 +1377,7 @@ const appWindow = window as Window & { __dirtyTurfRoot?: ReturnType<typeof creat
 appWindow.__dirtyTurfRoot ??= createRoot(rootElement);
 const publicCertificateCode = new URLSearchParams(window.location.search).get("certificate");
 const membershipRoute = billingPageRoute(window.location.pathname, Capacitor.isNativePlatform());
-appWindow.__dirtyTurfRoot.render(<AppErrorBoundary>{CourseBuilderPreview && !supabase && new URLSearchParams(window.location.search).has("editor-preview") ? <Suspense fallback={<main role="status">Loading course editor preview…</main>}><CourseBuilderPreview /></Suspense> : import.meta.env.DEV && !supabase && new URLSearchParams(window.location.search).has("auth-preview") ? <AccountEntryExample /> : import.meta.env.DEV && !supabase && new URLSearchParams(window.location.search).has("profile-preview") ? <MemberProfileExample /> : membershipRoute
+appWindow.__dirtyTurfRoot.render(<AppErrorBoundary>{import.meta.env.DEV && !supabase && new URLSearchParams(window.location.search).has("scanner-preview") ? <ScannerInspectionPreview /> : CourseBuilderPreview && !supabase && new URLSearchParams(window.location.search).has("editor-preview") ? <Suspense fallback={<main role="status">Loading course editor preview…</main>}><CourseBuilderPreview /></Suspense> : import.meta.env.DEV && !supabase && new URLSearchParams(window.location.search).has("auth-preview") ? <AccountEntryExample /> : import.meta.env.DEV && !supabase && new URLSearchParams(window.location.search).has("profile-preview") ? <MemberProfileExample /> : membershipRoute
   ? <Suspense fallback={<main className="launch-gate"><section className="launch-card" role="status"><p>Loading membership…</p></section></main>}><MembershipPages route={membershipRoute} /></Suspense>
   : publicCertificateCode ? <CertificateVerificationPage code={publicCertificateCode} /> : <App />}</AppErrorBoundary>);
 

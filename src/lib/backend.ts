@@ -1,3 +1,6 @@
+import { normalizeInspection, validatePropertyPhotos } from "./turfInspection";
+import { loadLocalPropertyPhotos, saveLocalPropertyPhotos } from "./localPropertyPhotos";
+import type { TurfInspection } from "../domain";
 import { parseAcademyAccess, type WorkspaceAccessState } from "./academyAccess";
 export type { WorkspaceAccessState } from "./academyAccess";
 import { Capacitor } from "@capacitor/core";
@@ -339,11 +342,12 @@ export async function getHighLevelStatus(): Promise<HighLevelStatus> {
   return data;
 }
 
-export async function uploadJobPhoto(organizationId: string, propertyId: string, file: File) {
-  if (!supabase) throw new Error("Supabase is not configured.");
-  const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
+export async function uploadJobPhoto(organizationId: string, propertyId: string, file: File, client = supabase) {
+  if (!client) throw new Error("Supabase is not configured.");
+  validatePropertyPhotos([file]);
+  const extension = ({ "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/heic": "heic" } as Record<string, string>)[file.type];
   const path = `${organizationId}/${propertyId}/${crypto.randomUUID()}.${extension}`;
-  const { error } = await supabase.storage.from("job-photos").upload(path, file, {
+  const { error } = await client.storage.from("job-photos").upload(path, file, {
     cacheControl: "3600",
     contentType: file.type,
     upsert: false,
@@ -383,7 +387,14 @@ function isBillingSubscription(value: unknown): value is NonNullable<AcademyBill
 }
 
 export async function loadJobs(seed: Job[]): Promise<Job[]> {
-  if (!(await hasCloudSession())) return readLocal(JOBS_KEY, seed);
+  if (!supabase) {
+    const jobs = readLocal<Job[]>(JOBS_KEY, seed);
+    return Promise.all(jobs.map(async job => {
+      try { const photoItems = await loadLocalPropertyPhotos(job.id); return { ...job, photos: photoItems.length || job.photos, photoItems }; }
+      catch { return { ...job, photoItems: [] }; }
+    }));
+  }
+  if (!(await hasCloudSession())) return [];
 
   const { data, error } = await supabase!
     .from("job_cards")
@@ -394,7 +405,16 @@ export async function loadJobs(seed: Job[]): Promise<Job[]> {
   const estimateIds = (data ?? []).map((row) => row.id);
   const estimateLookup = new Map<string, { organizationId: string; propertyId: string }>();
   const photoLookup = new Map<string, NonNullable<Job["photoItems"]>>();
+  const inspectionLookup = new Map<string, TurfInspection>();
   if (estimateIds.length) {
+    const { data: inspections, error: inspectionError } = await supabase!
+      .from("property_inspections")
+      .select("estimate_id,turf_condition,visible_seams,debris_level,infill_level,notes")
+      .in("estimate_id", estimateIds);
+    if (inspectionError) throw inspectionError;
+    for (const row of inspections ?? []) inspectionLookup.set(row.estimate_id, normalizeInspection({
+      condition: row.turf_condition, seams: row.visible_seams, debris: row.debris_level, infill: row.infill_level, notes: row.notes,
+    }));
     const { data: estimates, error: estimateError } = await supabase!
       .from("estimates")
       .select("id,organization_id,property_id")
@@ -455,70 +475,110 @@ export async function loadJobs(seed: Job[]): Promise<Job[]> {
     status: row.status === "ready_to_quote" ? "Calculated" : titleCase(row.status),
     method: row.measurement_method,
     createdAt: relativeDate(row.created_at),
+    inspection: inspectionLookup.get(row.id),
     photos: Number(row.photo_count),
     photoItems: photoLookup.get(estimateLookup.get(row.id)?.propertyId ?? "") ?? [],
   }));
 }
 
-export type SavedJobResult = Job & { photoUploadFailed?: boolean; photoPreviewUnavailable?: boolean };
+export type SavedJobResult = Job & { photoUploadFailed?: boolean; photoPreviewUnavailable?: boolean; failedPhotoFiles?: File[] };
 
-export async function saveJob(job: Job, photoFile?: File): Promise<SavedJobResult> {
-  if (!(await hasCloudSession())) {
+async function propertyMutationContext() {
+  if (!supabase) return null;
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  const session = data.session;
+  if (!session?.user.id || !session.access_token) throw new Error("Sign in again before saving a property.");
+  // Freeze the account for the full save, including storage requests. A later sign-in
+  // cannot redirect an in-flight private property to the next member's workspace.
+  const token = session.access_token;
+  return { userId: session.user.id, client: createClient(supabaseUrl!, supabasePublishableKey!, { accessToken: async () => token }) };
+}
+
+export async function saveJob(job: Job, photoFile?: File | File[]): Promise<SavedJobResult> {
+  const files = photoFile ? Array.isArray(photoFile) ? photoFile : [photoFile] : [];
+  validatePropertyPhotos(files);
+  const inspection = normalizeInspection(job.inspection ?? {});
+  const context = await propertyMutationContext();
+  if (!context) {
     const current = readLocal<Job[]>(JOBS_KEY, []);
-    const localJob = { ...job, photos: 0, photoItems: [] };
-    writeLocal(JOBS_KEY, [localJob, ...current.filter((item) => item.id !== job.id)]);
-    return photoFile ? { ...localJob, photoUploadFailed: true } : localJob;
+    const localJob = { ...job, inspection, photos: 0, photoItems: [] };
+    writeLocal(JOBS_KEY, [localJob, ...current.filter(item => item.id !== job.id)]);
+    return attachPropertyPhotos(localJob, files, null);
   }
-
-  const { data, error } = await supabase!.rpc("create_infill_calculation", {
+  const hasInspection = Object.keys(inspection).length > 0;
+  const { data, error } = await context.client.rpc(hasInspection ? "create_infill_inspection" : "create_infill_calculation", {
     p_label: job.address,
     p_square_feet: job.preciseArea ?? job.area,
     p_infill_rate: job.infillRate ?? 0.25,
     p_service_rate: job.serviceRate ?? 0,
     p_measurement_method: job.method,
+    ...(hasInspection ? { p_inspection: {
+      turf_condition: inspection.condition, visible_seams: inspection.seams,
+      debris_level: inspection.debris, infill_level: inspection.infill, notes: inspection.notes,
+    } } : {}),
   });
   if (error) throw error;
   const estimateId = String(data);
-  const savedJob = { ...job, id: stableNumericId(estimateId), cloudId: estimateId, photos: 0, photoItems: [] };
-  if (!photoFile) return savedJob;
+  return attachPropertyPhotos({ ...job, inspection, id: stableNumericId(estimateId), cloudId: estimateId, photos: 0, photoItems: [] }, files, context);
+}
 
-  let photoPersisted = false;
-  try {
-    const { data: estimate, error: estimateError } = await supabase!
-      .from("estimates")
-      .select("organization_id,property_id")
-      .eq("id", estimateId)
-      .single();
-    if (estimateError || !estimate) throw estimateError || new Error("Saved calculation could not be resolved.");
+/** Retry only failed attachments; never create a second measurement. */
+export async function retryJobPhotos(job: Job, files: File[]): Promise<SavedJobResult> {
+  validatePropertyPhotos(files, job.photos);
+  const context = await propertyMutationContext();
+  if (Boolean(context) !== Boolean(job.cloudId)) throw new Error("The property account changed. Reopen the saved property before retrying.");
+  return attachPropertyPhotos(job, files, context);
+}
 
-    const { data: userData, error: userError } = await supabase!.auth.getUser();
-    if (userError || !userData.user) throw userError || new Error("Sign in again before uploading a visit photo.");
-
-    const storagePath = await uploadJobPhoto(estimate.organization_id, estimate.property_id, photoFile);
-    const { error: metadataError } = await supabase!.from("photos").insert({
-      organization_id: estimate.organization_id,
-      property_id: estimate.property_id,
-      storage_path: storagePath,
-      kind: "site",
-      created_by: userData.user.id,
-    });
-    if (metadataError) {
-      await supabase!.storage.from("job-photos").remove([storagePath]).catch(() => undefined);
-      throw metadataError;
+async function attachPropertyPhotos(job: Job, files: File[], context: Awaited<ReturnType<typeof propertyMutationContext>>): Promise<SavedJobResult> {
+  const result: SavedJobResult = { ...job, failedPhotoFiles: [], photoUploadFailed: false, photoPreviewUnavailable: false };
+  if (!files.length) return result;
+  if (!context) {
+    let photoPersisted = false;
+    try {
+      result.photoItems = await saveLocalPropertyPhotos(job.id, files);
+      result.photos = result.photoItems.length;
+      photoPersisted = true;
+      const current = readLocal<Job[]>(JOBS_KEY, []);
+      writeLocal(JOBS_KEY, [{ ...job, photos: result.photos, photoItems: [] }, ...current.filter(item => item.id !== job.id)]);
+    } catch {
+      if (photoPersisted) result.photoPreviewUnavailable = true;
+      else { result.photoUploadFailed = true; result.failedPhotoFiles = files; }
     }
-
-    photoPersisted = true;
-    const withPhoto = { ...savedJob, photos: 1 };
-    const { data: signed, error: signedError } = await supabase!.storage
-      .from("job-photos")
-      .createSignedUrl(storagePath, 60 * 60);
-    if (signedError || !signed?.signedUrl) return { ...withPhoto, photoPreviewUnavailable: true };
-    return { ...withPhoto, photoItems: [{ url: signed.signedUrl, capturedAt: new Date().toISOString(), kind: "site" }] };
-  } catch {
-    return photoPersisted
-      ? { ...savedJob, photos: 1, photoPreviewUnavailable: true }
-      : { ...savedJob, photoUploadFailed: true };
+    return result;
   }
+  const { client, userId } = context;
+  let estimate: { organization_id: string; property_id: string };
+  try {
+    const { data, error } = await client.from("estimates").select("organization_id,property_id").eq("id", job.cloudId!).single();
+    if (error || !data) throw error || new Error("Saved property could not be resolved.");
+    estimate = data;
+  } catch { return { ...result, photoUploadFailed: true, failedPhotoFiles: files }; }
+  for (const file of files) {
+    let photoPersisted = false;
+    try {
+      const storagePath = await uploadJobPhoto(estimate.organization_id, estimate.property_id, file, client);
+      const capturedAt = new Date().toISOString();
+      const { error: metadataError } = await client.from("photos").insert({
+        organization_id: estimate.organization_id, property_id: estimate.property_id,
+        storage_path: storagePath, kind: "site", created_by: userId,
+      });
+      if (metadataError) {
+        await client.storage.from("job-photos").remove([storagePath]).catch(() => undefined);
+        throw metadataError;
+      }
+      photoPersisted = true;
+      result.photos += 1;
+      const { data: signed, error } = await client.storage.from("job-photos").createSignedUrl(storagePath, 60 * 60);
+      if (error || !signed?.signedUrl) { result.photoPreviewUnavailable = true; continue; }
+      result.photoItems = [...(result.photoItems ?? []), { url: signed.signedUrl, capturedAt, kind: "site" }];
+    } catch {
+      if (photoPersisted) result.photoPreviewUnavailable = true;
+      else { result.photoUploadFailed = true; result.failedPhotoFiles!.push(file); }
+    }
+  }
+  return result;
 }
 
 export const COMMUNITY_POST_PAGE_SIZE = 50;
