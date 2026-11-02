@@ -8,6 +8,20 @@ const outline = () => [
 ];
 
 describe("course ordering drafts", () => {
+  it("preserves an archived row's tied position outside the moved visible modules", () => {
+    const modules = [
+      { id: "archived", sortOrder: 3, lessons: [] },
+      { id: "visible-a", sortOrder: 3, lessons: [] },
+      { id: "visible-b", sortOrder: 4, lessons: [] },
+    ];
+    expect(moveCourseModule(modules, "visible-b", 1)).toEqual([
+      modules[0], { ...modules[2], sortOrder: 3 }, { ...modules[1], sortOrder: 4 },
+    ]);
+  });
+  it("keeps an unrepresentable tied move unchanged rather than renumbering unrelated modules", () => {
+    const modules = [{ id: "a", sortOrder: 3, lessons: [] }, { id: "b", sortOrder: 3, lessons: [] }, { id: "untouched", sortOrder: 8, lessons: [] }];
+    expect(moveCourseModule(modules, "b", 0)).toEqual(modules);
+  });
   it("keeps originals intact and reorders modules without changing lesson identities", () => {
     const original = outline();
     const copy = snapshotCourseOrder(original);

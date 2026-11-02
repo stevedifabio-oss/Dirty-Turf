@@ -15,11 +15,14 @@ export function moveCourseModule(modules: readonly CourseOrderModule[], moduleId
   if (index < 0 || !Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex >= draft.length || index === targetIndex) return draft;
   const [module] = draft.splice(index, 1);
   draft.splice(targetIndex, 0, module);
-  // Reuse existing positions so untouched modules (including hidden ones) retain
-  // their sort value. Ties are resolved by normalizing only when necessary.
+  // Reuse existing positions. Imported archived rows can share a position with
+  // a visible row outside this move; never normalize those unrelated rows.
   const positions = modules.map(item => item.sortOrder);
-  const unique = new Set(positions).size === positions.length;
-  return draft.map((item, position) => ({ ...item, sortOrder: unique ? positions[position] : position }));
+  const movedPositions = positions.slice(Math.min(index, targetIndex), Math.max(index, targetIndex) + 1);
+  // A tied position inside the moved range cannot express the requested order
+  // reliably. Keep the draft intact instead of silently renumbering other rows.
+  if (new Set(movedPositions).size !== movedPositions.length) return snapshotCourseOrder(modules);
+  return draft.map((item, position) => ({ ...item, sortOrder: positions[position] }));
 }
 
 /** targetIndex is the final index after removing the lesson from its old position. */

@@ -29,7 +29,12 @@ export function CourseOutlineEditor({ course, busy, onSave, onClose, onDirtyChan
     if (order.slice(Math.min(sourceIndex, target), Math.max(sourceIndex, target) + 1).some(item => blocked(item.id))) {
       setMessage("Hidden source modules stay in place. Move boxes within the visible section."); return;
     }
-    change(moveCourseModule(order, id, target), `${modules.get(id)?.title} moved to position ${target + 1}. Save order to apply.`);
+    const next = moveCourseModule(order, id, target);
+    if (!hasCourseOrderChanges(order, next)) {
+      if (sourceIndex !== target) setMessage("These modules share ordering positions. Their order was kept; review the imported outline before moving them.");
+      return;
+    }
+    change(next, `${modules.get(id)?.title} moved to position ${target + 1}. Save order to apply.`);
   };
   const moveLesson = (id: string, moduleId: string, target: number) => {
     const source = order.find(module => module.lessons.some(lesson => lesson.id === id));
