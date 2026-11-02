@@ -1311,11 +1311,12 @@ function measurementLabel(method: MeasurementMode) { return method === "camera" 
 function formatPhotoDate(value: string) { const date = new Date(value); return Number.isNaN(date.valueOf()) ? "Visit" : new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(date); }
 
 const rootElement = document.getElementById("root")!;
+const CourseBuilderPreview = import.meta.env.DEV ? lazy(() => import("./components/CourseBuilderPreview").then(module => ({ default: module.CourseBuilderPreview }))) : null;
 const appWindow = window as Window & { __dirtyTurfRoot?: ReturnType<typeof createRoot> };
 appWindow.__dirtyTurfRoot ??= createRoot(rootElement);
 const publicCertificateCode = new URLSearchParams(window.location.search).get("certificate");
 const membershipRoute = billingPageRoute(window.location.pathname, Capacitor.isNativePlatform());
-appWindow.__dirtyTurfRoot.render(<AppErrorBoundary>{import.meta.env.DEV && !supabase && new URLSearchParams(window.location.search).has("auth-preview") ? <AccountEntryExample /> : import.meta.env.DEV && !supabase && new URLSearchParams(window.location.search).has("profile-preview") ? <MemberProfileExample /> : membershipRoute
+appWindow.__dirtyTurfRoot.render(<AppErrorBoundary>{CourseBuilderPreview && !supabase && new URLSearchParams(window.location.search).has("editor-preview") ? <Suspense fallback={<main role="status">Loading course editor preview…</main>}><CourseBuilderPreview /></Suspense> : import.meta.env.DEV && !supabase && new URLSearchParams(window.location.search).has("auth-preview") ? <AccountEntryExample /> : import.meta.env.DEV && !supabase && new URLSearchParams(window.location.search).has("profile-preview") ? <MemberProfileExample /> : membershipRoute
   ? <Suspense fallback={<main className="launch-gate"><section className="launch-card" role="status"><p>Loading membership…</p></section></main>}><MembershipPages route={membershipRoute} /></Suspense>
   : publicCertificateCode ? <CertificateVerificationPage code={publicCertificateCode} /> : <App />}</AppErrorBoundary>);
 

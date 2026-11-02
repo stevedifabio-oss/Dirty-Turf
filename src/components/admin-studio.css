@@ -1,4 +1,47 @@
 /* Admin workspace: scoped to keep the member experience unchanged. */
+.course-builder-preview { min-height: 100vh; container-type: inline-size; container-name: workspace; }
+.preview-save-status { color: var(--turf-dark); background: var(--mist); padding: 12px 16px; border-radius: 8px; }
+.reorder-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.admin-view button.reorder-handle { flex: 0 0 44px; display: inline-grid; place-items: center; width: 44px; min-width: 44px; padding: 8px; border: 0; border-radius: 7px; background: transparent; color: var(--ink-soft); touch-action: none; cursor: grab; }
+.admin-view button.reorder-handle[aria-pressed="true"] { cursor: grabbing; color: var(--turf-dark); background: var(--lime); }
+[data-reorder-dragging="true"] { opacity: .65; outline: 2px dashed var(--turf); outline-offset: 2px; }
+[data-reorder-target="before"] { box-shadow: 0 -4px 0 var(--turf); }
+[data-reorder-target="after"] { box-shadow: 0 4px 0 var(--turf); }
+.admin-view .admin-curriculum-heading { display: flex; justify-content: space-between; align-items: start; gap: 16px; flex-wrap: wrap; }
+.course-outline-editor { display: grid; gap: 18px; }
+.course-outline-editor > header { display: flex; gap: 12px; justify-content: space-between; align-items: start; }
+.course-outline-editor h4 { margin: 0 0 8px; font: 700 1.15rem "Outfit",sans-serif; }
+.course-outline-editor header p { margin: 0; font-size: .78rem; color: var(--ink-soft); max-width: 600px; }
+.course-outline-modules, .course-outline-lessons { display: grid; gap: 12px; }
+.course-outline-module { min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); }
+.course-outline-module > header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--chalk); border-radius: 10px 10px 0 0; }
+.course-outline-module > header > strong { flex: 1; overflow-wrap: anywhere; }
+.course-outline-lessons { padding: 12px; }
+.course-outline-lesson { display: grid; grid-template-columns: 44px minmax(0,1fr) auto; align-items: center; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: white; }
+.course-outline-lesson > span:nth-of-type(2) { display: grid; gap: 4px; min-width: 0; }
+.course-outline-lesson strong { font-size: .81rem; overflow-wrap: anywhere; }
+.course-outline-lesson small { color: var(--ink-soft); font-size: .7rem; }
+.course-outline-lesson > label { grid-column: 2 / -1; display: flex; gap: 10px; align-items: center; font-size: .7rem; color: var(--ink-soft); min-width: 0; }
+.admin-view .course-outline-lesson select { flex: 1; width: 100%; min-width: 0; max-width: 360px; padding: 8px; font-size: .75rem; }
+.outline-step-controls { display: inline-flex; gap: 4px; }
+.admin-view .outline-step-controls button { display: grid; place-items: center; width: 44px; padding: 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--mist); color: var(--turf-dark); }
+.admin-view .outline-step-controls button:disabled { opacity: .35; }
+.course-outline-module > .admin-form-note { padding-inline: 16px; }
+.lesson-description-editor { min-width: 0; }
+.admin-view .lesson-description-input { min-height: 220px; max-height: 600px; overflow: auto; padding: 18px; border: 1px solid var(--line); border-radius: 8px; background: white; line-height: 1.7; }
+.lesson-description-input img, .lesson-description-input video, .lesson-description-input iframe { max-width: 100%; }
+.lesson-description-input:focus { outline: 2px solid var(--turf); outline-offset: 2px; }
+@media (max-width: 600px) {
+  .course-builder-preview.admin-view { padding-inline: 14px; }
+  .course-outline-module > header { gap: 4px; padding-inline: 5px; }
+  .course-outline-module > header > svg { display: none; }
+  .course-outline-lessons { padding: 7px; }
+  .course-outline-lesson { padding: 6px; grid-template-columns: 40px minmax(0,1fr); }
+  .course-outline-lesson > .outline-step-controls { grid-column: 2; }
+  .course-outline-lesson > label { grid-column: 1 / -1; }
+  .course-outline-module > header > .outline-step-controls { gap: 0; }
+  .admin-view .course-outline-module > header .outline-step-controls button { width: 36px; padding: 6px; }
+}
 .admin-view {
   --admin-muted: var(--ink-soft);
   width: 100%;
