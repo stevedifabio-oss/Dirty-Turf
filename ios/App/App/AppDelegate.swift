@@ -5,6 +5,7 @@ import CapApp_SPM
 final class BridgeViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(DirtyTurfMeasurePlugin())
+        bridge?.registerPluginInstance(MembershipBillingPlugin())
     }
 }
 

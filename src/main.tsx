@@ -5,6 +5,8 @@ import { communityAvailable, featureAvailable, courseAvailable, type AccessState
 import { AccessRequired, AvailableUpgrades } from "./components/AccessOffers";
 import { AccountEntry, AccountEntryExample, PasswordResetForm } from "./components/AccountEntry";
 import { MemberProfileBoundary, MemberProfileExample } from "./components/MemberProfileOnboarding";
+import { NativeMemberships } from "./components/NativeMemberships";
+import { nativeMembershipsSupported, loadNativeMemberships, restoreNativeMemberships } from "./lib/nativeMemberships";
 import React, { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Capacitor } from "@capacitor/core";
@@ -170,7 +172,7 @@ const navTitles: Record<View, string> = {
 
 function initialViewFromUrl(): View {
   const requested = new URLSearchParams(window.location.search).get("view");
-  if (requested === "tools" || (requested === "upgrades" && Capacitor.isNativePlatform())) return "home";
+  if (requested === "tools") return "home";
   return requested && Object.hasOwn(navTitles, requested) ? requested as View : "home";
 }
 
@@ -271,6 +273,27 @@ function App() {
   const refreshCoursesRef = useRef<() => void>(() => undefined);
   const [courseRefreshError, setCourseRefreshError] = useState(false);
   const refreshWorkspaceRef = useRef<() => void>(() => undefined);
+  useEffect(() => {
+    const changed = () => refreshWorkspaceRef.current();
+    window.addEventListener("dirty-turf-memberships-updated", changed);
+    return () => window.removeEventListener("dirty-turf-memberships-updated", changed);
+  }, []);
+  useEffect(() => {
+    if (!termsAccepted || !termsUserId || !nativeMembershipsSupported()) return;
+    let active = true;
+    let checkedAt = 0;
+    let pending = false;
+    const reconcile = async () => {
+      if (!active || pending || navigator.onLine === false || Date.now() - checkedAt < 60_000) return;
+      pending = true; checkedAt = Date.now();
+      try { const catalog = await loadNativeMemberships(); if (active && (catalog.status.enabled || catalog.status.restorableProducts?.length)) await restoreNativeMemberships(false); }
+      catch { /* Explicit Restore purchases provides actionable errors. */ }
+      finally { pending = false; }
+    };
+    void reconcile();
+    window.addEventListener("focus", reconcile);
+    return () => { active = false; window.removeEventListener("focus", reconcile); };
+  }, [termsAccepted, termsUserId]);
   const beginSignOutRef = useRef<() => (() => boolean)>(() => () => true);
   const hasCommunity = communityAvailable(workspaceAccess);
   const canMeasure = featureAvailable(workspaceAccess, "measuring_tool");
@@ -1032,6 +1055,9 @@ function App() {
     const url = new URL(window.location.href); url.searchParams.delete("auth"); window.history.replaceState(null, "", url.toString());
     setRecoveryUserId(null); setToast("Password updated. Use your new password on all your devices."); refreshWorkspaceRef.current();
   }} />;
+  if (Capacitor.isNativePlatform() && termsAccepted && termsUserId && workspaceAccess.status === "no_access") {
+    return <MemberProfileBoundary userId={termsUserId} onSignOut={() => void handleSignOut()}><main className="membership-shell"><NativeMemberships access={workspaceAccess} onSignOut={() => void handleSignOut()} /></main></MemberProfileBoundary>;
+  }
   if (nativeConsentPending || workspaceAccess.status === "loading" || workspaceAccess.status === "signed_out" || workspaceAccess.status === "no_access" || workspaceAccess.status === "error") {
     return <MemberProfileBoundary userId={termsAccepted ? termsUserId : null} onSignOut={() => void handleSignOut()}><LaunchAccessGate
       status={nativeConsentPending ? "loading" : workspaceAccess.status as "loading" | "signed_out" | "no_access" | "error"}
@@ -1072,7 +1098,7 @@ function App() {
         {searchOpen && <GlobalSearch key={renderedCourseAccount} query={query} onQuery={setQuery} content={{ jobs, courses: dataMode === "cloud" ? visibleCourses : [], posts: hasCommunity ? posts : [], comments: hasCommunity ? comments : [], events: hasCommunity ? events : [], members: hasCommunity ? members : [] }} readOnly={readOnly} searchRemote={hasCommunity && supabase ? searchCommunityPosts : undefined} onOpen={openSearchResult} />}
         <div hidden={searchOpen}>
         {activeView !== "home" && activeView !== "admin" && activeView !== "grow" && activeView !== "upgrades" && <AcademyTabs activeView={activeView} canManage={canManage} hasCommunity={hasCommunity} onNavigate={changeView} />}
-        {activeView === "upgrades" && !Capacitor.isNativePlatform() && <Suspense fallback={<div className="sheet-loading" role="status">Loading memberships and upgrades…</div>}><Upgrades /></Suspense>}
+        {activeView === "upgrades" && <Suspense fallback={<div className="sheet-loading" role="status">Loading memberships and upgrades…</div>}><Upgrades access={workspaceAccess} /></Suspense>}
         {activeView === "home" && <HomeView jobs={jobs} onOpenJob={job => { if (renderedCourseAccount === courseAccountGeneration.current) setSelectedJob(job); }} openQuote={openQuote} checks={arrivalChecks} setChecks={next => { if (renderedCourseAccount === courseAccountGeneration.current) setArrivalChecks(next); }} setToast={setToast} onGrow={() => changeView("grow")} />}
         {activeView === "grow" && <Suspense fallback={<div className="sheet-loading" role="status">Loading business services…</div>}><Growth key={renderedCourseAccount} access={workspaceAccess} readOnly={readOnly} onToast={setToast} /></Suspense>}
         {activeView === "learn" && <AcademyView key={renderedCourseAccount} readOnly={readOnly} requestedLessonId={requestedLessonId} onRenewLessonAssets={renewLessonAssets} requestedCourseCloudId={requestedCourseCloudId} onRequestedCourseOpened={() => { setRequestedCourseCloudId(undefined); setRequestedLessonId(undefined); }} courses={visibleCourses} certificates={certificates} dataMode={dataMode} refreshError={courseRefreshError} onRefresh={() => refreshCoursesRef.current()} onCoursesChange={changeCourses} onLessonCompletion={(id, completed) => writeCourseProgress(() => saveLessonCompletion(id, completed))} onQuizAttempt={(id, score, answers) => writeCourseProgress(() => recordAcademyQuizAttempt(id, score, answers))} onRequestCertificate={async (courseId) => { await writeCourseProgress(() => requestAcademyCertificate(courseId)); const next = await loadAcademyCertificates(); if (renderedCourseAccount === courseAccountGeneration.current) setCertificates(next); }} onToast={setToast} onDiscuss={() => changeView("community")} />}
@@ -1361,11 +1387,12 @@ function formatPhotoDate(value: string) { const date = new Date(value); return N
 
 const rootElement = document.getElementById("root")!;
 const CourseBuilderPreview = import.meta.env.DEV ? lazy(() => import("./components/CourseBuilderPreview").then(module => ({ default: module.CourseBuilderPreview }))) : null;
+const NativeMembershipPreview = import.meta.env.DEV ? lazy(() => import("./components/NativeMembershipPreview")) : null;
 const appWindow = window as Window & { __dirtyTurfRoot?: ReturnType<typeof createRoot> };
 appWindow.__dirtyTurfRoot ??= createRoot(rootElement);
 const publicCertificateCode = new URLSearchParams(window.location.search).get("certificate");
 const membershipRoute = billingPageRoute(window.location.pathname, Capacitor.isNativePlatform());
-appWindow.__dirtyTurfRoot.render(<AppErrorBoundary>{import.meta.env.DEV && !supabase && new URLSearchParams(window.location.search).has("scanner-preview") ? <ScannerInspectionPreview /> : CourseBuilderPreview && !supabase && new URLSearchParams(window.location.search).has("editor-preview") ? <Suspense fallback={<main role="status">Loading course editor preview…</main>}><CourseBuilderPreview /></Suspense> : import.meta.env.DEV && !supabase && new URLSearchParams(window.location.search).has("auth-preview") ? <AccountEntryExample /> : import.meta.env.DEV && !supabase && new URLSearchParams(window.location.search).has("profile-preview") ? <MemberProfileExample /> : membershipRoute
+appWindow.__dirtyTurfRoot.render(<AppErrorBoundary>{NativeMembershipPreview && !supabase && new URLSearchParams(window.location.search).has("store-preview") ? <Suspense fallback={<main role="status">Loading sample memberships…</main>}><NativeMembershipPreview /></Suspense> : import.meta.env.DEV && !supabase && new URLSearchParams(window.location.search).has("scanner-preview") ? <ScannerInspectionPreview /> : CourseBuilderPreview && !supabase && new URLSearchParams(window.location.search).has("editor-preview") ? <Suspense fallback={<main role="status">Loading course editor preview…</main>}><CourseBuilderPreview /></Suspense> : import.meta.env.DEV && !supabase && new URLSearchParams(window.location.search).has("auth-preview") ? <AccountEntryExample /> : import.meta.env.DEV && !supabase && new URLSearchParams(window.location.search).has("profile-preview") ? <MemberProfileExample /> : membershipRoute
   ? <Suspense fallback={<main className="launch-gate"><section className="launch-card" role="status"><p>Loading membership…</p></section></main>}><MembershipPages route={membershipRoute} /></Suspense>
   : publicCertificateCode ? <CertificateVerificationPage code={publicCertificateCode} /> : <App />}</AppErrorBoundary>);
 

@@ -24,7 +24,7 @@ vi.mock("react", async original => {
   };
 });
 vi.mock("react-dom/client", () => ({ createRoot: () => ({ render: mock.render }) }));
-vi.mock("@capacitor/core", () => ({ Capacitor: { isNativePlatform: () => mock.native }, registerPlugin: () => ({}) }));
+vi.mock("@capacitor/core", () => ({ Capacitor: { isNativePlatform: () => mock.native, isPluginAvailable: () => false, getPlatform: () => mock.native ? "android" : "web" }, registerPlugin: () => ({}) }));
 vi.mock("@capacitor/app", () => ({ App: { addListener: vi.fn(async (event: string, callback: (state: { isActive: boolean }) => void) => {
   if (event === "appStateChange") mock.nativeStateChanged = callback;
   return { remove: vi.fn(async () => undefined) };

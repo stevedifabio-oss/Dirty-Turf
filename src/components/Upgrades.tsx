@@ -1,6 +1,8 @@
 import { Capacitor } from "@capacitor/core";
 import { BookOpen, CreditCard, Ruler, Users } from "lucide-react";
 import "./Upgrades.css";
+import { NativeMemberships } from "./NativeMemberships";
+import type { AccessState } from "../lib/academyAccess";
 
 const subscriptions = [
   { name: "Community", price: "$19.99", Icon: Users, description: "Connect with turf cleaning operators, share advice and join community conversations." },
@@ -14,8 +16,8 @@ const courses = [
   { name: "Specialty Turf Cleaning", price: "$49.95", description: "Stains, gum and other turf cleaning challenges." },
 ];
 
-export function Upgrades() {
-  if (Capacitor.isNativePlatform()) return null;
+export function Upgrades({ access = { status: "loading" } }: { access?: AccessState }) {
+  if (Capacitor.isNativePlatform()) return <NativeMemberships access={access} />;
   return <div className="view-content upgrades-page">
     <section className="upgrades-intro"><p className="kicker">Your account. Your choice.</p><h2>Memberships & Upgrades</h2><p>Choose one, any two, or all three subscriptions. Add individual courses separately.</p><a className="secondary-button" href="/billing"><CreditCard size={17} /> Manage current billing</a></section>
     <div className="upgrades-availability" role="status"><strong>New enrollment is being prepared.</strong><p>These are the planned options and prices. New purchases and the Turf Scanner trial are not available here yet. Your existing paid, imported and complimentary access stays in place.</p></div>

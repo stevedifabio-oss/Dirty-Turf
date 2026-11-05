@@ -24,9 +24,7 @@ export function WebNavigation({ activeView, canManage, onNavigate, onMeasure, on
     { view: "learn" as const, label: "Academy", Icon: BookOpen },
     { view: "community" as const, label: "Community", Icon: Users },
     { view: "events" as const, label: "Events", Icon: CalendarDays },
-    ...(!native ? [
-      { view: "upgrades" as const, label: "Memberships & Upgrades", Icon: CreditCard },
-    ] : []),
+    { view: "upgrades" as const, label: "Memberships & Upgrades", Icon: CreditCard },
     { view: "grow" as const, label: "Grow your business", Icon: TrendingUp },
     ...(canManage ? [{ view: "admin" as const, label: "Admin Studio", Icon: ShieldCheck }] : []),
   ];

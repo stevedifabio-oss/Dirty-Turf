@@ -61,6 +61,16 @@ verify_jwt = false
 [functions.map-geocode]
 verify_jwt = true
 
+# Store proof verification also validates the caller with Auth.getUser.
+[functions.verify-store-membership]
+verify_jwt = true
+
+# Google OIDC JWT and Apple signedPayload respectively are verified in handlers.
+[functions.google-store-membership-notifications]
+verify_jwt = false
+[functions.apple-store-membership-notifications]
+verify_jwt = false
+
 [functions.stripe-webhook]
 verify_jwt = false
 
