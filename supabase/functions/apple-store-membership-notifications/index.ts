@@ -1,4 +1,4 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import "jsr:@supabase/functions-js@2.116.0/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { verifyAppleMembershipNotification } from "../_shared/apple-membership-runtime.ts";
 import { applyVerifiedMembership } from "../_shared/store-membership-fulfillment.ts";

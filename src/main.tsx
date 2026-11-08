@@ -1,7 +1,7 @@
 import { PropertyInspection, SavedInspection, type PendingPropertyPhoto } from "./components/PropertyInspection";
 import { normalizeInspection } from "./lib/turfInspection";
 import type { TurfInspection } from "./domain";
-import { communityAvailable, featureAvailable, courseAvailable, type AccessState } from "./lib/academyAccess";
+import { communityAvailable, featureAvailable, courseAvailable, scannerMethodAvailable, type AccessState } from "./lib/academyAccess";
 import { AccessRequired, AvailableUpgrades } from "./components/AccessOffers";
 import { AccountEntry, AccountEntryExample, PasswordResetForm } from "./components/AccountEntry";
 import { MemberProfileBoundary, MemberProfileExample } from "./components/MemberProfileOnboarding";
@@ -117,6 +117,7 @@ import { calculateQuote, INFILL_RATES } from "./lib/quote";
 import { useModalDialog } from "./lib/useModalDialog";
 import { AcademyView } from "./components/Academy";
 import { AppErrorBoundary } from "./components/AppErrorBoundary";
+import { AppUpdateNotice, requestAppUpdateNotice } from "./components/AppUpdateNotice";
 import { CommunityView } from "./components/Community";
 import { EventsView } from "./components/Events";
 import { NumberField } from "./components/NumberField";
@@ -324,6 +325,7 @@ function App() {
       if (!current) return;
       setPendingPushId(null);
       if (!target) { setToast("This notification is no longer available for this account."); return; }
+      if (target.targetType === "app_release") { requestAppUpdateNotice(target.notificationId); return; }
       if (!changeView(target.targetType === "course" ? "learn" : target.targetType === "event" ? "events" : "community")) return;
       setHubSection(null);
       setSearchOpen(false);
@@ -840,7 +842,7 @@ function App() {
   const saveQuote = async () => {
     const accountGeneration = renderedCourseAccount;
     if (accountGeneration !== courseAccountGeneration.current || propertySaveInFlight.current) return;
-    if (draft.mode !== "manual" && !canMeasure) { setToast("Turf Scanner access is required."); return; }
+    if (!scannerMethodAvailable(workspaceAccess, draft.mode)) { setToast("Turf Scanner access is required."); return; }
     if (quote.area <= 0) {
       setToast("Measure a turf area before saving.");
       return;
@@ -1017,6 +1019,7 @@ function App() {
     if (!readOnly) setNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, read: true } : item));
     if (!readOnly && notification.cloudId) void markNotificationRead(notification.cloudId).catch(() => setToast("Notification could not be marked as read."));
     setHubSection(null);
+    if (notification.targetType === "app_release" && notification.cloudId) { requestAppUpdateNotice(notification.cloudId); return; }
     if (notification.targetType === "post") {
       setRequestedCommentCloudId(undefined); setRequestedMemberCloudId(undefined);
       setRequestedPostCloudId(notification.targetCloudId);
@@ -1305,24 +1308,26 @@ function ScannerInspectionPreview() {
 
 function QuoteSheet({ canMeasure, access, draft, setDraft, quote, inspection, setInspection, photos, setPhotos, saving, onClose, onSave, onError, primaryNavigation }: { canMeasure: boolean; access: AccessState; draft: QuoteDraft; setDraft: React.Dispatch<React.SetStateAction<QuoteDraft>>; quote: QuoteTotals; inspection: TurfInspection; setInspection: (value: TurfInspection) => void; photos: PendingPropertyPhoto[]; setPhotos: (photos: PendingPropertyPhoto[]) => void; saving: boolean; onClose: () => void; onSave: () => void | Promise<void>; onError: (message: string) => void; primaryNavigation: React.ReactNode }) {
   const dialogRef = useRef<HTMLElement>(null);
+  const canUseMethod = scannerMethodAvailable(access, draft.mode);
+  const canUseManual = scannerMethodAvailable(access, "manual");
   useModalDialog(dialogRef, saving ? () => undefined : onClose);
   const update = <K extends keyof QuoteDraft>(key: K, value: QuoteDraft[K]) => setDraft((current) => ({ ...current, [key]: value }));
   return (
     <div className="sheet-layer" role="presentation" onMouseDown={(event) => !saving && event.target === event.currentTarget && onClose()}>
       <section ref={dialogRef} className="quote-sheet" role="dialog" aria-modal="true" aria-labelledby="quote-title">
-        <header className="sheet-header"><button className="bare-icon" aria-label="Close infill calculator" disabled={saving} onClick={onClose} data-dialog-autofocus><ArrowLeft size={20} /></button><div><p>Measure · Price · Infill</p><h2 id="quote-title">Turf Scanner</h2></div><button className="save-link" disabled={saving || (draft.mode !== "manual" && !canMeasure)} onClick={onSave}>{saving ? "Saving…" : "Save"}</button></header>
+        <header className="sheet-header"><button className="bare-icon" aria-label="Close infill calculator" disabled={saving} onClick={onClose} data-dialog-autofocus><ArrowLeft size={20} /></button><div><p>Measure · Price · Infill</p><h2 id="quote-title">Turf Scanner</h2></div><button className="save-link" disabled={saving || !canUseMethod} onClick={onSave}>{saving ? "Saving…" : "Save"}</button></header>
         {primaryNavigation}
         <div className="sheet-body"><fieldset className="quote-edit-fields" disabled={saving}>
           <fieldset className="mode-fieldset"><legend>Measurement method</legend><div className="segmented-control"><ModeButton icon={<Camera size={17} />} label="Camera" active={draft.mode === "camera"} onClick={() => update("mode", "camera")} /><ModeButton icon={<Map size={17} />} label="Map" active={draft.mode === "map"} onClick={() => update("mode", "map")} /><ModeButton icon={<Ruler size={17} />} label="Manual" active={draft.mode === "manual"} onClick={() => update("mode", "manual")} /></div></fieldset>
           {draft.mode === "camera" && canMeasure && <LiveCameraMeasurement area={draft.cameraArea} onAreaChange={(value) => update("cameraArea", value)} />}
-          {draft.mode === "manual" && <DimensionInputs draft={draft} update={update} />}
+          {draft.mode === "manual" && canUseMethod && <DimensionInputs draft={draft} update={update} />}
           {draft.mode === "map" && canMeasure && <Suspense fallback={<div className="map-loading" role="status">Loading property map...</div>}><MapMeasurement address={draft.address} area={draft.mapArea} onAddressChange={(value) => update("address", value)} onAreaChange={(value) => update("mapArea", value)} /></Suspense>}
-          {draft.mode !== "manual" && !canMeasure && <><AccessRequired title="Turf Scanner access required">Camera and map measurements are not available with your current access. You can still enter dimensions manually.</AccessRequired><AvailableUpgrades access={access} kind="tool" feature="measuring_tool" /><button className="secondary-button wide" onClick={() => update("mode", "manual")}>Enter dimensions manually</button></>}
-          {(draft.mode === "manual" || canMeasure) && <><section className="infill-controls"><label className="field-label">Infill rate<select value={draft.infillRate} onChange={(event) => update("infillRate", numberValue(event.target.value))}>{INFILL_RATES.map((rate) => <option key={rate} value={rate}>{rate.toFixed(2)} lb / sq ft</option>)}</select></label><NumberField label="What you charge" value={draft.serviceRate} prefix="$" suffix="/ sq ft" update={(value) => update("serviceRate", value)} /></section>
+          {!canUseMethod && <><AccessRequired title="Turf Scanner access required">{canUseManual ? "Camera and map measurements are not available with your current access. You can still enter dimensions manually." : "Turf Scanner access is required for camera, map and manual measurements, job pricing and infill calculations."}</AccessRequired><AvailableUpgrades access={access} kind="tool" feature="measuring_tool" />{canUseManual && <button className="secondary-button wide" onClick={() => update("mode", "manual")}>Enter dimensions manually</button>}</>}
+          {canUseMethod && <><section className="infill-controls"><label className="field-label">Infill rate<select value={draft.infillRate} onChange={(event) => update("infillRate", numberValue(event.target.value))}>{INFILL_RATES.map((rate) => <option key={rate} value={rate}>{rate.toFixed(2)} lb / sq ft</option>)}</select></label><NumberField label="What you charge" value={draft.serviceRate} prefix="$" suffix="/ sq ft" update={(value) => update("serviceRate", value)} /></section>
           <section className="infill-summary" aria-label="Infill calculation results"><div className="area-total"><span>Total turf area</span><strong>{formatNumber(quote.area)}</strong><small>square feet</small></div><div className="infill-result-grid"><div><span>Total infill</span><strong>{formatNumber(quote.infillPounds)} lb</strong></div><div><span>40-lb bags</span><strong>{quote.bags40}</strong></div><div><span>50-lb bags</span><strong>{quote.bags50}</strong></div></div><div className="customer-price"><span>Customer price</span><strong>{formatCurrency(quote.serviceTotal)}</strong></div></section></>}
-          {(draft.mode === "manual" || canMeasure) && <><label className="property-name-input">Property name or address<input maxLength={200} value={draft.address} onChange={event => update("address", event.target.value)} placeholder="e.g. Smith backyard" /></label><PropertyInspection value={inspection} onChange={setInspection} photos={photos} onPhotosChange={setPhotos} onError={onError} /></>}
+          {canUseMethod && <><label className="property-name-input">Property name or address<input maxLength={200} value={draft.address} onChange={event => update("address", event.target.value)} placeholder="e.g. Smith backyard" /></label><PropertyInspection value={inspection} onChange={setInspection} photos={photos} onPhotosChange={setPhotos} onError={onError} /></>}
         </fieldset></div>
-        <div className="sheet-footer"><button className="primary-button wide" disabled={saving || (draft.mode !== "manual" && !canMeasure)} onClick={onSave}><CheckCircle2 size={18} /> {saving ? "Saving property…" : "Save property"}</button></div>
+        <div className="sheet-footer"><button className="primary-button wide" disabled={saving || !canUseMethod} onClick={onSave}><CheckCircle2 size={18} /> {saving ? "Saving property…" : "Save property"}</button></div>
 
       </section>
     </div>
@@ -1392,7 +1397,7 @@ const appWindow = window as Window & { __dirtyTurfRoot?: ReturnType<typeof creat
 appWindow.__dirtyTurfRoot ??= createRoot(rootElement);
 const publicCertificateCode = new URLSearchParams(window.location.search).get("certificate");
 const membershipRoute = billingPageRoute(window.location.pathname, Capacitor.isNativePlatform());
-appWindow.__dirtyTurfRoot.render(<AppErrorBoundary>{NativeMembershipPreview && !supabase && new URLSearchParams(window.location.search).has("store-preview") ? <Suspense fallback={<main role="status">Loading sample memberships…</main>}><NativeMembershipPreview /></Suspense> : import.meta.env.DEV && !supabase && new URLSearchParams(window.location.search).has("scanner-preview") ? <ScannerInspectionPreview /> : CourseBuilderPreview && !supabase && new URLSearchParams(window.location.search).has("editor-preview") ? <Suspense fallback={<main role="status">Loading course editor preview…</main>}><CourseBuilderPreview /></Suspense> : import.meta.env.DEV && !supabase && new URLSearchParams(window.location.search).has("auth-preview") ? <AccountEntryExample /> : import.meta.env.DEV && !supabase && new URLSearchParams(window.location.search).has("profile-preview") ? <MemberProfileExample /> : membershipRoute
+appWindow.__dirtyTurfRoot.render(<AppErrorBoundary><AppUpdateNotice />{NativeMembershipPreview && !supabase && new URLSearchParams(window.location.search).has("store-preview") ? <Suspense fallback={<main role="status">Loading sample memberships…</main>}><NativeMembershipPreview /></Suspense> : import.meta.env.DEV && !supabase && new URLSearchParams(window.location.search).has("scanner-preview") ? <ScannerInspectionPreview /> : CourseBuilderPreview && !supabase && new URLSearchParams(window.location.search).has("editor-preview") ? <Suspense fallback={<main role="status">Loading course editor preview…</main>}><CourseBuilderPreview /></Suspense> : import.meta.env.DEV && !supabase && new URLSearchParams(window.location.search).has("auth-preview") ? <AccountEntryExample /> : import.meta.env.DEV && !supabase && new URLSearchParams(window.location.search).has("profile-preview") ? <MemberProfileExample /> : membershipRoute
   ? <Suspense fallback={<main className="launch-gate"><section className="launch-card" role="status"><p>Loading membership…</p></section></main>}><MembershipPages route={membershipRoute} /></Suspense>
   : publicCertificateCode ? <CertificateVerificationPage code={publicCertificateCode} /> : <App />}</AppErrorBoundary>);
 

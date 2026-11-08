@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mock = vi.hoisted(() => ({ native: true, permission: "granted", ready: true, session: { user: { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }, access_token: "account-a-token" }, afterSession: undefined as (() => void) | undefined, prefs: { push_enabled: false }, calls: [] as { name: string; args: any; header?: string }[], listeners: {} as Record<string, (value: any) => void>, remoteFailure: false, unregisterFailure: false, permissionSwap: false, deferRegistration: undefined as Promise<any> | undefined, deferReadiness: undefined as Promise<any> | undefined }));
+const mock = vi.hoisted(() => ({ native: true, permission: "granted", ready: true, session: { user: { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }, access_token: "account-a-token" }, afterSession: undefined as (() => void) | undefined, prefs: { push_enabled: false } as Record<string, unknown> & { push_enabled: boolean }, calls: [] as { name: string; args: any; header?: string; columns?: string }[], listeners: {} as Record<string, (value: any) => void>, remoteFailure: false, unregisterFailure: false, permissionSwap: false, missingCommunityColumns: false, missingAppUpdateColumn: false, preferenceReadError: null as any, deferRegistration: undefined as Promise<any> | undefined, deferReadiness: undefined as Promise<any> | undefined, releaseRows: null as any }));
 function query(name: string, args?: any) {
-  const record = { name, args, header: undefined as string | undefined }; mock.calls.push(record);
+  const record = { name, args, header: undefined as string | undefined, columns: undefined as string | undefined }; mock.calls.push(record);
   const deferred = name === "register_academy_push_device" ? mock.deferRegistration : name === "academy_push_readiness" ? mock.deferReadiness : undefined;
   const builder: any = {
     setHeader: (_name: string, value: string) => { record.header = value; return builder; },
-    select: () => builder, eq: () => builder, maybeSingle: () => builder,
+    select: (columns: string) => { record.columns = columns; return builder; }, eq: () => builder, maybeSingle: () => builder,
     upsert: (values: any) => { record.args = values; mock.prefs = { ...mock.prefs, ...values }; return builder; },
-    then: (resolve: (value: any) => void) => deferred ? deferred.then(resolve) : Promise.resolve().then(() => resolve({ data: name === "academy_push_readiness" ? [{ ready: mock.ready, environment: "production" }] : name === "resolve_academy_push_notification" ? [{ target_type: "post", target_id: "33333333-3333-4333-8333-333333333333", comment_id: null }] : name === "notification_preferences" ? mock.prefs : null, error: null })),
+    then: (resolve: (value: any) => void) => deferred ? deferred.then(resolve) : Promise.resolve().then(() => resolve({ data: name === "academy_push_readiness" ? [{ ready: mock.ready, environment: "production" }] : name === "resolve_academy_push_notification" ? [{ target_type: "post", target_id: "33333333-3333-4333-8333-333333333333", comment_id: null }] : name === "get_app_release_notice" ? mock.releaseRows : name === "notification_preferences" ? mock.prefs : null, error: name === "notification_preferences" && record.columns ? mock.preferenceReadError || (mock.missingCommunityColumns && record.columns.includes("push_all_new_posts") ? { code: "42703", message: "column notification_preferences.push_all_new_posts does not exist" } : mock.missingAppUpdateColumn && record.columns.includes("push_app_updates") ? { code: "42703", message: "column notification_preferences.push_app_updates does not exist" } : null) : null })),
   };
   return builder;
 }
@@ -26,11 +26,25 @@ vi.mock("@capacitor/push-notifications", () => ({ PushNotifications: plugin }));
 beforeEach(() => {
   vi.resetModules(); vi.clearAllMocks();
   mock.native = true; mock.permission = "granted"; mock.ready = true; mock.session = { user: { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }, access_token: "account-a-token" }; mock.afterSession = undefined; mock.prefs = { push_enabled: false }; mock.calls = []; mock.listeners = {}; mock.remoteFailure = false; mock.unregisterFailure = false; mock.permissionSwap = false; mock.deferRegistration = undefined; mock.deferReadiness = undefined;
+  mock.releaseRows = null; mock.missingCommunityColumns = false; mock.missingAppUpdateColumn = false; mock.preferenceReadError = null;
   const storage = new Map<string, string>();
   vi.stubGlobal("localStorage", { getItem: (key: string) => storage.get(key) ?? null, setItem: (key: string, value: string) => storage.set(key, value), removeItem: (key: string) => storage.delete(key) });
   vi.stubEnv("VITE_PUSH_ENVIRONMENT", "production"); vi.stubEnv("VITE_SUPABASE_URL", "https://example.test"); vi.stubEnv("VITE_SUPABASE_PUBLISHABLE_KEY", "synthetic-public-key");
 });
 describe("native phone push consent and identity", () => {
+  it("resolves app-release metadata with a captured identity and rejects account switches", async () => {
+    const push = await import("./nativePush");
+    const id = "22222222-2222-4222-8222-222222222222";
+    mock.releaseRows = [{ platform: "android", version: "1.0.1", build: "14", published_at: new Date(Date.now() - 1000).toISOString(), expires_at: new Date(Date.now() + 60_000).toISOString(), release_notes: "Updated app" }];
+    expect(await push.resolveAppUpdateNotice(id)).toMatchObject({ platform: "android", release: { availableVersion: "1.0.1", availableBuild: "14" } });
+    expect(mock.calls.find(call => call.name === "get_app_release_notice")?.header).toBe("Bearer account-a-token");
+    mock.releaseRows[0].platform = "unknown";
+    expect(await push.resolveAppUpdateNotice(id)).toBeNull();
+    mock.releaseRows[0].platform = "android";
+    mock.afterSession = () => { mock.session = { user: { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" }, access_token: "account-b-token" }; };
+    expect(await push.resolveAppUpdateNotice(id)).toBeNull();
+    expect(await push.resolveAppUpdateNotice("not-an-id")).toBeNull();
+  });
   it("never prompts on mount, resume, unsupported web or default-off state", async () => {
     const push = await import("./nativePush"); await push.startNativePush(vi.fn()); await push.refreshNativePush();
     expect(plugin.requestPermissions).not.toHaveBeenCalled(); expect(plugin.register).not.toHaveBeenCalled();
@@ -49,9 +63,64 @@ describe("native phone push consent and identity", () => {
   it("uses the observed account token for preference writes even if the shared client switches", async () => {
     const push = await import("./nativePush");
     mock.afterSession = () => { mock.afterSession = undefined; mock.session = { user: { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" }, access_token: "account-b-token" }; };
-    const preferences = { push_replies: true, push_mentions: true, push_reactions: false, push_new_posts: false, push_admin_announcements: true, push_event_reminders: true, push_course_updates: true };
+    const preferences = { push_replies: true, push_mentions: true, push_reactions: false, push_new_posts: false, push_all_new_posts: false, push_new_members: false, push_admin_announcements: true, push_event_reminders: true, push_course_updates: true };
     await push.saveNativePushPreferences(preferences);
     expect(mock.calls[0]).toMatchObject({ header: "Bearer account-a-token", args: { user_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" } });
+  });
+  it("defaults new categories off without widening followed-post consent or requesting permission", async () => {
+    const push = await import("./nativePush");
+    const status = await push.readNativePushStatus();
+    expect(status.preferences).toMatchObject({ push_all_new_posts: false, push_new_members: false, push_new_posts: false, push_course_updates: true });
+    expect(status.enabled).toBe(false);
+    expect(plugin.requestPermissions).not.toHaveBeenCalled(); expect(plugin.register).not.toHaveBeenCalled();
+  });
+  it("saves explicitly chosen new categories separately without enabling the master switch", async () => {
+    const push = await import("./nativePush");
+    const { preferences } = await push.readNativePushStatus(); mock.calls = [];
+    await push.saveNativePushPreferences({ ...preferences, push_all_new_posts: true, push_new_members: true });
+    expect(mock.calls[0].args).toMatchObject({ push_all_new_posts: true, push_new_members: true, push_new_posts: false });
+    expect(mock.calls[0].args).not.toHaveProperty("push_enabled");
+    expect(mock.prefs.push_enabled).toBe(false);
+  });
+  it("keeps existing preferences usable against an older backend and never writes missing fields", async () => {
+    const push = await import("./nativePush"); mock.missingCommunityColumns = true;
+    const status = await push.readNativePushStatus();
+    expect(status.communityAlertsReady).toBe(false);
+    expect(status.preferences.push_all_new_posts).toBe(false); expect(status.preferences.push_new_members).toBe(false);
+    const reads = mock.calls.filter(call => call.name === "notification_preferences");
+    expect(reads).toHaveLength(2); expect(reads[1].columns).not.toContain("push_all_new_posts");
+    expect(reads.every(call => call.header === "Bearer account-a-token")).toBe(true);
+    mock.calls = [];
+    await push.saveNativePushPreferences({ ...status.preferences, push_reactions: true }, status.communityAlertsReady);
+    expect(mock.calls[0].args).toHaveProperty("push_reactions", true);
+    expect(mock.calls[0].args).not.toHaveProperty("push_all_new_posts"); expect(mock.calls[0].args).not.toHaveProperty("push_new_members");
+    await expect(push.saveNativePushPreferences({ ...status.preferences, push_new_members: true }, false)).rejects.toThrow("not available");
+  });
+  it("falls back across both missing updates without writing unsupported fields", async () => {
+    const push = await import("./nativePush"); mock.missingCommunityColumns = true; mock.missingAppUpdateColumn = true;
+    const status = await push.readNativePushStatus();
+    expect(status).toMatchObject({ communityAlertsReady: false, appUpdateAlertsReady: false });
+    expect(mock.calls.filter(call => call.name === "notification_preferences")).toHaveLength(3);
+    mock.calls = []; await push.saveNativePushPreferences(status.preferences, false, false);
+    expect(mock.calls[0].args).not.toHaveProperty("push_app_updates"); expect(mock.calls[0].args).not.toHaveProperty("push_all_new_posts");
+  });
+  it("saves an available app-update choice without enabling delivery", async () => {
+    const push = await import("./nativePush"); const { preferences } = await push.readNativePushStatus(); mock.calls = [];
+    await push.saveNativePushPreferences({ ...preferences, push_app_updates: false }, true, true);
+    expect(mock.calls[0].args).toHaveProperty("push_app_updates", false); expect(mock.calls[0].args).not.toHaveProperty("push_enabled");
+  });
+  it("does not hide unrelated permission errors behind an older-schema fallback", async () => {
+    const push = await import("./nativePush"); mock.preferenceReadError = { code: "42501", message: "permission denied" };
+    await expect(push.readNativePushStatus()).rejects.toThrow("could not load");
+    expect(mock.calls.filter(call => call.name === "notification_preferences")).toHaveLength(1);
+  });
+  it("rejects malformed preference values instead of treating truthy strings as consent", async () => {
+    const push = await import("./nativePush"); const { preferences } = await push.readNativePushStatus();
+    mock.calls = [];
+    await expect(push.saveNativePushPreferences({ ...preferences, push_all_new_posts: "true" } as unknown as typeof preferences)).rejects.toThrow("valid setting");
+    expect(mock.calls).toEqual([]);
+    mock.prefs.push_new_members = "true";
+    await expect(push.readNativePushStatus()).rejects.toThrow("need refreshing");
   });
   it("rejects an account swap while the permission dialog is open", async () => {
     const push = await import("./nativePush"); await push.startNativePush(vi.fn()); mock.permission = "prompt"; mock.permissionSwap = true;

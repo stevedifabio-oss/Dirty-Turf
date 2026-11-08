@@ -1,0 +1,8 @@
+.app-update-notice { position: fixed; z-index: 100; left: max(16px, env(safe-area-inset-left)); right: max(16px, env(safe-area-inset-right)); bottom: calc(88px + env(safe-area-inset-bottom)); display: flex; align-items: flex-start; gap: 12px; max-width: 480px; margin-inline: auto; padding: 18px; border: 1px solid #cad9c8; border-radius: 16px; background: #fff; color: #183b24; box-shadow: 0 12px 36px #0003; max-height: 55vh; overflow: auto; }
+.app-update-notice > svg { flex-shrink: 0; margin-top: 2px; }
+.app-update-notice-copy { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.app-update-notice-copy strong { font-size: 16px; }
+.app-update-notice-copy p { margin: 7px 0 12px; font-size: 14px; line-height: 1.5; white-space: pre-line; }
+.app-update-notice-copy a { display: inline-flex; min-height: 44px; align-items: center; text-decoration: none; }
+.app-update-notice-dismiss { display: inline-flex; flex-shrink: 0; justify-content: center; align-items: center; width: 44px; height: 44px; border: 0; border-radius: 8px; background: transparent; color: inherit; cursor: pointer; }
+.app-update-notice a:focus-visible, .app-update-notice button:focus-visible { outline: 3px solid #287e37; outline-offset: 3px; }

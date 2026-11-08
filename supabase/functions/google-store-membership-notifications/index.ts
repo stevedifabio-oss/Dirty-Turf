@@ -1,4 +1,4 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import "jsr:@supabase/functions-js@2.116.0/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.116.0";
 import { createRemoteJWKSet, jwtVerify } from "npm:jose@6.2.15";
 import { createGoogleMembershipNotificationHandler } from "../_shared/google-membership-notifications.ts";

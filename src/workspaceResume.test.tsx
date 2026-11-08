@@ -173,6 +173,22 @@ describe("community terms entry consent", () => {
   });
 });
 describe("actual workspace resume and offline flow", () => {
+  it.each([false, true])("applies the server Scanner cutover to manual fields and saving (enabled=%s)", async enabled => {
+    mock.access.mockResolvedValue({ ...memberAccess, pricingGatesEnabled: true, separateAccessEnabled: enabled });
+    await signIn();
+    let sheet = openQuote();
+    sheet.props.setDraft((current: any) => ({ ...current, length: 10, width: 10 }));
+    sheet = component(render(), "QuoteSheet")!;
+    const tree = renderGate(sheet)();
+    expect(component(tree, "DimensionInputs") !== undefined).toBe(!enabled);
+    expect(component(tree, "PropertyInspection") !== undefined).toBe(!enabled);
+    expect(elements(tree).some(e => e.props.className === "infill-summary")).toBe(!enabled);
+    const saveButtons = elements(tree).filter(e => e.type === "button" && ["save-link", "primary-button wide"].includes(e.props.className));
+    expect(saveButtons.length).toBe(2);
+    expect(saveButtons.every(e => e.props.disabled === enabled)).toBe(true);
+    await sheet.props.onSave();
+    expect(mock.saveJob.mock.calls.length).toBe(enabled ? 0 : 1);
+  });
   it("restores a cold-start session when token recovery follows an initially unavailable session", async () => {
     mock.native = true;
     mock.mode.mockRejectedValueOnce(new Error("Session refresh is temporarily unavailable"));

@@ -3,6 +3,7 @@ import { BookOpen, RefreshCw, Ruler, Users } from "lucide-react";
 import { supabase } from "../lib/backend";
 import type { AccessState } from "../lib/academyAccess";
 import { listenForNativeMemberships, loadNativeMemberships, nativeMembershipsSupported, purchaseNativeMembership, restoreNativeMemberships, startScannerTrial, manageNativeMemberships, type MembershipProductId, type StoreProduct, type StoreStatus } from "../lib/nativeMemberships";
+import { CourseAddOns } from "./CourseAddOns";
 import "./Upgrades.css";
 
 const choices = [
@@ -54,7 +55,7 @@ export function NativeMemberships({ access, onSignOut, services = nativeMembersh
     return result === "pending" ? "Your payment is pending. Access will turn on after the store confirms it." : result === "cancelled" ? "Purchase cancelled. Your memberships have not changed." : "Purchase confirmed. Your access is refreshing.";
   });
   return <div className="view-content upgrades-page">
-    <section className="upgrades-intro"><p className="kicker">Your account. Your choice.</p><h2>Choose your memberships</h2><p>Get one, any two, or all three. Each monthly subscription is purchased and managed separately. You only get charged for the products you choose.</p></section>
+    <section className="upgrades-intro"><p className="kicker">Your account. Your choice.</p><h2>Choose your memberships</h2><p>Get one, any two, or all three. Each monthly subscription is purchased and managed separately. You only get charged for the products you choose.</p><a className="secondary-button" href="#courses-heading">See course add-ons</a></section>
     {loading && <p role="status">Loading your memberships and store prices…</p>}
     {!loading && (!status?.enabled || !services.supported() || !available) && <p className="upgrades-availability" role="status">{!services.supported() ? "Update the app to purchase memberships here." : "Store purchases are temporarily unavailable. Your current access stays in place."}</p>}
     {error && <div role="alert" className="upgrades-availability"><p>{error}</p><button className="secondary-button" disabled={Boolean(busy)} onClick={() => setReload(value => value + 1)}>Try again</button></div>}
@@ -72,6 +73,7 @@ export function NativeMemberships({ access, onSignOut, services = nativeMembersh
     })}</div>
     <p className="membership-store-terms">Paid subscriptions renew monthly until cancelled in your Apple or Google account. Store checkout shows the final price before you confirm. Cancelling one membership does not cancel your others.</p>
     <div className="membership-store-actions"><button className="secondary-button" disabled={Boolean(busy) || !services.supported()} onClick={() => void action("restore", async () => { const result = await services.restore(); return result.failed ? "Some purchases were restored. Others could not be confirmed for this login; contact support before buying again." : result.confirmed ? "Your purchases have been checked and access is refreshing." : "No matching purchases were found for this store account."; })}><RefreshCw size={16} />{busy === "restore" ? "Restoring…" : "Restore purchases"}</button><button className="secondary-button" disabled={Boolean(busy) || !services.supported()} onClick={() => void action("manage", async () => { await services.manage(); return "Manage or cancel each membership in your store account."; })}>Manage subscriptions</button>{onSignOut && <button className="secondary-button" disabled={Boolean(busy)} onClick={onSignOut}>Sign out</button>}</div>
+    <CourseAddOns />
     <p className="membership-store-terms"><a href="/terms.html">Terms</a> · <a href="/privacy.html">Privacy</a> · <a href="/support.html">Support</a></p>
   </div>;
 }

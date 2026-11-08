@@ -59,6 +59,9 @@ const member = async uid => {
 };
 const grant = async (mid, source, key, cid = null, end = null) => db.query('insert into academy_access_grants(academy_community_id,academy_member_id,course_id,source_type,source_key,ends_at) values($1,$2,$3,$4,$5,$6)', [community, mid, cid, source, key, end]);
 const state = async uid => (await as('authenticated', uid, 'select get_academy_access_state() value'))[0].value;
+const saveMeasurement = async (uid, method = 'manual', inspection = false) => (await as('authenticated', uid,
+  inspection ? "select create_infill_inspection('Scanner SQL',100,0.25,0,$1,'{\"notes\":\"Fixture\"}'::jsonb) id"
+    : "select create_infill_calculation('Scanner SQL',100,0.25,0,$1) id", [method]))[0].id;
 const rights = async uid => { const s = await state(uid); return { community: s.communityAccess, courses: s.courseIds.sort(), features: s.features.sort(), access: s.hasAccess }; };
 const status = async (uid, provider = 'google') => (await as('authenticated', uid, 'select get_membership_store_status($1) value', [provider]))[0].value;
 const legacy = await user(), legacyMid = await member(legacy), comped = await user(), compedMid = await member(comped), paid = await user(), paidMid = await member(paid);
@@ -73,10 +76,22 @@ equal(before[0].courses, [academy, levelCourse].sort(), 'legacy fixture only see
 equal(before[1].courses, [], 'Community-only comp never implies Academy');
 const countsBefore = (await db.query('select (select count(*) from academy_access_grants)::int access,(select count(*) from academy_feature_grants)::int features')).rows[0];
 equal((await status(legacy)).enabled, false, 'store remains held after migration');
+equal((await state(legacy)).separateAccessEnabled, false, 'held cutover projects legacy Scanner policy');
+const legacyManualEstimate = await saveMeasurement(legacy);
+equal(Boolean(legacyManualEstimate), true, 'held cutover preserves older manual calculation RPC');
+await reject(saveMeasurement(legacy, 'camera'), 'held cutover still requires Scanner for camera');
+await reject(saveMeasurement(legacy, 'map'), 'held cutover still requires Scanner for map');
 await reject(as('authenticated', legacy, 'select admin_activate_separate_access($1)', [community]), 'ordinary member cannot activate cutover');
 await reject(as('anon', null, 'select admin_activate_separate_access($1)', [community]), 'anonymous cannot activate cutover');
 await as('authenticated', owner, 'select admin_activate_separate_access($1)', [community]);
 equal(await rightsFor([legacy, comped, paid]), before, 'cutover preserves exact existing effective rights');
+equal((await state(legacy)).separateAccessEnabled, true, 'explicit cutover projects all-method Scanner policy');
+await reject(saveMeasurement(legacy), 'manual calculation RPC requires Scanner after cutover');
+await reject(saveMeasurement(legacy, 'manual', true), 'inspection RPC cannot bypass Scanner through manual mode');
+const oldMeasurement = (await db.query('select id,property_id,organization_id from measurements where id=(select measurement_id from estimates where id=$1)', [legacyManualEstimate])).rows[0];
+await reject(as('authenticated', legacy, "insert into measurements(organization_id,property_id,method,square_feet,created_by) values($1,$2,'manual',100,$3)", [oldMeasurement.organization_id, oldMeasurement.property_id, legacy]), 'direct manual insert cannot bypass Scanner');
+await reject(as('authenticated', legacy, 'update measurements set square_feet=101 where id=$1', [oldMeasurement.id]), 'direct manual update cannot bypass Scanner');
+equal((await as('authenticated', legacy, 'select square_feet from measurements where id=$1', [oldMeasurement.id]))[0].square_feet, '100.00', 'saved manual measurements remain readable without Scanner');
 equal((await db.query('select (select count(*) from academy_access_grants)::int access,(select count(*) from academy_feature_grants)::int features')).rows[0], countsBefore, 'cutover mints no access or Scanner grants');
 await as('authenticated', owner, 'select admin_activate_separate_access($1)', [community]);
 equal(await rightsFor([legacy, comped, paid]), before, 'cutover is idempotent');
@@ -125,6 +140,9 @@ for (let bits = 1; bits < 8; bits++) {
   equal(r.courses, chosen.includes('academy') ? [academy] : [], `combination ${bits}: Academy is independent`);
   equal(r.features, chosen.includes('scanner') ? ['measuring_tool'] : [], `combination ${bits}: Scanner is independent`);
   equal((await status(uid)).ownedProducts.sort(), chosen.map(resource => skus[resource]).sort(), `combination ${bits}: owned SKU projection`);
+  if (chosen.includes('scanner')) {
+    for (const method of ['manual', 'camera', 'map']) equal(Boolean(await saveMeasurement(uid, method)), true, `combination ${bits}: Scanner unlocks ${method}`);
+  } else await reject(saveMeasurement(uid), `combination ${bits}: other subscriptions do not unlock manual Scanner`);
   if (bits === 4) equal((await as('authenticated', uid, 'select course_id from course_enrollments')).map(row => row.course_id), [academy], 'Academy-only subscriber reads own enrollment');
 }
 // Store identity cannot transfer; an unknown SKU can never grant app access.
@@ -176,6 +194,7 @@ await as('authenticated', owner, 'select admin_set_free_access($1,$2,true,null)'
 await storeApply(manualUid, 'scanner', 'manual-coexist');
 await storeApply(manualUid, 'scanner', 'manual-coexist', { status: 'revoked', verifiedAt: new Date(Date.now() + 1000).toISOString() });
 equal((await rights(manualUid)).features, ['measuring_tool'], 'store refund preserves owner free grant');
+equal(Boolean(await saveMeasurement(manualUid)), true, 'owner complimentary Scanner unlocks manual calculations');
 equal((await status(manualUid)).ownedProducts.includes(skus.scanner), true, 'owner free Scanner is owned without a paid store row');
 await db.query("insert into academy_feature_grants(academy_community_id,academy_member_id,feature_key,source_type,source_key) values($1,$2,'measuring_tool','stripe_subscription','paid-stripe')", [community, manualMid]);
 await as('authenticated', owner, 'select admin_set_free_access($1,$2,false,null)', [manualMid, 'measuring_tool']);
@@ -198,6 +217,7 @@ const claim = (await as('authenticated', trialUid, 'select start_turf_scanner_tr
 equal(claim.started, true, 'trial starts once');
 equal(claim.alreadyUsed, false, 'first claim marked new');
 equal((await rights(trialUid)), { community: false, courses: [], features: ['measuring_tool'], access: true }, 'trial unlocks only Scanner');
+equal(Boolean(await saveMeasurement(trialUid)), true, 'active seven-day Scanner trial unlocks manual calculations');
 equal((await status(trialUid)).ownedProducts, [], 'trial does not hide paid Subscribe option');
 equal((await status(trialUid)).trialUsed, true, 'claim ledger survives as used');
 equal((await db.query('select extract(epoch from expires_at-started_at)::int seconds from private.academy_scanner_trial_claims where user_id=$1', [trialUid])).rows[0].seconds, 7 * 86400, 'trial lasts exactly seven days');
@@ -214,6 +234,7 @@ const expiredTrial = await user();
 const expClaim = (await as('authenticated', expiredTrial, 'select start_turf_scanner_trial() value'))[0].value;
 await db.query("update academy_feature_grants set starts_at=now()-interval '8 days',ends_at=now()-interval '1 day' where source_type='self_trial' and academy_member_id=$1", [expClaim.memberId]);
 equal((await rights(expiredTrial)).features, [], 'trial stops at server expiry without a schedule');
+await reject(saveMeasurement(expiredTrial), 'expired trial cannot keep saving manual Scanner calculations');
 equal((await status(expiredTrial)).trialEligible, false, 'expired trial cannot be claimed again');
 equal((await as('authenticated', expiredTrial, 'select start_turf_scanner_trial() value'))[0].value.alreadyUsed, true, 'server refuses to restart expired trial');
 await reject(as('anon', null, 'select start_turf_scanner_trial()'), 'anonymous trial denied');

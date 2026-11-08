@@ -10,6 +10,10 @@ beforeAll(async () => { apnsPem = await pem({ name: "ECDSA", namedCurve: "P-256"
 export const testSettings = () => ({ ACADEMY_PUSH_ENABLED: "true", ACADEMY_PUSH_DISPATCH_SECRET: "synthetic-dispatch-credential-at-least-32-characters", ACADEMY_PUSH_ENVIRONMENT: "production", APNS_KEY_ID: "ABC123DEFG", APNS_TEAM_ID: "DEF123GHIJ", APNS_PRIVATE_KEY: apnsPem, APNS_TOPIC: "com.dirtyturf.academy", FCM_PROJECT_ID: "synthetic-project", FCM_CLIENT_EMAIL: "sender@synthetic-project.iam.gserviceaccount.com", FCM_PRIVATE_KEY: fcmPem });
 export const delivery: PushDelivery = { id: "11111111-1111-4111-8111-111111111111", platform: "ios", environment: "production", token: "a".repeat(64), notification_id: "22222222-2222-4222-8222-222222222222", target_type: "post", target_id: "33333333-3333-4333-8333-333333333333", comment_id: null };
 describe("native push provider boundary", () => {
+  it("allows only an identifier for an app-release notice", () => {
+    expect(safePushData({ ...delivery, target_type: "app_release" })).toEqual({ notificationId: delivery.notification_id, targetType: "app_release", targetId: delivery.target_id });
+    expect(() => safePushData({ ...delivery, target_type: "https://example.test" })).toThrow("Invalid push target");
+  });
   it("requires complete provider configuration and an exact environment", () => {
     expect(configuredPushEnvironment(testSettings())).toBe("production");
     for (const change of [{ APNS_TOPIC: "other.app" }, { ACADEMY_PUSH_ENVIRONMENT: "guess" }, { FCM_PROJECT_ID: "https://evil.test" }, { APNS_PRIVATE_KEY: "missing" }]) expect(() => configuredPushEnvironment({ ...testSettings(), ...change })).toThrow();

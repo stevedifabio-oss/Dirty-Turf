@@ -1,6 +1,8 @@
 /** Effective access is always returned by the server; prices never grant access. */
 export type AcademyEntitlements = {
   pricingGatesEnabled: boolean;
+  /** Absent on older servers until the independent-membership rollout. */
+  separateAccessEnabled?: boolean;
   communityAccess: boolean;
   courseIds: string[];
   features: string[];
@@ -17,10 +19,11 @@ export function parseAcademyAccess(value: unknown): WorkspaceAccessState {
   const raw = value as Record<string, unknown>;
   if (!raw.hasAccess) return { status: "no_access", hasMemberIdentity: typeof raw.memberId === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(raw.memberId) };
   if (typeof raw.pricingGatesEnabled !== "boolean") throw new Error("Access could not be verified.");
+  if (raw.separateAccessEnabled !== undefined && typeof raw.separateAccessEnabled !== "boolean") throw new Error("Access could not be verified.");
   const gates = raw.pricingGatesEnabled;
   const strings = (input: unknown): input is string[] => Array.isArray(input) && input.every((item) => typeof item === "string" && item.length > 0);
   if (typeof raw.communityAccess !== "boolean" || !strings(raw.courseIds) || !strings(raw.features)) throw new Error("Access could not be verified.");
-  return { status: "member", canManage: raw.canManage === true, pricingGatesEnabled: gates,
+  return { status: "member", canManage: raw.canManage === true, pricingGatesEnabled: gates, separateAccessEnabled: raw.separateAccessEnabled === true,
     communityAccess: gates ? raw.communityAccess === true : true,
     courseIds: strings(raw.courseIds) ? raw.courseIds : [], features: strings(raw.features) ? raw.features : [] };
 }
@@ -30,6 +33,10 @@ export function communityAvailable(access: AccessState) {
 }
 export function featureAvailable(access: AccessState, feature: string) {
   return access.status === "preview" || (access.status === "member" && (access.canManage || !access.pricingGatesEnabled || access.features.includes(feature)));
+}
+/** Manual calculations keep their old access until the server enables cutover. */
+export function scannerMethodAvailable(access: AccessState, method: "camera" | "map" | "manual") {
+  return featureAvailable(access, "measuring_tool") || (method === "manual" && access.status === "member" && access.separateAccessEnabled !== true);
 }
 export function courseAvailable(access: AccessState, courseId?: string) {
   return access.status === "preview" || (access.status === "member" && (access.canManage || !access.pricingGatesEnabled || Boolean(courseId && access.courseIds.includes(courseId))));

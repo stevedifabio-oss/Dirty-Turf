@@ -856,7 +856,30 @@ begin
   end if;
   return jsonb_build_object('authenticated',true,'hasAccess',manager_access or (has_grant and (not separate_access or community_access or jsonb_array_length(course_ids)>0 or jsonb_array_length(feature_keys)>0)),
     'canManage',manager_access,'memberId',case when member_row.status='active' then member_row.id else null end,'communityId',community_id,
-    'communityAccess',community_access,'courseIds',course_ids,'features',feature_keys,'pricingGatesEnabled',gates);
+    'communityAccess',community_access,'courseIds',course_ids,'features',feature_keys,'pricingGatesEnabled',gates,
+    'separateAccessEnabled',separate_access);
+end;
+$$;
+
+-- Every Scanner measurement method requires the feature after the explicit
+-- membership cutover. Before cutover, keep the older manual-calculator behavior.
+-- The table trigger covers legacy/new RPCs and direct writes; saved records remain
+-- readable after expiry. It does not mint or change any existing access grants.
+create or replace function private.enforce_academy_measurement_feature()
+returns trigger language plpgsql security definer set search_path='' as $$
+declare state jsonb;
+begin
+  if (select auth.uid()) is not null then
+    state:=public.get_academy_access_state();
+    if coalesce((state->>'separateAccessEnabled')::boolean,false)
+      or new.method in ('map','camera') or (tg_op='UPDATE' and old.method in ('map','camera')) then
+      if coalesce((state->>'pricingGatesEnabled')::boolean,false)
+        and (not coalesce((state->>'hasAccess')::boolean,false) or not (state->'features' ? 'measuring_tool')) then
+        raise exception 'Turf Scanner access required' using errcode='42501';
+      end if;
+    end if;
+  end if;
+  return new;
 end;
 $$;
 
