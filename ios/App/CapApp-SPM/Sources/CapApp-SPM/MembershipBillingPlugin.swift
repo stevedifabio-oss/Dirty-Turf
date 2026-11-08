@@ -189,7 +189,7 @@ private actor AcademyMembershipStore {
                 "id": product.id,
                 "displayName": product.displayName,
                 "displayPrice": product.displayPrice,
-                "priceAmountMicros": micros.int64Value,
+                "priceAmountMicros": micros.intValue,
                 "currencyCode": product.priceFormatStyle.currencyCode,
             ]
         }
