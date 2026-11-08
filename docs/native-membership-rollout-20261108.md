@@ -2,6 +2,12 @@
 
 Steve authorized completing the remaining setup. This receipt records the disabled backend in the existing Supabase project `ipbtldajgsoxixqmajec`, draft store catalogs and the refreshed Android internal-test release. Purchases, trials and customer push delivery remain off. There is no website publication, public production rollout or iPhone resubmission.
 
+## Owner follow-up and next native batch
+
+Steve confirmed the Tile & Grout Cleaning one-time price as $195.00. The shared add-on card displays that price while remaining Coming soon; no course content, checkout mapping or provider product was activated. The update is queued for the next native candidate with a newly verified unused code (15 or higher), not the locked Android code-14 artifact below. No rebuild or upload accompanies this change.
+
+Steve reports Android build 14 is installed and opens. Installation/launch is user-confirmed; feature, purchase and physical-device acceptance beyond launch remain outstanding. He also reports accepting Apple's agreement. The earlier unsigned observation below remains the last provider-verified checkpoint until fresh read-back confirms his update. Google Cloud access remains under investigation.
+
 ## Exact Android candidate and source
 
 The refreshed Android `1.0.1`/code `14` was accepted by Google Play and is ACTIVE on the existing internal-testing track `4701757813213362221`, release 13, named `1.0.1 (14) - Membership setup and Academy icon`. [Tester opt-in](https://play.google.com/apps/internaltest/4701757813213362221) is separate from public production availability. Physical-device acceptance and real purchases are not established.

@@ -2,7 +2,7 @@ import { BookOpen } from "lucide-react";
 
 const courses = [
   { name: "Cleaning Pavers & Travertine", price: "$195.95" },
-  { name: "Tile & Grout Cleaning", price: null },
+  { name: "Tile & Grout Cleaning", price: "$195.00" },
   { name: "Turf Tech Cleaning Only", price: "$195.95" },
   { name: "Cleaning Putting Greens", price: "$49.95" },
   { name: "Specialty Turf Cleaning", price: "$49.95", description: "Remove stains, gum, and spots left by pet waste." },

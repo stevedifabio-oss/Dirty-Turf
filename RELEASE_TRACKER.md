@@ -2,6 +2,12 @@
 
 Maintained with each release. Canonical: https://github.com/stevedifabio-oss/Dirty-Turf.
 
+## Owner follow-up and queued Tile & Grout price — November 8, 2026
+
+Steve confirmed Tile & Grout Cleaning at $195.00 once. The shared web/native course add-on card now displays that amount; the course remains Coming soon until its content and purchase mapping are ready. This source change is queued for the next native candidate with a newly verified unused code (15 or higher); it does not alter or replace the frozen internal Android build 14. No new build, upload, checkout, store product or payment activation is part of this price change.
+
+Steve reports that Android build 14 is installed and opens on his phone. This confirms installation/launch only; measurement, sign-in, purchases and other feature acceptance are not inferred. Steve also reports accepting Apple's agreement; the last observed unsigned status needs a fresh provider read-back before calling the agreement verified. Google Cloud project access is still being investigated.
+
 ## Unsigned iPhone compilation — November 8, 2026
 
 The current UIKit/StoreKit app passed a real generic-iPhone Release build on GitHub's standard `xcode-27` macOS runner with Xcode 27.1 (`27A9275`): [unsigned iOS run 2](https://github.com/stevedifabio-oss/Dirty-Turf/actions/runs/42519493657). The log explicitly compiles `MembershipBillingPlugin.swift` and the measurement plugin; `xcodebuild` finished with BUILD SUCCEEDED, and the built test payload/native registry check passed. The runner uses no production environment, Apple credentials or signing. This verifies compilation of a device-preview payload, not production authentication, payment/push behavior, an installable/signed App Store candidate or physical-device acceptance. The rejected build-17 login issue is not established as resolved by compilation.
