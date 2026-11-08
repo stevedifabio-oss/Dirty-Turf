@@ -2,6 +2,16 @@
 
 The shared application uses `MembershipBilling`, a local Capacitor plugin backed by StoreKit 2. Its Swift source is part of the existing `CapApp-SPM` target and `BridgeViewController` registers the plugin. No new Swift package or signing entitlement is added. This is source preparation, not an App Store product activation, uploaded build, or verified purchase.
 
+## IAP configuration checkpoint — November 8, 2026
+
+The key named Dirty Turf Membership Verify was created, downloaded and moved to protected local storage; it successfully parsed as an EC private key. The authenticated Supabase dashboard saved `APPLE_IAP_PRIVATE_KEY`, `APPLE_IAP_KEY_ID` and `APPLE_IAP_ISSUER_ID`; SHA256 comparisons confirmed that all three dashboard values match their protected/local values. A protected read-only notification-history diagnostic returned HTTP 200 with zero history items and no further pages in sandbox, while production returned HTTP 401. The production cause is unproven; do not attribute it to an agreement, key or permission without evidence. This confirms sandbox history authentication only, not valid purchase acceptance. No key content, key/issuer identifier, credential, secret digest or protected artifact belongs in Git. Sanitized local receipts: `output/qa/apple-iap-auth-verification-20261108/read-only-receipt.json` and `output/qa/apple-backend-configured-20261108.json`.
+
+Both sandbox and production notification URLs persisted after a full App Store Connect reload as `https://ipbtldajgsoxixqmajec.supabase.co/functions/v1/apple-store-membership-notifications`; bundle `com.dirtyturf.academy` was confirmed and Save was disabled. The observed UI exposed URL fields without a V1/V2 selector. The controlled sandbox TEST had returned HTTP 404/error 4040007 (`SERVER_NOTIFICATION_URL_NOT_FOUND`), without a test token or callback. Persisted UI settings are now confirmed, but the API failure's cause remains unproven; successful signed delivery or its version is not established. No immediate retry was performed. Local evidence: `output/qa/apple-renewal-urls-saved-20261108.png` and `output/qa/apple-store-test-notification-20261108/status-only-receipt.json`.
+
+The deployed handler's TEST path cannot apply an entitlement, and all 45 Apple verifier tests passed. Hosted postflight retained held gates, zero entitlements/trials/push deliveries and 402 existing notifications. The diagnostic did not announce a release or send a member push.
+
+The latest Apple Paid Apps Agreement UI still showed New with an unchecked acceptance box despite Steve's report of completion. The account holder must complete the agreement and its provider status must be read back. No agreement was accepted by the agent. Provider notification setup, real sandbox purchases/renewals/refunds/restores and a signed production-configured iPhone candidate remain outstanding; the unsigned build below does not satisfy these gates.
+
 ## Verified unsigned compilation — November 8, 2026
 
 [GitHub unsigned iOS run 2 passed](https://github.com/stevedifabio-oss/Dirty-Turf/actions/runs/42519493657) on the standard `xcode-27` macOS runner using Xcode 27.1 (`27A9275`). `.github/workflows/ios-unsigned.yml` runs locked Node 22 installation and fresh `native:verify`, then compiles the actual UIKit/StoreKit app with:
