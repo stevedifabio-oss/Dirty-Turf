@@ -1,4 +1,4 @@
-# Membership setup and Android internal release — November 8, 2026
+# Membership setup, Android internal release and iPhone compile — November 8, 2026
 
 Steve authorized completing the remaining setup. This receipt records the disabled backend in the existing Supabase project `ipbtldajgsoxixqmajec`, draft store catalogs and the refreshed Android internal-test release. Purchases, trials and customer push delivery remain off. There is no website publication, public production rollout or iPhone resubmission.
 
@@ -11,6 +11,14 @@ The exact runtime source is remote commit `43a915c6c1bf8405575605b278bfdf26d8f27
 Artifact: `output/release/android-memberships-20261108/DirtyTurf-1.0.1-14-memberships-upload-signed.aab`; SHA256 `e70b54c63061705dc8c90910df31a8ff21b4e70b4b3dae9509ed4b36ae11061d`; 59,928,615 bytes. Its protected build receipt confirms signing, 69 bundled assets matched, 24 launcher image pixel checks, 24 native release tests and zero native lint errors. This refreshed artifact includes the Academy icon, add-on presentation, final Scanner gate and notification interface. The older November 4 artifact with provisional code 14 was superseded and must not be uploaded. Code 14 is now used and locked; subsequent binaries need a newly verified unused higher code.
 
 Local release evidence remains ignored: `output/qa/android-build14-internal-active-20261108.png` and the artifact directory's `build-receipt.json`/source manifest. No artifact or signing material is committed.
+
+## Unsigned iPhone compilation
+
+The focused PR/manual workflow `.github/workflows/ios-unsigned.yml` uses the standard `xcode-27` runner with read-only repository permissions, Node 22, locked dependencies and fresh native verification/sync. [Run 2 passed](https://github.com/stevedifabio-oss/Dirty-Turf/actions/runs/42519493657) on Xcode 27.1 (`27A9275`), compiling the actual StoreKit membership and measurement Swift plugins for generic iPhone ARM64. The Release build succeeded and its test-only web payload/native registry matched the synced source. No production environment, Apple credentials, provisioning, signing or store upload is used by this workflow.
+
+The first run identified `Int64` as incompatible with Capacitor's `JSValue` protocol. Remote commit `dff96033dc250485c709e30488e6c0e829bcad35` / local `1cf0bbf173422d6799f2f67a9e2b1a63d8613540` changes only the iOS numeric price projection to supported `Int`. [Full Linux CI 152 passed](https://github.com/stevedifabio-oss/Dirty-Turf/actions/runs/42519493700), with 23 focused native-client/lifecycle tests also passing. This iOS-only repair is later than the frozen Android-14 source and does not change or replace that binary.
+
+Ignored evidence: `output/qa/ios-unsigned-compile-20261108.json`, with runner/toolchain, source, first-run diagnosis and successful compile/payload checks. The workflow's preview payload does not verify production sign-in, real purchases, push delivery, signing or physical-device behavior; it is not an installable/App Store candidate and does not resolve Apple's rejected-login report by itself.
 
 ## Hosted components
 
@@ -39,13 +47,13 @@ Manual and infill calculations retain their legacy availability while separate a
 
 ## Remaining activation gates
 
-The Google payments profile is verified. All three approved product IDs now have subscription records and `monthly` base plans in DRAFT, with United States-only availability and saved prices of Community $19.99/month, Scanner $24.95/month and Academy $24.95/month. The exact Scanner price was read back after a direct U.S. price edit and Save changes; do not substitute $24.99. No base plan was activated and no purchase occurred. Local price evidence: `output/qa/google-scanner-price-exact-20261108.png`.
+The Google payments profile is verified. All three approved product IDs now have subscription records and `monthly` base plans in DRAFT, with United States-only availability and saved prices of Community $19.99/month, Scanner $24.95/month and Academy $24.95/month. The exact Scanner price was read back after a direct U.S. price edit and Save changes; do not substitute $24.99. No base plan was activated and no purchase occurred. Google license testing was saved with only the existing one-person owner test list selected, the broader five-person list unselected and `RESPOND_NORMALLY`; no test purchase was attempted. Local evidence: `output/qa/google-scanner-price-exact-20261108.png` and `output/qa/google-license-tester-configured-20261108.png`.
 
 In the authenticated Dirty Turf LLC Apple account, three separate subscription groups/products are configured: Community group 22559099/product 6832336762; Turf Scanner group 22559042/product 6832337801; Academy group 22559079/product 6832338391. All three have English (U.S.) product display names/descriptions, English group localizations with the default app name preserved, United States-only availability and saved one-month prices of $19.99/$24.95/$24.95 respectively. They remain Prepare for Submission, not in review or live. Local group evidence: `output/qa/apple-subscription-groups-20261108.png`.
 
 Apple's Paid Apps Agreement remains unsigned; its terms were left open for the account holder, and no agreement was accepted by the agent. The existing iPhone 1.0/build 17 is Rejected; Apple's November 5 review cited Guideline 2.1(a), with a login button that did not respond. No resubmission occurred.
 
-The available Google Cloud login lacks IAM access to `dirty-turf-academy`. Other available Portal Tests/Social Posts projects were left untouched. Dedicated billing credentials, Google RTDN/Pub/Sub and Apple provider configuration remain incomplete. Real purchase/renewal/refund/restore acceptance and actual Android device acceptance are outstanding; iPhone compilation/signing and acceptance require Mac/Xcode and an iPhone. No provider credential values are included in this receipt.
+The available Google Cloud login lacks IAM access to `dirty-turf-academy`. Other available Portal Tests/Social Posts projects were left untouched. Dedicated billing credentials, Google RTDN/Pub/Sub and Apple provider configuration remain incomplete. Real purchase/renewal/refund/restore acceptance and actual Android device acceptance are outstanding. iPhone compilation is verified above; an authorized signed production-configured candidate and iPhone acceptance are still required. No provider credential values are included in this receipt.
 
 Keep all backend flags and mappings off until provider configuration and exact native candidates pass acceptance. Recheck access immediately before and after any cutover. Store records and internal-test availability do not establish publicly purchasable memberships. Upload, internal testing, review submission and public availability must remain separate.
 

@@ -2,6 +2,21 @@
 
 The shared application uses `MembershipBilling`, a local Capacitor plugin backed by StoreKit 2. Its Swift source is part of the existing `CapApp-SPM` target and `BridgeViewController` registers the plugin. No new Swift package or signing entitlement is added. This is source preparation, not an App Store product activation, uploaded build, or verified purchase.
 
+## Verified unsigned compilation — November 8, 2026
+
+[GitHub unsigned iOS run 2 passed](https://github.com/stevedifabio-oss/Dirty-Turf/actions/runs/42519493657) on the standard `xcode-27` macOS runner using Xcode 27.1 (`27A9275`). `.github/workflows/ios-unsigned.yml` runs locked Node 22 installation and fresh `native:verify`, then compiles the actual UIKit/StoreKit app with:
+
+```sh
+xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
+  -sdk iphoneos -destination 'generic/platform=iOS' \
+  -derivedDataPath output/DerivedData/ios-unsigned \
+  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= build
+```
+
+The Release ARM64 build and built test-payload/plugin-registry check passed. The initial run caught an incompatible `Int64` dictionary value; the iOS-only repair returns Capacitor-supported `Int` for `priceAmountMicros` without changing the numeric contract. Remote fix commit `dff96033dc250485c709e30488e6c0e829bcad35` also passed [Linux CI 152](https://github.com/stevedifabio-oss/Dirty-Turf/actions/runs/42519493700) and 23 focused native-client/lifecycle tests. This fix is later than Android's frozen internal build 14, which remains unchanged.
+
+The workflow uses read-only repository permissions and no production environment, Apple credentials, signing or uploads. Its device-preview payload does not verify production login, StoreKit purchases, push delivery or a physical iPhone. The unsigned app is not an installable/upload-ready release candidate, and the rejected build-17 login report remains unresolved pending real acceptance. Ignored receipt: `output/qa/ios-unsigned-compile-20261108.json`.
+
 ## App Store Connect configuration
 
 Create one auto-renewable monthly subscription in **each of three separate subscription groups**. A single group would make these alternatives/upgrades rather than independently purchasable memberships.
