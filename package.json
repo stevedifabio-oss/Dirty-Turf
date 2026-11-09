@@ -44,6 +44,7 @@
     "academy:email-previews": "node scripts/preview-academy-emails.mjs"
   },
   "dependencies": {
+    "@apple/app-store-server-library": "3.1.0",
     "@capacitor/android": "^8.5.2",
     "@capacitor/app": "8.1.1",
     "@capacitor/core": "^8.5.2",
