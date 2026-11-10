@@ -2,6 +2,12 @@
   command = "npm run build"
   publish = "dist"
 
+# Preserve the official CommonJS SDK as a Node dependency; bundling it into an
+# ESM function can leave unsupported dynamic require calls in generated code.
+[functions."apple-signed-verifier"]
+  node_bundler = "esbuild"
+  external_node_modules = ["@apple/app-store-server-library"]
+
 [[redirects]]
   from = "/*"
   to = "/index.html"
