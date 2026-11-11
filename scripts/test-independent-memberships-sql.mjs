@@ -121,6 +121,98 @@ const storeApply = async (uid, resource, key, options = {}) => {
   return (await as('service_role', null, 'select apply_academy_store_entitlement($1,$2,$3,$4,$5,$6,$7,$8,$9) value', args))[0].value;
 };
 await reject(storeApply(newUid, 'community', 'held-key'), 'inactive products cannot fulfill new purchases');
+// A Google license test can exercise Scanner while every public sale stays held.
+// Only the trusted verifier supplies sandbox; allowlisting never permits production.
+const sandboxUid = await user(), sandboxOther = await user();
+await db.query('insert into private.academy_store_test_accounts(user_id) values($1)', [sandboxUid]);
+equal((await status(sandboxUid)).enabled, true, 'allowlisted Google tester can load held Scanner catalog');
+equal((await status(sandboxUid)).sandboxOnly, true, 'server identifies the sandbox-only enrollment route');
+equal((await status(sandboxUid)).products, [skus.scanner], 'held tester catalog contains only exact Scanner SKU');
+equal((await status(sandboxOther)).enabled, false, 'ordinary account still cannot open checkout');
+equal((await status(sandboxOther)).products, [], 'ordinary account sees no public sale products');
+equal((await status(sandboxOther)).sandboxOnly, false, 'ordinary account cannot request test mode');
+equal((await status(sandboxUid, 'apple')).enabled, false, 'Google acceptance does not open Apple catalog');
+equal((await status(sandboxUid, 'apple')).products, [], 'Apple products remain held for tester');
+equal((await db.query('select store_purchases_enabled from academy_communities where id=$1', [community])).rows[0].store_purchases_enabled, false, 'test catalog never flips public purchase switch');
+equal((await db.query('select count(*)::int n from academy_store_products where active')).rows[0].n, 0, 'test catalog never activates a mapping');
+for (const environment of ['production', 'sandbox']) {
+  await reject(storeApply(sandboxOther, 'scanner', `ordinary-held-${environment}`, { environment }), `ordinary account cannot fulfill held ${environment} Scanner`);
+}
+await reject(storeApply(sandboxUid, 'scanner', 'tester-held-production'), 'allowlisted tester cannot fulfill first production purchase while sales held');
+for (const resource of ['community', 'academy']) {
+  await reject(storeApply(sandboxUid, resource, `tester-held-${resource}`, { environment: 'sandbox' }), `test exemption cannot fulfill held ${resource}`);
+}
+await reject(storeApply(sandboxUid, 'scanner', 'tester-held-apple', { environment: 'sandbox', provider: 'apple' }), 'test exemption cannot fulfill Apple Scanner');
+await db.query('update academy_communities set separate_access_enabled=false where id=$1', [community]);
+equal((await status(sandboxUid)).enabled, false, 'test catalog requires reviewed separate-access cutover');
+await reject(storeApply(sandboxUid, 'scanner', 'tester-no-cutover', { environment: 'sandbox' }), 'test fulfillment requires separate-access cutover');
+await db.query('update academy_communities set separate_access_enabled=true,pricing_gates_enabled=false where id=$1', [community]);
+equal((await status(sandboxUid)).enabled, false, 'test catalog requires pricing gates');
+await reject(storeApply(sandboxUid, 'scanner', 'tester-no-gates', { environment: 'sandbox' }), 'test fulfillment requires pricing gates');
+await db.query('update academy_communities set pricing_gates_enabled=true where id=$1', [community]);
+const unverifiedSandbox = await user();
+await db.query('insert into private.academy_store_test_accounts(user_id) values($1)', [unverifiedSandbox]);
+await db.query('update auth.users set email_confirmed_at=null where id=$1', [unverifiedSandbox]);
+await reject(status(unverifiedSandbox), 'test allowlist cannot bypass confirmed sign-in');
+await reject(storeApply(unverifiedSandbox, 'scanner', 'tester-unverified', { environment: 'sandbox' }), 'test fulfillment cannot provision unverified account');
+await reject(as('authenticated', sandboxUid, 'select * from private.academy_store_test_accounts'), 'tester cannot read private test identities');
+await reject(as('authenticated', sandboxUid, 'insert into private.academy_store_test_accounts(user_id) values($1)', [sandboxOther]), 'tester cannot self-allowlist another account');
+await reject(as('authenticated', sandboxUid, 'select apply_academy_store_entitlement($1,$2,$3,$4,$5,$6,$7,$8)', ['google', 'tester-client-forged', sandboxUid, skus.scanner, 'active', future, true, 'sandbox']), 'tester cannot supply an unverified sandbox claim directly');
+equal((await storeApply(sandboxUid, 'scanner', 'scanner-license-acceptance', { environment: 'sandbox' })).applied, true, 'trusted sandbox Scanner proof fulfills with public sales held');
+equal(await rights(sandboxUid), { community: false, courses: [], features: ['measuring_tool'], access: true }, 'license test grants only Scanner');
+for (const method of ['manual', 'camera', 'map']) equal(Boolean(await saveMeasurement(sandboxUid, method)), true, `sandbox Scanner unlocks ${method}`);
+equal((await status(sandboxUid)).restorableProducts, [skus.scanner], 'verified sandbox Scanner remains restorable for allowed tester');
+const licenseVerifiedAt = Date.now();
+equal((await storeApply(sandboxUid, 'scanner', 'scanner-license-acceptance', { environment: 'sandbox', verifiedAt: new Date(licenseVerifiedAt + 1000).toISOString() })).applied, true, 'verified sandbox renewal retains held mapping compatibility');
+equal((await storeApply(sandboxUid, 'scanner', 'scanner-license-acceptance', { environment: 'sandbox', status: 'revoked', verifiedAt: new Date(licenseVerifiedAt - 60_000).toISOString() })).ignored, true, 'stale test event cannot overwrite current proof');
+await db.query('insert into private.academy_store_test_accounts(user_id) values($1)', [sandboxOther]);
+await reject(storeApply(sandboxOther, 'scanner', 'scanner-license-acceptance', { environment: 'sandbox' }), 'sandbox source cannot transfer to another allowlisted account');
+await storeApply(sandboxUid, 'scanner', 'scanner-license-acceptance', { environment: 'sandbox', end: new Date(Date.now() - 1000).toISOString(), verifiedAt: new Date(licenseVerifiedAt + 2000).toISOString() });
+equal((await rights(sandboxUid)).features, [], 'authoritative sandbox expiry removes Scanner');
+for (const method of ['manual', 'camera', 'map']) await reject(saveMeasurement(sandboxUid, method), `expired sandbox denies ${method}`);
+await storeApply(sandboxUid, 'scanner', 'scanner-license-acceptance', { environment: 'sandbox', verifiedAt: new Date(licenseVerifiedAt + 3000).toISOString() });
+await db.query('update private.academy_store_test_accounts set enabled=false where user_id=$1', [sandboxUid]);
+equal((await status(sandboxUid)).enabled, false, 'removing tester closes test catalog immediately');
+equal((await status(sandboxUid)).products, [], 'removed tester cannot start another license purchase');
+equal((await status(sandboxUid)).restorableProducts, [], 'removed tester cannot restore sandbox source');
+equal((await rights(sandboxUid)).features, [], 'removing allowlist disables an unexpired sandbox grant immediately');
+await reject(saveMeasurement(sandboxUid), 'removed tester cannot save manual Scanner');
+await reject(storeApply(sandboxUid, 'scanner', 'scanner-license-acceptance', { environment: 'sandbox', verifiedAt: new Date(licenseVerifiedAt + 4000).toISOString() }), 'removed tester cannot renew sandbox source');
+equal((await db.query('select count(*)::int n from academy_store_entitlements where user_id=$1 and environment=$2', [sandboxUid, 'production'])).rows[0].n, 0, 'test acceptance never creates a production entitlement');
+equal((await db.query('select store_purchases_enabled from academy_communities where id=$1', [community])).rows[0].store_purchases_enabled, false, 'test fulfillment leaves public purchases off');
+equal((await db.query('select count(*)::int n from academy_store_products where active')).rows[0].n, 0, 'test fulfillment leaves all mappings inactive');
+// The verified master may test using his existing login without losing admin
+// rights. Only virtual ownership is hidden; actual paid Scanner sources win.
+const ownerMember = await member(owner);
+const ownerRightsBeforeTest = await state(owner);
+equal((await status(owner)).ownedProducts.sort(), Object.values(skus).sort(), 'unallowlisted master retains all virtual ownership');
+await db.query('insert into private.academy_store_test_accounts(user_id) values($1)', [owner]);
+equal((await status(owner)).products, [skus.scanner], 'allowlisted master catalog exposes only Google Scanner');
+equal((await status(owner)).ownedProducts.sort(), [skus.community, skus.academy].sort(), 'held Google test hides only master virtual Scanner ownership');
+equal((await status(owner, 'apple')).ownedProducts.sort(), Object.values(skus).sort(), 'master Apple ownership projection is unchanged');
+equal(await state(owner), ownerRightsBeforeTest, 'test catalog overlay never changes effective master access');
+for (const source of ['stripe_subscription', 'stripe_payment', 'google_subscription', 'apple_subscription']) {
+  await db.query("insert into academy_feature_grants(academy_community_id,academy_member_id,feature_key,source_type,source_key,ends_at,metadata) values($1,$2,'measuring_tool',$3,$4,$5,'{\"environment\":\"production\"}')", [community, ownerMember, source, `master-paid-${source}`, future]);
+  equal((await status(owner)).ownedProducts.includes(skus.scanner), true, `active ${source} prevents a duplicate master test purchase`);
+  await db.query("update academy_feature_grants set starts_at=now()-interval '2 days',ends_at=now()-interval '1 second' where academy_member_id=$1 and source_type=$2 and source_key=$3", [ownerMember, source, `master-paid-${source}`]);
+  equal((await status(owner)).ownedProducts.includes(skus.scanner), false, `expired ${source} does not block master license test`);
+}
+const otherAdmin = await user(), otherAdminMid = await member(otherAdmin);
+await db.query("update academy_members set role='admin' where id=$1", [otherAdminMid]);
+await db.query('insert into private.academy_store_test_accounts(user_id) values($1)', [otherAdmin]);
+equal((await state(otherAdmin)).canManage, true, 'nonmaster admin fixture has ordinary administration rights');
+equal((await status(otherAdmin)).ownedProducts.sort(), Object.values(skus).sort(), 'nonmaster admin receives no ownership overlay');
+await db.query('update academy_communities set store_purchases_enabled=true where id=$1', [community]);
+equal((await status(owner)).ownedProducts.includes(skus.scanner), true, 'normal enrollment disables master test-only ownership override');
+await db.query('update academy_communities set store_purchases_enabled=false where id=$1', [community]);
+equal((await storeApply(owner, 'scanner', 'master-license-acceptance', { environment: 'sandbox' })).applied, true, 'verified master test purchase can be fulfilled without changing roles');
+equal((await status(owner)).ownedProducts.includes(skus.scanner), true, 'successful sandbox purchase restores master duplicate-purchase protection');
+equal((await status(owner)).restorableProducts, [skus.scanner], 'master can restore his verified sandbox purchase');
+equal(await state(owner), ownerRightsBeforeTest, 'sandbox verification does not masquerade as proof of a new master device unlock');
+await db.query('update private.academy_store_test_accounts set enabled=false where user_id=$1', [owner]);
+equal((await status(owner)).enabled, false, 'removing master allowlist closes test catalog');
+equal((await status(owner)).ownedProducts.sort(), Object.values(skus).sort(), 'removing master allowlist restores ordinary ownership projection');
+equal(await state(owner), ownerRightsBeforeTest, 'master retains all effective access after test allowlist removal');
 await db.query('update academy_communities set store_purchases_enabled=true,scanner_trial_enabled=true where id=$1', [community]);
 await db.query('update academy_store_products set active=true');
 equal((await status(newUid)).enabled, true, 'explicit activation exposes mapped store products');
