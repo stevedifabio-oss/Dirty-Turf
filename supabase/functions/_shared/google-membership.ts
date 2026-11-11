@@ -76,8 +76,9 @@ function purchaseShape(value: unknown) {
   if (typeof productId !== "string" || !GOOGLE_MEMBERSHIP_PRODUCTS.has(productId)) throw invalid("Google membership product is not supported");
   const plan = object(item.autoRenewingPlan);
   const offer = object(item.offerDetails);
+  // Google omits the ProtoJSON default false after cancellation or expiry.
   if (offer.basePlanId !== "monthly" || (offer.offerId !== undefined && offer.offerId !== null) ||
-      typeof plan.autoRenewEnabled !== "boolean" || item.prepaidPlan != null || plan.installmentDetails != null ||
+      (plan.autoRenewEnabled !== undefined && typeof plan.autoRenewEnabled !== "boolean") || item.prepaidPlan != null || plan.installmentDetails != null ||
       item.deferredItemReplacement != null || item.deferredItemRemoval != null || item.itemReplacement != null) {
     throw invalid("Google membership must use the independent monthly base plan");
   }

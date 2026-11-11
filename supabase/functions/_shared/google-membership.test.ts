@@ -48,6 +48,21 @@ describe("verified independent Google subscriptions", () => {
     expect(await verifier().verifyGoogleMembership(purchaseToken, userId, config, now)).toMatchObject({ status: "active", autoRenew: false });
     expect(await verifier().verifyGoogleMembership(purchaseToken, userId, config, new Date(expiry))).toMatchObject({ status: "expired", autoRenew: false });
   });
+  it.each(["SUBSCRIPTION_STATE_CANCELED", "SUBSCRIPTION_STATE_EXPIRED", "SUBSCRIPTION_STATE_ACTIVE"])("accepts Google's omitted default-false renewal flag in %s without extending expiry", async state => {
+    purchase.subscriptionState = state;
+    purchase.lineItems[0].autoRenewingPlan = {};
+    expect(await verifier().verifyGoogleMembership(purchaseToken, userId, config, now)).toMatchObject({
+      status: state === "SUBSCRIPTION_STATE_EXPIRED" ? "expired" : "active", autoRenew: false,
+      currentPeriodEnd: "2026-12-03T18:00:00.000Z",
+    });
+    expect(await verifier().verifyGoogleMembership(purchaseToken, userId, config, new Date(expiry))).toMatchObject({ status: "expired", autoRenew: false });
+    expect(dependencies.acknowledgeSubscription).not.toHaveBeenCalled();
+  });
+  it.each([null, "false", 0, {}, []])("rejects a present malformed renewal flag %#", async value => {
+    purchase.lineItems[0].autoRenewingPlan.autoRenewEnabled = value;
+    await expect(verifier().verifyGoogleMembership(purchaseToken, userId, config, now)).rejects.toThrow();
+    expect(dependencies.acknowledgeSubscription).not.toHaveBeenCalled();
+  });
   it("uses Google's current grace-period expiry and grants no time beyond it", async () => {
     purchase.subscriptionState = "SUBSCRIPTION_STATE_IN_GRACE_PERIOD";
     purchase.lineItems[0].expiryTime = "2026-11-04T18:00:00Z";
