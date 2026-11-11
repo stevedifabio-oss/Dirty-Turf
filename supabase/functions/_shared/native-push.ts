@@ -9,7 +9,7 @@ const PRIVATE_KEY_BEGIN = "-----BEGIN" + " PRIVATE KEY-----";
 const PRIVATE_KEY_END = "-----END" + " PRIVATE KEY-----";
 let apnsAuthentication: { key: string; token: string; until: number } | undefined;
 export function safePushData(delivery: PushDelivery) {
-  if (!UUID.test(delivery.id) || !UUID.test(delivery.notification_id) || !UUID.test(delivery.target_id) || !["post", "event", "course", "community"].includes(delivery.target_type)) throw new Error("Invalid push target");
+  if (!UUID.test(delivery.id) || !UUID.test(delivery.notification_id) || !UUID.test(delivery.target_id) || !["post", "event", "course", "community", "app_release"].includes(delivery.target_type)) throw new Error("Invalid push target");
   const data: Record<string, string> = { notificationId: delivery.notification_id, targetType: delivery.target_type, targetId: delivery.target_id };
   if (delivery.comment_id && UUID.test(delivery.comment_id) && delivery.target_type === "post") data.commentId = delivery.comment_id;
   return data;

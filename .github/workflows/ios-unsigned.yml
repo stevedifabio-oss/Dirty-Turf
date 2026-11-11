@@ -1,0 +1,84 @@
+name: iOS unsigned compile
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/ios-unsigned.yml
+      - ios/**
+      - src/**
+      - public/**
+      - assets/**
+      - scripts/check-native-bundles.mjs
+      - scripts/lib/native-plugin-registry.mjs
+      - package.json
+      - package-lock.json
+      - capacitor.config.ts
+      - vite.config.ts
+      - tsconfig.json
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-unsigned-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile:
+    runs-on: xcode-27
+    timeout-minutes: 35
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Identify Apple toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      # Deliberately no production environment, credentials, signing or upload.
+      # This device-preview payload verifies compilation, not live authentication.
+      - name: Build and sync the test-only native payload
+        run: npm run native:verify
+
+      - name: Compile unsigned iPhone app with UIKit and StoreKit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p output/qa
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath output/DerivedData/ios-unsigned \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY= \
+            build 2>&1 | tee output/qa/ios-unsigned-build.log
+
+      - name: Verify compiled test payload and native plugin registry
+        run: |
+          node scripts/check-native-bundles.mjs \
+            --ios-app output/DerivedData/ios-unsigned/Build/Products/Release-iphoneos/App.app
+
+      - name: Record compile-only scope
+        run: |
+          {
+            echo '### Unsigned iPhone compile passed'
+            echo 'The checked-out UIKit/StoreKit source compiled for a generic iPhone device.'
+            echo 'The built device-preview payload and plugin registry match the test build.'
+            echo 'This is not a signed, installable or upload-ready App Store candidate.'
+            echo 'No production configuration, real sign-in, payment, push delivery or physical-device acceptance was verified.'
+          } >> "$GITHUB_STEP_SUMMARY"

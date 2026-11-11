@@ -17,6 +17,12 @@
 .upgrade-price small { color: var(--ink-soft); font: 500 .75rem "Poppins",sans-serif; }
 .upgrade-cards .upgrade-trial { margin: 12px 0 0; font-size: .7rem; }
 .upgrade-status { margin-top: 18px; padding: 6px 10px; border-radius: 20px; background: var(--chalk); color: var(--ink-soft); font-size: .7rem; font-weight: 600; }
+.membership-buy { margin-top: 18px; width: 100%; min-height: 44px; justify-content: center; }
+.membership-store-terms { color: var(--ink-soft); max-width: 760px; font-size: .75rem; line-height: 1.7; margin: 22px 0 16px; }
+.membership-store-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.membership-shell { width: min(1200px, 100%); margin: 0 auto; padding: 20px; min-height: 100dvh; }
+.membership-shell > .upgrades-availability { margin: 0 20px 16px; }
+@media(max-width: 640px) { .membership-shell { padding: 12px 0 24px; } .membership-shell > .upgrades-availability { margin-inline: 16px; } }
 .upgrade-course-cards { grid-template-columns: repeat(4,minmax(0,1fr)); }
 @media(max-width: 960px) { .upgrade-course-cards { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media(max-width: 640px) { .upgrades-page { padding-inline: 16px; } .upgrade-cards { grid-template-columns: 1fr; } .upgrade-cards article { padding: 20px; } }

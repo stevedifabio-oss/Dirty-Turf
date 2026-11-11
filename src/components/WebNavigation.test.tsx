@@ -4,7 +4,11 @@ import { WebNavigation } from "./WebNavigation";
 import { Upgrades } from "./Upgrades";
 
 const platform = vi.hoisted(() => ({ native: false }));
-vi.mock("@capacitor/core", () => ({ Capacitor: { isNativePlatform: () => platform.native } }));
+vi.mock("../lib/backend", () => ({ supabase: null }));
+vi.mock("@capacitor/core", async importOriginal => {
+  const actual = await importOriginal<typeof import("@capacitor/core")>();
+  return { ...actual, Capacitor: { ...actual.Capacitor, isNativePlatform: () => platform.native } };
+});
 const props = { activeView: "home" as const, canManage: false, onNavigate: () => true, onMeasure: () => undefined, onOpenSettings: () => undefined };
 
 describe("web navigation and upgrades boundaries", () => {
@@ -12,12 +16,16 @@ describe("web navigation and upgrades boundaries", () => {
     expect(renderToStaticMarkup(<WebNavigation {...props} />)).not.toContain("Admin Studio");
     expect(renderToStaticMarkup(<WebNavigation {...props} canManage />)).toContain("Admin Studio");
   });
-  it("does not offer purchases or enrollment on native platforms", () => {
+  it("offers native store memberships without exposing Stripe checkout links", () => {
     platform.native = true;
-    expect(renderToStaticMarkup(<Upgrades />)).toBe("");
+    const nativeMemberships = renderToStaticMarkup(<Upgrades />);
+    expect(nativeMemberships).toContain("Choose your memberships");
+    expect(nativeMemberships).toContain("Subscribe to Turf Scanner");
+    expect(nativeMemberships).not.toContain("stripe.com");
+    expect(nativeMemberships).not.toContain('href="/membership');
     const markup = renderToStaticMarkup(<WebNavigation {...props} />);
     expect(markup).toContain("Mobile app navigation");
-    expect(markup).not.toContain("Memberships &amp; Upgrades");
+    expect(markup).toContain("Memberships &amp; Upgrades");
     expect(markup).toContain("Grow your business");
     expect(markup).not.toContain("href=");
     platform.native = false;

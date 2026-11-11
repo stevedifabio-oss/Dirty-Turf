@@ -2,13 +2,34 @@ import { Capacitor, type PluginListenerHandle } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { createClient } from "@supabase/supabase-js";
 import { supabase } from "./backend";
+import { selectAppRelease, type AppPlatform, type AppRelease } from "./appUpdates";
 
-export type NativePushTarget = { notificationId: string; targetType: "post" | "event" | "course" | "community"; targetId: string; commentId?: string };
-export type PushPreferences = { push_replies: boolean; push_mentions: boolean; push_reactions: boolean; push_new_posts: boolean; push_admin_announcements: boolean; push_event_reminders: boolean; push_course_updates: boolean };
-export type NativePushStatus = { supported: boolean; ready: boolean; enabled: boolean; permission: string; preferences: PushPreferences; error?: string };
+export type NativePushTarget = { notificationId: string; targetType: "post" | "event" | "course" | "community" | "app_release"; targetId: string; commentId?: string };
+export type PushPreferences = { push_replies: boolean; push_mentions: boolean; push_reactions: boolean; push_new_posts: boolean; push_all_new_posts: boolean; push_new_members: boolean; push_admin_announcements: boolean; push_event_reminders: boolean; push_course_updates: boolean; push_app_updates?: boolean };
+export type NativePushStatus = { supported: boolean; ready: boolean; enabled: boolean; permission: string; preferences: PushPreferences; communityAlertsReady?: boolean; appUpdateAlertsReady?: boolean; error?: string };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const STORAGE = "dirty-turf-native-push-installation-v1";
-const defaults: PushPreferences = { push_replies: true, push_mentions: true, push_reactions: false, push_new_posts: false, push_admin_announcements: true, push_event_reminders: true, push_course_updates: true };
+const defaults: PushPreferences = { push_replies: true, push_mentions: true, push_reactions: false, push_new_posts: false, push_all_new_posts: false, push_new_members: false, push_admin_announcements: true, push_event_reminders: true, push_course_updates: true };
+const communityPreferenceKeys = ["push_all_new_posts", "push_new_members"] as const;
+const legacyPreferenceColumns = "push_enabled,push_replies,push_mentions,push_reactions,push_new_posts,push_admin_announcements,push_event_reminders,push_course_updates";
+function missingCommunityPreferenceColumns(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const value = error as Record<string, unknown>;
+  const message = typeof value.message === "string" ? value.message : "";
+  return ["42703", "PGRST204"].includes(String(value.code)) && communityPreferenceKeys.some(key => message.includes(key));
+}
+function missingAppUpdatePreferenceColumn(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const value = error as Record<string, unknown>;
+  return ["42703", "PGRST204"].includes(String(value.code)) && typeof value.message === "string" && value.message.includes("push_app_updates");
+}
+function checkedPreferences(data: Record<string, unknown> | null): PushPreferences {
+  return Object.fromEntries((Object.keys(defaults) as (keyof PushPreferences)[]).map(key => {
+    const value = data?.[key];
+    if (value !== undefined && value !== null && typeof value !== "boolean") throw new Error("Phone notification preferences need refreshing.");
+    return [key, value ?? defaults[key]];
+  })) as PushPreferences;
+}
 type Installation = { id: string; secret: string; revision: number; userId?: string; enabled: boolean; revokePending?: boolean };
 let registrationUser: string | undefined;
 let registrationRevision: number | undefined;
@@ -42,7 +63,7 @@ export function subscribeNativePushStatus(callback: () => void) { changes.add(ca
 export function parseNativePushTarget(data: unknown): NativePushTarget | null {
   if (!data || typeof data !== "object") return null;
   const row = data as Record<string, unknown>;
-  if (typeof row.notificationId !== "string" || !UUID.test(row.notificationId) || typeof row.targetId !== "string" || !UUID.test(row.targetId) || !["post", "event", "course", "community"].includes(String(row.targetType))) return null;
+  if (typeof row.notificationId !== "string" || !UUID.test(row.notificationId) || typeof row.targetId !== "string" || !UUID.test(row.targetId) || !["post", "event", "course", "community", "app_release"].includes(String(row.targetType))) return null;
   return { notificationId: row.notificationId, targetType: row.targetType as NativePushTarget["targetType"], targetId: row.targetId, ...(row.targetType === "post" && typeof row.commentId === "string" && UUID.test(row.commentId) ? { commentId: row.commentId } : {}) };
 }
 export async function resolveNativePushTarget(notificationId: string): Promise<NativePushTarget | null> {
@@ -57,6 +78,21 @@ async function sessionContext() {
   const { data, error } = await supabase!.auth.getSession();
   if (error || !data.session?.user.id) throw new Error("Sign in before changing phone notifications.");
   return { userId: data.session.user.id, token: data.session.access_token };
+}
+export async function resolveAppUpdateNotice(notificationId: string): Promise<{ platform: AppPlatform; release: AppRelease } | null> {
+  if (!supabase || !UUID.test(notificationId)) return null;
+  const context = await sessionContext();
+  const { data, error } = await supabase.rpc("get_app_release_notice", { p_notification_id: notificationId }).setHeader("Authorization", `Bearer ${context.token}`);
+  if (error) throw new Error("This app update could not be loaded.");
+  const current = await sessionContext();
+  if (current.userId !== context.userId) return null;
+  const row = data?.[0];
+  if (!row || (row.platform !== "ios" && row.platform !== "android")) return null;
+  const release = selectAppRelease({ schemaVersion: 1, [row.platform]: {
+    availableVersion: row.version, availableBuild: row.build, publishedAt: row.published_at,
+    expiresAt: row.expires_at, releaseNotes: row.release_notes,
+  } }, row.platform);
+  return release ? { platform: row.platform, release } : null;
 }
 async function revokeRemote(value: Installation) {
   const url = import.meta.env.VITE_SUPABASE_URL?.trim();
@@ -99,10 +135,14 @@ export async function disableNativePush() {
   if (error) throw new Error("Phone notification preference could not be saved.");
   await clearNativePushForSignOut();
 }
-export async function saveNativePushPreferences(preferences: PushPreferences) {
+export async function saveNativePushPreferences(preferences: PushPreferences, communityAlertsReady = true, appUpdateAlertsReady = false) {
   if (!supabase) throw new Error("Phone notifications are unavailable.");
+  if ((Object.keys(defaults) as (keyof PushPreferences)[]).some(key => typeof preferences?.[key] !== "boolean")) throw new Error("Choose a valid setting for every phone notification category.");
+  if (!communityAlertsReady && communityPreferenceKeys.some(key => preferences[key])) throw new Error("All-post and new-member alerts are not available in this backend yet.");
+  if (appUpdateAlertsReady && typeof preferences.push_app_updates !== "boolean") throw new Error("Choose a valid app update notification setting.");
   const context = await sessionContext();
-  const values = Object.fromEntries(Object.keys(defaults).map(key => [key, preferences[key as keyof PushPreferences] === true]));
+  const values = Object.fromEntries((Object.keys(defaults) as (keyof PushPreferences)[]).filter(key => communityAlertsReady || !communityPreferenceKeys.includes(key as typeof communityPreferenceKeys[number])).map(key => [key, preferences[key]]));
+  if (appUpdateAlertsReady) values.push_app_updates = preferences.push_app_updates;
   const { error } = await supabase.from("notification_preferences").upsert({ user_id: context.userId, ...values }, { onConflict: "user_id" }).setHeader("Authorization", `Bearer ${context.token}`);
   if (error) throw new Error("Phone notification preferences could not be saved.");
   changed();
@@ -110,14 +150,34 @@ export async function saveNativePushPreferences(preferences: PushPreferences) {
 export async function readNativePushStatus(): Promise<NativePushStatus> {
   if (!isNativePushSupported()) return { supported: false, ready: false, enabled: false, permission: "unavailable", preferences: defaults };
   if (!supabase) throw new Error("Phone notifications are unavailable.");
+  const client = supabase;
   const context = await sessionContext(); const uid = context.userId;
-  const { data, error } = await supabase.from("notification_preferences").select("push_enabled,push_replies,push_mentions,push_reactions,push_new_posts,push_admin_announcements,push_event_reminders,push_course_updates").eq("user_id", uid).maybeSingle().setHeader("Authorization", `Bearer ${context.token}`);
+  const loadPreferences = (columns: string) => client.from("notification_preferences").select(columns).eq("user_id", uid).maybeSingle().setHeader("Authorization", `Bearer ${context.token}`);
+  let { data, error } = await loadPreferences(`${legacyPreferenceColumns},${communityPreferenceKeys.join(",")},push_app_updates`);
+  let communityAlertsReady = true;
+  let appUpdateAlertsReady = true;
+  // This frontend may reach an older hosted schema before its additive release.
+  // Preserve existing controls without silently claiming new alert support.
+  for (let attempt = 0; attempt < 2 && error; attempt++) {
+    if (missingCommunityPreferenceColumns(error)) communityAlertsReady = false;
+    else if (missingAppUpdatePreferenceColumn(error)) appUpdateAlertsReady = false;
+    else break;
+    ({ data, error } = await loadPreferences(`${legacyPreferenceColumns}${communityAlertsReady ? `,${communityPreferenceKeys.join(",")}` : ""}${appUpdateAlertsReady ? ",push_app_updates" : ""}`));
+  }
   if (error) throw new Error("Phone notification preferences could not load.");
+  // The selected columns vary for compatibility; validate the dynamic response
+  // before using it instead of trusting a PostgREST inferred shape.
+  const raw: unknown = data;
+  if (raw !== null && (typeof raw !== "object" || Array.isArray(raw))) throw new Error("Phone notification preferences need refreshing.");
+  const row = raw as Record<string, unknown> | null;
+  const preferences = checkedPreferences(row);
+  if (row?.push_app_updates !== undefined && row.push_app_updates !== null && typeof row.push_app_updates !== "boolean") throw new Error("Phone notification preferences need refreshing.");
+  preferences.push_app_updates = typeof row?.push_app_updates === "boolean" ? row.push_app_updates : true;
   const permission = (await PushNotifications.checkPermissions()).receive;
   const value = localStorage.getItem(STORAGE) ? installation() : undefined;
   const { data: readiness, error: readinessError } = await supabase.rpc("academy_push_readiness").setHeader("Authorization", `Bearer ${context.token}`);
   const ready = !readinessError && Boolean(readiness?.[0]?.ready && readiness[0].environment === environment());
-  return { supported: true, ready, enabled: Boolean(data?.push_enabled && value?.enabled && value.userId === uid && permission === "granted"), permission, preferences: Object.fromEntries((Object.keys(defaults) as (keyof PushPreferences)[]).map(key => [key, data?.[key] ?? defaults[key]])) as PushPreferences };
+  return { supported: true, ready, enabled: Boolean(row?.push_enabled === true && value?.enabled && value.userId === uid && permission === "granted"), permission, preferences, communityAlertsReady, appUpdateAlertsReady };
 }
 async function requestRegistration(explicit: boolean) {
   if (cleanupPromise) throw new Error("Phone notification cleanup is still in progress. Try again.");
